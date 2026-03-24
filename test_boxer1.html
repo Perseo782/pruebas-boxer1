@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Banco de pruebas Boxer 1</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0d12;
+      --panel: #12161d;
+      --panel-2: #0f1319;
+      --border: #2a313d;
+      --text: #f2f4f7;
+      --muted: #a8b0bd;
+      --ok: #3ddc84;
+      --warn: #f4c542;
+      --bad: #ff6b6b;
+      --accent: #4da3ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 20px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, Arial, sans-serif;
+      line-height: 1.4;
+    }
+    h1,h2,h3 { margin: 0 0 10px; }
+    p { margin: 0 0 10px; }
+    .wrap { max-width: 1320px; margin: 0 auto; }
+    .hero, section, details {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .hero p { color: var(--muted); }
+    .hero .tags { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .tag, .pill {
+      display: inline-block;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 5px 10px;
+      background: var(--panel-2);
+      color: var(--text);
+      font-size: 14px;
+    }
+    .grid { display: grid; gap: 12px; }
+    .grid-2 { grid-template-columns: repeat(2, minmax(280px, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(220px, 1fr)); }
+    @media (max-width: 900px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+    label { display:block; font-weight:700; margin-bottom: 6px; }
+    input, select, textarea, button {
+      width: 100%;
+      padding: 10px 12px;
+      background: #0c1016;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font: inherit;
+    }
+    textarea { min-height: 88px; resize: vertical; }
+    button {
+      width: auto;
+      min-width: 170px;
+      cursor: pointer;
+      background: #162131;
+    }
+    button:hover { border-color: #456186; }
+    .actions { display:flex; gap:8px; flex-wrap: wrap; margin-top: 10px; }
+    .mono, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #0c1016;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      min-height: 140px;
+      margin: 0;
+      overflow: auto;
+    }
+    .summary { display:flex; gap:8px; flex-wrap: wrap; margin: 10px 0 14px; }
+    .ok { color: var(--ok); font-weight:700; }
+    .bad { color: var(--bad); font-weight:700; }
+    .muted { color: var(--muted); }
+    .block-title { margin-bottom: 10px; }
+    .preview {
+      border: 1px dashed var(--border);
+      border-radius: 12px;
+      min-height: 180px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      overflow:hidden;
+      background:#0c1016;
+    }
+    .preview img { width: 100%; height: auto; display:block; }
+    .row { display:grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 1000px) { .row { grid-template-columns: 1fr; } }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid var(--border); padding: 8px; text-align: left; vertical-align: top; }
+    th { background: #111823; }
+    summary { cursor: pointer; font-weight: 700; }
+    .helper { color: var(--muted); font-size: 14px; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hero">
+    <h1>Banco de pruebas Boxer 1</h1>
+    <p>Esta página está centrada en probar <strong>Boxer 1</strong>. La parte de Seguridad queda como ayuda opcional para sacar un token si no lo tienes a mano.</p>
+    <div class="tags">
+      <span class="tag">Prueba principal: Boxer 1</span>
+      <span class="tag">Ayuda secundaria: token / sesión</span>
+      <span class="tag">Smoke tests incluidos</span>
+    </div>
+  </div>
+
+  <section>
+    <div class="block-title">
+      <h2>1) Prueba manual de Boxer 1</h2>
+      <p class="muted">Primero se prueba el motor. Lo de Seguridad va debajo y plegado.</p>
+    </div>
+    <div class="row">
+      <div>
+        <div class="grid grid-2">
+          <div>
+            <label for="urlTrastienda">URL Trastienda</label>
+            <input id="urlTrastienda" type="text" placeholder="https://script.google.com/.../exec">
+          </div>
+          <div>
+            <label for="token">Session token</label>
+            <input id="token" type="text" class="mono" placeholder="Pégalo aquí o sácalo con la ayuda de abajo">
+          </div>
+          <div>
+            <label for="img">Imagen</label>
+            <input id="img" type="file" accept="image/*">
+          </div>
+          <div>
+            <label for="sendMode">sendMode</label>
+            <select id="sendMode"><option value="base64" selected>base64</option><option value="normal">normal</option></select>
+          </div>
+          <div>
+            <label for="agent">agentEnabled</label>
+            <select id="agent"><option value="true" selected>true</option><option value="false">false</option></select>
+          </div>
+          <div>
+            <label for="sens">sensitivityMode</label>
+            <select id="sens"><option value="baja">baja</option><option value="media" selected>media</option><option value="alta">alta</option></select>
+          </div>
+          <div>
+            <label for="budget">timeBudgetMs</label>
+            <input id="budget" type="number" value="8000" min="1">
+          </div>
+          <div>
+            <label for="expect">expect (coma separada)</label>
+            <input id="expect" type="text" value="producto,alergenos,peso">
+          </div>
+        </div>
+        <div class="actions">
+          <button id="runManual">Probar Boxer 1</button>
+          <button id="clearManual" type="button">Limpiar salida</button>
+        </div>
+        <p class="helper">Si ya tienes token, ignora la ayuda de Seguridad. Este bloque basta para probar Boxer 1.</p>
+      </div>
+      <div>
+        <label>Vista previa de imagen</label>
+        <div class="preview" id="previewBox"><span class="muted">Sin imagen cargada</span></div>
+      </div>
+    </div>
+
+    <div id="b1Summary" class="summary"></div>
+
+    <div class="grid grid-2">
+      <div>
+        <label>Salida JSON de Boxer 1</label>
+        <pre id="b1Out" class="mono"></pre>
+      </div>
+      <div>
+        <label>Diagnóstico exportado</label>
+        <pre id="diagOut" class="mono"></pre>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="block-title">
+      <h2>2) Smoke tests de Boxer 1</h2>
+      <p class="muted">Pruebas rápidas del módulo, sin depender de una imagen real.</p>
+    </div>
+    <div class="actions">
+      <button id="runTests">Ejecutar smoke tests</button>
+      <button id="clearTests" type="button">Limpiar resultados</button>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>Prueba</th><th>Resultado</th><th>Detalle</th></tr></thead>
+      <tbody id="testsBody"></tbody>
+    </table>
+    <pre id="testsRaw" class="mono"></pre>
+  </section>
+
+  <details>
+    <summary>Ayuda opcional: obtener token desde Seguridad</summary>
+    <p class="muted" style="margin-top:10px;">Solo úsalo si no tienes token. No es la parte principal del banco.</p>
+    <div class="grid grid-2" style="margin-top:10px;">
+      <div>
+        <label for="secUrl">URL Seguridad</label>
+        <input id="secUrl" type="text" placeholder="https://script.google.com/.../exec">
+      </div>
+      <div>
+        <label for="secOrigin">moduloOrigen</label>
+        <input id="secOrigin" type="text" value="WEB">
+      </div>
+      <div>
+        <label for="secDest">moduloDestino</label>
+        <input id="secDest" type="text" value="SEGURIDAD">
+      </div>
+      <div>
+        <label for="secLoginAction">acción login</label>
+        <input id="secLoginAction" type="text" value="login">
+      </div>
+      <div>
+        <label for="secValidateAction">acción validar sesión</label>
+        <input id="secValidateAction" type="text" value="validarSesion">
+      </div>
+      <div>
+        <label for="secRenewAction">acción renovar actividad</label>
+        <input id="secRenewAction" type="text" value="renovarActividad">
+      </div>
+      <div>
+        <label for="secLogoutAction">acción logout</label>
+        <input id="secLogoutAction" type="text" value="logout">
+      </div>
+      <div>
+        <label for="secUser">Usuario</label>
+        <input id="secUser" type="text" autocomplete="username">
+      </div>
+      <div>
+        <label for="secPass">Contraseña</label>
+        <input id="secPass" type="password" autocomplete="current-password">
+      </div>
+    </div>
+    <div class="actions">
+      <button id="btnLogin">Entrar y obtener token</button>
+      <button id="btnValidate">Validar sesión</button>
+      <button id="btnRenew">Renovar actividad</button>
+      <button id="btnLogout">Salir</button>
+    </div>
+    <div id="secStatus" class="mono" style="margin-top:10px;"></div>
+    <pre id="secOut" class="mono"></pre>
+  </details>
+</div>
+
+<script src="B1_enums.js"></script>
+<script src="B1_contratos.js"></script>
+<script src="B1_diagnostico.js"></script>
+<script src="B1_prechequeo.js"></script>
+<script src="B1_ocr_base.js"></script>
+<script src="B1_fiabilidad.js"></script>
+<script src="B1_slots.js"></script>
+<script src="B1_rescate.js"></script>
+<script src="B1_merge.js"></script>
+<script src="B1_core.js"></script>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const json = (x) => JSON.stringify(x, null, 2);
+
+  function parseExpectCsv(raw) {
+    return String(raw || '').split(',').map(x => x.trim()).filter(Boolean);
+  }
+
+  function clearNode(id) { $(id).textContent = ''; }
+
+  $('img').addEventListener('change', (ev) => {
+    const file = ev.target.files && ev.target.files[0];
+    const box = $('previewBox');
+    if (!file) {
+      box.innerHTML = '<span class="muted">Sin imagen cargada</span>';
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    box.innerHTML = `<img src="${url}" alt="Vista previa">`;
+  });
+
+  function renderSummary(result) {
+    const summary = result && result.resultado ? result.resultado : {};
+    const estado = summary.estadoPasaporteModulo || '-';
+    const cls = result && result.ok ? 'ok' : 'bad';
+    $('b1Summary').innerHTML = [
+      `<span class="pill ${cls}">ok: ${String(result && result.ok)}</span>`,
+      `<span class="pill">pasaporte: ${estado}</span>`,
+      `<span class="pill">elapsedMs: ${summary.elapsedMs ?? '-'}</span>`,
+      `<span class="pill">acción: ${summary.accionSugeridaParaCerebro || '-'}</span>`
+    ].join(' ');
+  }
+
+  function getSecurityCfg() {
+    return {
+      url: $('secUrl').value.trim(),
+      moduloOrigen: $('secOrigin').value.trim() || 'WEB',
+      moduloDestino: $('secDest').value.trim() || 'SEGURIDAD',
+      actionLogin: $('secLoginAction').value.trim() || 'login',
+      actionValidate: $('secValidateAction').value.trim() || 'validarSesion',
+      actionRenew: $('secRenewAction').value.trim() || 'renovarActividad',
+      actionLogout: $('secLogoutAction').value.trim() || 'logout'
+    };
+  }
+
+  function writeSecurityStatus(payload, ok) {
+    $('secStatus').innerHTML = ok ? '<span class="ok">OK</span>' : '<span class="bad">ERROR</span>';
+    $('secOut').textContent = json(payload);
+  }
+
+  function extractToken(payload) {
+    const targetKeys = new Set(['sessionToken','token','llaveTemporalSesion','llaveTemporal','session_key','sessionKey']);
+    const seen = new Set();
+    function walk(node) {
+      if (!node || typeof node !== 'object') return '';
+      if (seen.has(node)) return '';
+      seen.add(node);
+      for (const [key, value] of Object.entries(node)) {
+        if (targetKeys.has(key) && typeof value === 'string' && value.trim()) return value.trim();
+      }
+      for (const value of Object.values(node)) {
+        const hit = walk(value);
+        if (hit) return hit;
+      }
+      return '';
+    }
+    return walk(payload);
+  }
+
+  async function postJsonSimple(url, body) {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(body)
+    });
+    const raw = await resp.text();
+    let payload;
+    try {
+      payload = raw ? JSON.parse(raw) : null;
+    } catch {
+      payload = { ok: false, error: { mensaje: raw || 'Respuesta no JSON.' } };
+    }
+    return { resp, payload };
+  }
+
+  async function callSecurity(accion, datos) {
+    const cfg = getSecurityCfg();
+    if (!cfg.url) throw new Error('Falta URL Seguridad.');
+    const tokenActual = $('token').value.trim();
+    const body = {
+      moduloOrigen: cfg.moduloOrigen,
+      moduloDestino: cfg.moduloDestino,
+      accion,
+      sessionToken: accion === cfg.actionLogin ? '' : tokenActual,
+      datos
+    };
+    const { resp, payload } = await postJsonSimple(cfg.url, body);
+    const result = payload && typeof payload === 'object' ? payload : { ok: false, error: { mensaje: 'Respuesta inválida de Seguridad.' } };
+    result.__httpStatus = resp.status;
+    return result;
+  }
+
+  $('btnLogin').addEventListener('click', async () => {
+    try {
+      const usuario = $('secUser').value.trim();
+      const password = $('secPass').value;
+      if (!usuario) throw new Error('Falta usuario.');
+      if (!password) throw new Error('Falta contraseña.');
+      const payload = await callSecurity(getSecurityCfg().actionLogin, {
+        usuario,
+        contrasena: password,
+        password
+      });
+      const token = extractToken(payload);
+      if (token) $('token').value = token;
+      writeSecurityStatus(payload, payload && payload.ok === true);
+    } catch (err) {
+      writeSecurityStatus({ ok: false, error: { mensaje: err.message } }, false);
+    }
+  });
+
+  $('btnValidate').addEventListener('click', async () => {
+    try {
+      const token = $('token').value.trim();
+      const payload = await callSecurity(getSecurityCfg().actionValidate, { sessionToken: token });
+      const nuevo = extractToken(payload);
+      if (nuevo) $('token').value = nuevo;
+      writeSecurityStatus(payload, payload && payload.ok === true);
+    } catch (err) {
+      writeSecurityStatus({ ok: false, error: { mensaje: err.message } }, false);
+    }
+  });
+
+  $('btnRenew').addEventListener('click', async () => {
+    try {
+      const token = $('token').value.trim();
+      const payload = await callSecurity(getSecurityCfg().actionRenew, { sessionToken: token });
+      const nuevo = extractToken(payload);
+      if (nuevo) $('token').value = nuevo;
+      writeSecurityStatus(payload, payload && payload.ok === true);
+    } catch (err) {
+      writeSecurityStatus({ ok: false, error: { mensaje: err.message } }, false);
+    }
+  });
+
+  $('btnLogout').addEventListener('click', async () => {
+    try {
+      const token = $('token').value.trim();
+      const payload = await callSecurity(getSecurityCfg().actionLogout, { sessionToken: token });
+      if (payload && payload.ok === true) $('token').value = '';
+      writeSecurityStatus(payload, payload && payload.ok === true);
+    } catch (err) {
+      writeSecurityStatus({ ok: false, error: { mensaje: err.message } }, false);
+    }
+  });
+
+  $('clearManual').addEventListener('click', () => {
+    $('b1Summary').innerHTML = '';
+    clearNode('b1Out');
+    clearNode('diagOut');
+  });
+
+  $('runManual').addEventListener('click', async () => {
+    try {
+      const file = $('img').files[0];
+      if (!file) throw new Error('Falta imagen.');
+      if (!$('urlTrastienda').value.trim()) throw new Error('Falta URL Trastienda.');
+      const input = {
+        moduloOrigen: 'Cerebro_Orquestador',
+        moduloDestino: 'Boxer1_Core',
+        accion: 'analizar_texto_etiqueta',
+        sessionToken: $('token').value.trim(),
+        datos: {
+          imageRef: file,
+          sendMode: $('sendMode').value,
+          agentEnabled: $('agent').value === 'true',
+          sensitivityMode: $('sens').value,
+          timeBudgetMs: Number($('budget').value || 8000),
+          expect: parseExpectCsv($('expect').value)
+        }
+      };
+      const config = { urlTrastienda: $('urlTrastienda').value.trim() };
+      const result = await B1_analizar(input, config);
+      renderSummary(result);
+      $('b1Out').textContent = json(result);
+      $('diagOut').textContent = json(result && result.resultado ? result.resultado.diagnostico || null : null);
+    } catch (err) {
+      const payload = { ok: false, error: { mensaje: err.message || String(err) } };
+      renderSummary(payload);
+      $('b1Out').textContent = json(payload);
+      $('diagOut').textContent = '';
+    }
+  });
+
+  function makePass(name, detail) { return { ok: true, name, detail }; }
+  function makeFail(name, detail) { return { ok: false, name, detail }; }
+
+  async function runSmokeTests() {
+    const tests = [];
+    const add = (result) => tests.push(result);
+
+    try {
+      add(Object.values(B1_TIPO_FALLO).length === 3
+        ? makePass('Solo 3 tipos de fallo', json(B1_TIPO_FALLO))
+        : makeFail('Solo 3 tipos de fallo', json(B1_TIPO_FALLO)));
+
+      add(B1_CONFIG.TRASTIENDA_MODULO_ORIGEN === 'BOXER1'
+        ? makePass('Origen correcto a Trastienda', B1_CONFIG.TRASTIENDA_MODULO_ORIGEN)
+        : makeFail('Origen correcto a Trastienda', B1_CONFIG.TRASTIENDA_MODULO_ORIGEN));
+
+      const entradaValida = B1_validarEntrada({
+        moduloOrigen: 'Cerebro_Orquestador',
+        moduloDestino: 'Boxer1_Core',
+        accion: 'analizar_texto_etiqueta',
+        sessionToken: 'tok',
+        datos: { imageRef: new Blob(['x'], { type:'image/png' }), sendMode:'base64', agentEnabled:true, sensitivityMode:'media', timeBudgetMs:8000, expect:['producto'] }
+      });
+      add(entradaValida.valid ? makePass('Validación de entrada', 'OK') : makeFail('Validación de entrada', entradaValida.reason));
+
+      const cfgValida = B1_validarConfig({ urlTrastienda: 'https://ejemplo.test/exec' });
+      add(cfgValida.valid ? makePass('Validación de config', 'OK') : makeFail('Validación de config', cfgValida.reason));
+
+      const errNoRetry = B1_crearRespuestaError({
+        code: 'X', message:'x', tipoFallo:B1_TIPO_FALLO.DESCONOCIDO, retryable:true,
+        traceId:'t', elapsedMs:1, accionSugeridaParaCerebro:'reintentar'
+      });
+      add((errNoRetry.error && !('tiempoTotalReintentoMs' in errNoRetry.error))
+        ? makePass('Error sin ruido de tiempoTotalReintentoMs', json(errNoRetry.error))
+        : makeFail('Error sin ruido de tiempoTotalReintentoMs', json(errNoRetry.error)));
+
+      const norm = B1_normalizarOCR({ ok:true, resultado:{ ocrTexto:'Ingredientes\nhar_ina leche', metadatos:{ paginas:1, bloques:2 } }});
+      add(norm.textoCompleto.includes('Ingredientes') ? makePass('Normalización OCR plano', json({totalPalabras:norm.totalPalabras, visionVacia:norm.visionVacia})) : makeFail('Normalización OCR plano', json(norm)));
+
+      const fiab = B1_medirFiabilidad(norm, 'media');
+      add(fiab.huecos > 0 ? makePass('Huecos heurísticos vivos', json({ huecos: fiab.huecos })) : makeFail('Huecos heurísticos vivos', json({ huecos: fiab.huecos })));
+
+      const simOk = B1_verificarSimetria([{slotId:'B1'},{slotId:'B2'}],[{slotId:'B1'},{slotId:'B2'}]);
+      add(simOk.exacta ? makePass('Simetría exacta', json(simOk)) : makeFail('Simetría exacta', json(simOk)));
+
+      const simKo = B1_verificarSimetria([{slotId:'B1'},{slotId:'B2'}],[{slotId:'B1'},{slotId:'B3'}]);
+      add(!simKo.exacta ? makePass('Asimetría detectada', json(simKo)) : makeFail('Asimetría detectada', json(simKo)));
+
+      const mergeKo = B1_ejecutarMerge('texto base', [{slotId:'B1', textoOriginal:'har_ina', roiRef:'roi://1'}], { intentado:true, correcciones:[{slotId:'B2', solucion:'harina', estado:'aplicable'}], slotsEnviados:1, slotsDevueltos:1 });
+      add(mergeKo.mergeCancelado ? makePass('Merge cancela asimetría', json({ mergeStatus: mergeKo.mergeStatus })) : makeFail('Merge cancela asimetría', json(mergeKo)));
+
+      const upstream = B1_crearErrorUpstream({ message:'fallo', upstreamCode:'TRA_VISION_ERROR', upstreamModule:'TRASTIENDA', raw:{x:1} });
+      add(upstream.upstreamCode === 'TRA_VISION_ERROR' ? makePass('Upstream estructurado', json({ upstreamCode: upstream.upstreamCode, upstreamModule: upstream.upstreamModule })) : makeFail('Upstream estructurado', json(upstream)));
+
+      const originalFetch = window.fetch;
+      try {
+        let bodyVision = null;
+        window.fetch = async (_url, options) => ({ ok:true, status:200, async json(){ bodyVision = JSON.parse(options.body); return { ok:true, resultado:{ ocrTexto:'leche entera', vacio:false, metadatos:{ paginas:1, bloques:1 } } }; } });
+        const canvas = document.createElement('canvas'); canvas.width = 4; canvas.height = 4;
+        const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0,0,4,4);
+        await B1_llamarVisionOCR(canvas, 'base64', 'tok', 'https://dummy');
+        add((bodyVision && bodyVision.moduloOrigen === 'BOXER1' && bodyVision.moduloDestino === 'TRASTIENDA' && bodyVision.accion === 'procesarVision')
+          ? makePass('Payload Vision correcto', json(bodyVision))
+          : makeFail('Payload Vision correcto', json(bodyVision)));
+
+        let bodyGemini = null;
+        window.fetch = async (_url, options) => ({ ok:true, status:200, async json(){ bodyGemini = JSON.parse(options.body); return { ok:true, resultado:{ respuestaGemini:{ correcciones:[], simetria:'exacta' } } }; } });
+        await B1_enviarRescateGemini('texto base completo', [{ slotId:'B1', textoOriginal:'har_ina', confidence:0.4, contexto:'ingredientes harina', roiBase64:'AAAA' }], 'tok', 'https://dummy');
+        add((bodyGemini && bodyGemini.moduloOrigen === 'BOXER1' && bodyGemini.datos.ocrTexto === 'texto base completo')
+          ? makePass('Payload Gemini usa textoBase', json(bodyGemini))
+          : makeFail('Payload Gemini usa textoBase', json(bodyGemini)));
+      } finally {
+        window.fetch = originalFetch;
+      }
+    } catch (err) {
+      add(makeFail('Excepción inesperada en smoke tests', err && err.stack ? err.stack : String(err)));
+    }
+
+    const body = $('testsBody');
+    body.innerHTML = '';
+    tests.forEach((t, i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${i+1}</td><td>${t.name}</td><td class="${t.ok ? 'ok' : 'bad'}">${t.ok ? 'OK' : 'FALLO'}</td><td class="mono">${escapeHtml(String(t.detail || ''))}</td>`;
+      body.appendChild(tr);
+    });
+    $('testsRaw').textContent = json({ total: tests.length, ok: tests.filter(t => t.ok).length, fail: tests.filter(t => !t.ok).length, tests });
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+  }
+
+  $('runTests').addEventListener('click', runSmokeTests);
+  $('clearTests').addEventListener('click', () => {
+    $('testsBody').innerHTML = '';
+    clearNode('testsRaw');
+  });
+</script>
+</body>
+</html>
