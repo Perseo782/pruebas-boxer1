@@ -450,7 +450,8 @@
       const result = await B1_analizar(input, config);
       renderSummary(result);
       $('b1Out').textContent = json(result);
-      $('diagOut').textContent = json(result && result.resultado ? result.resultado.diagnostico || null : null);
+      const diag = result && result.resultado && result.resultado.datos ? (result.resultado.datos.diagnostico || null) : null;
+      $('diagOut').textContent = json(diag);
     } catch (err) {
       const payload = { ok: false, error: { mensaje: err.message || String(err) } };
       renderSummary(payload);

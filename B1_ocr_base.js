@@ -141,6 +141,18 @@ function _blobToBase64(blob) {
   });
 }
 
+function _B1_esHuecoHeuristico(texto) {
+  if (typeof texto !== 'string') return true;
+  const t = texto.trim();
+  if (!t) return true;
+  if (/^[._\-–—]{2,}$/.test(t)) return true;
+  if (/^[\|/\\]+$/.test(t)) return true;
+  if (/^[*~]+$/.test(t)) return true;
+  if (/^\?+$/.test(t)) return true;
+  if (/^[0OQ]{1}$/.test(t)) return false;
+  return false;
+}
+
 function _B1_confianzaHeuristicaPalabra(texto) {
   if (!texto) return 0.35;
   let score = 0.78;
