@@ -166,8 +166,12 @@ function _detectarRecorteRoto(data, w, h) {
 }
 
 async function B1_prechequeo(imageSrc, cronometro) {
+  const tInicio = Date.now();
   try {
+    const tRedimensionarInicio = Date.now();
     const { canvas, width, height } = await B1_redimensionarImagen(imageSrc);
+    const tRedimensionar = Date.now() - tRedimensionarInicio;
+
     if (cronometro.expired()) {
       return {
         ok: false,
@@ -176,11 +180,20 @@ async function B1_prechequeo(imageSrc, cronometro) {
         height,
         problemas: ['presupuesto_agotado_en_prechequeo'],
         metricasImagen: {},
-        abortReason: 'Tiempo agotado durante redimensionado.'
+        abortReason: 'Tiempo agotado durante redimensionado.',
+        tiempos: {
+          t_redimensionar_ms: tRedimensionar,
+          t_chequeo_rapido_ms: 0,
+          t_total_prechequeo_ms: Date.now() - tInicio
+        }
       };
     }
 
+    const tChequeoInicio = Date.now();
     const chequeo = B1_chequeoRapido(canvas);
+    const tChequeo = Date.now() - tChequeoInicio;
+    const tTotal = Date.now() - tInicio;
+
     if (!chequeo.viable) {
       return {
         ok: false,
@@ -189,7 +202,12 @@ async function B1_prechequeo(imageSrc, cronometro) {
         height,
         problemas: chequeo.problemas,
         metricasImagen: chequeo.metricas,
-        abortReason: `Foto imposible de procesar: ${chequeo.problemas.join(', ')}.`
+        abortReason: `Foto imposible de procesar: ${chequeo.problemas.join(', ')}.`,
+        tiempos: {
+          t_redimensionar_ms: tRedimensionar,
+          t_chequeo_rapido_ms: tChequeo,
+          t_total_prechequeo_ms: tTotal
+        }
       };
     }
 
@@ -200,7 +218,12 @@ async function B1_prechequeo(imageSrc, cronometro) {
       height,
       problemas: chequeo.problemas,
       metricasImagen: chequeo.metricas,
-      abortReason: null
+      abortReason: null,
+      tiempos: {
+        t_redimensionar_ms: tRedimensionar,
+        t_chequeo_rapido_ms: tChequeo,
+        t_total_prechequeo_ms: tTotal
+      }
     };
   } catch (err) {
     return {
@@ -210,7 +233,12 @@ async function B1_prechequeo(imageSrc, cronometro) {
       height: 0,
       problemas: ['error_interno_prechequeo'],
       metricasImagen: {},
-      abortReason: `Error en prechequeo: ${err.message}`
+      abortReason: `Error en prechequeo: ${err.message}`,
+      tiempos: {
+        t_redimensionar_ms: 0,
+        t_chequeo_rapido_ms: 0,
+        t_total_prechequeo_ms: Date.now() - tInicio
+      }
     };
   }
 }

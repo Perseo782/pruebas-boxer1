@@ -83,6 +83,25 @@ function B1_generarTraceId() {
   return `trc_b1_${ts}_${rand}`;
 }
 
+function B1_clonarPlano(valor) {
+  if (Array.isArray(valor)) return valor.map(B1_clonarPlano);
+  if (valor && typeof valor === 'object') {
+    const out = {};
+    Object.keys(valor).forEach(k => {
+      out[k] = B1_clonarPlano(valor[k]);
+    });
+    return out;
+  }
+  return valor;
+}
+
+function B1_exportarTiemposProceso(tiemposProceso, totalElapsedMs) {
+  const base = B1_clonarPlano(tiemposProceso || {});
+  if (!base.total || typeof base.total !== 'object') base.total = {};
+  base.total.t_total_boxer1_ms = totalElapsedMs ?? 0;
+  return base;
+}
+
 function B1_crearRespuestaOk(params) {
   const {
     textoBaseVision,
@@ -140,7 +159,8 @@ function B1_crearRespuestaError(params) {
     detail = null,
     motivo = null,
     errorOriginal = null,
-    diagnostico = null
+    diagnostico = null,
+    metricas = null
   } = params;
 
   const errorObj = {
@@ -164,6 +184,7 @@ function B1_crearRespuestaError(params) {
 
   const datos = {};
   if (textoBaseVision !== null && textoBaseVision !== undefined) datos.textoBaseVision = textoBaseVision;
+  if (metricas) datos.metricas = metricas;
   if (diagnostico) datos.diagnostico = diagnostico;
 
   const resultado = {
@@ -188,7 +209,8 @@ function B1_crearMetricas(params = {}) {
     rescatesIntentados: params.rescatesIntentados ?? 0,
     rescatesAplicados: params.rescatesAplicados ?? 0,
     elapsedMs: params.elapsedMs ?? 0,
-    abortReason: params.abortReason ?? null
+    abortReason: params.abortReason ?? null,
+    tiempos: params.tiempos ? B1_clonarPlano(params.tiempos) : null
   };
 }
 
@@ -219,7 +241,6 @@ function B1_crearCronometro(timeBudgetMs) {
     }
   };
 }
-
 
 function B1_crearErrorUpstream({ message, upstreamCode, upstreamModule, raw, intentCount = 0 }) {
   const err = new Error(message || 'Error upstream');

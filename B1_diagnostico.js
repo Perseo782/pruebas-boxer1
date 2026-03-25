@@ -19,6 +19,32 @@ const B1_TIPO_EVENTO = Object.freeze({
 const B1_DIAG_MAX_CRITICOS = 80;
 const B1_DIAG_MAX_INFO = 20;
 
+function _B1_resolverTiemposDiag(tiempo) {
+  if (tiempo && typeof tiempo === 'object' && !Array.isArray(tiempo)) {
+    const stageElapsedMs = typeof tiempo.stageElapsedMs === 'number' ? tiempo.stageElapsedMs : null;
+    const totalElapsedMs = typeof tiempo.totalElapsedMs === 'number' ? tiempo.totalElapsedMs : (typeof tiempo.elapsedMs === 'number' ? tiempo.elapsedMs : null);
+    return {
+      stageElapsedMs,
+      totalElapsedMs,
+      elapsedMs: totalElapsedMs ?? stageElapsedMs ?? null
+    };
+  }
+
+  if (typeof tiempo === 'number') {
+    return {
+      stageElapsedMs: null,
+      totalElapsedMs: tiempo,
+      elapsedMs: tiempo
+    };
+  }
+
+  return {
+    stageElapsedMs: null,
+    totalElapsedMs: null,
+    elapsedMs: null
+  };
+}
+
 function B1_crearBufferDiagnostico(traceId) {
   const eventosCriticos = [];
   const eventosInfo = [];
@@ -26,6 +52,7 @@ function B1_crearBufferDiagnostico(traceId) {
   return {
     traceId,
     emitir(params) {
+      const tiempos = _B1_resolverTiemposDiag(params.tiempos ?? params.elapsedMs ?? null);
       const evento = {
         ts: Date.now(),
         traceId,
@@ -34,7 +61,9 @@ function B1_crearBufferDiagnostico(traceId) {
         code: params.code || null,
         mensaje: params.mensaje,
         passport: params.passport || null,
-        elapsedMs: params.elapsedMs ?? null,
+        elapsedMs: tiempos.elapsedMs,
+        stageElapsedMs: tiempos.stageElapsedMs,
+        totalElapsedMs: tiempos.totalElapsedMs,
         detalle: params.detalle || null
       };
       const esCritico = _esEventoCritico(params.tipoEvento, params.passport);
@@ -75,32 +104,35 @@ function _esEventoCritico(tipoEvento, passport) {
   ].includes(tipoEvento);
 }
 
-function B1_diagPrechequeo(buffer, ok, problemas, ms) {
+function B1_diagPrechequeo(buffer, ok, problemas, tiempos) {
   if (!buffer) return;
+  const t = _B1_resolverTiemposDiag(tiempos);
   buffer.emitir({
     tipoEvento: ok ? B1_TIPO_EVENTO.INFO : B1_TIPO_EVENTO.ERROR,
     code: ok ? 'B1_PRECHEQUEO_OK' : 'B1_PRECHEQUEO_FAIL',
-    mensaje: ok ? `Prechequeo completado en ${ms}ms.` : `Prechequeo fallido: ${problemas.join(', ')}`,
+    mensaje: ok ? `Prechequeo completado en ${t.stageElapsedMs ?? t.elapsedMs ?? '-'}ms.` : `Prechequeo fallido: ${problemas.join(', ')}`,
     passport: ok ? B1_PASSPORT.VERDE : B1_PASSPORT.ROJO,
-    elapsedMs: ms,
+    tiempos: t,
     detalle: { problemas }
   });
 }
 
-function B1_diagOCR(buffer, vacia, totalPalabras, ms) {
+function B1_diagOCR(buffer, vacia, totalPalabras, tiempos) {
   if (!buffer) return;
+  const t = _B1_resolverTiemposDiag(tiempos);
   buffer.emitir({
     tipoEvento: vacia ? B1_TIPO_EVENTO.ERROR : B1_TIPO_EVENTO.INFO,
     code: vacia ? 'B1_OCR_VACIO' : 'B1_OCR_OK',
-    mensaje: vacia ? 'Vision no devolvió texto.' : `OCR completado: ${totalPalabras} palabras en ${ms}ms.`,
+    mensaje: vacia ? 'Vision no devolvió texto.' : `OCR completado: ${totalPalabras} palabras en ${t.stageElapsedMs ?? t.elapsedMs ?? '-'}ms.`,
     passport: vacia ? B1_PASSPORT.ROJO : B1_PASSPORT.VERDE,
-    elapsedMs: ms,
+    tiempos: t,
     detalle: { totalPalabras }
   });
 }
 
-function B1_diagFiabilidad(buffer, fiabilidad, ms) {
+function B1_diagFiabilidad(buffer, fiabilidad, tiempos) {
   if (!buffer) return;
+  const t = _B1_resolverTiemposDiag(tiempos);
   const passport = fiabilidad.fotoViable ? B1_PASSPORT.VERDE : B1_PASSPORT.ROJO;
   buffer.emitir({
     tipoEvento: fiabilidad.fotoViable ? B1_TIPO_EVENTO.INFO : B1_TIPO_EVENTO.DEGRADACION,
@@ -109,7 +141,7 @@ function B1_diagFiabilidad(buffer, fiabilidad, ms) {
       ? `Fiabilidad OK. Page=${fiabilidad.pageConfidence}, CritZone=${fiabilidad.criticalZoneScore}`
       : `Foto inviable: ${fiabilidad.razonInviable}`,
     passport,
-    elapsedMs: ms,
+    tiempos: t,
     detalle: {
       pageConfidence: fiabilidad.pageConfidence,
       criticalZoneScore: fiabilidad.criticalZoneScore,
@@ -119,19 +151,21 @@ function B1_diagFiabilidad(buffer, fiabilidad, ms) {
   });
 }
 
-function B1_diagBypass(buffer, ms) {
+function B1_diagBypass(buffer, tiempos) {
   if (!buffer) return;
+  const t = _B1_resolverTiemposDiag(tiempos);
   buffer.emitir({
     tipoEvento: B1_TIPO_EVENTO.DEGRADACION,
     code: 'B1_AGENTE_OFF',
     mensaje: 'Agente desactivado. Solo OCR base.',
     passport: B1_PASSPORT.ROJO,
-    elapsedMs: ms
+    tiempos: t
   });
 }
 
-function B1_diagRescate(buffer, resultado, ms) {
+function B1_diagRescate(buffer, resultado, tiempos) {
   if (!buffer) return;
+  const t = _B1_resolverTiemposDiag(tiempos);
   const ok = resultado.intentado && resultado.slotsDevueltos > 0;
   buffer.emitir({
     tipoEvento: ok ? B1_TIPO_EVENTO.INFO : B1_TIPO_EVENTO.DEGRADACION,
@@ -140,7 +174,7 @@ function B1_diagRescate(buffer, resultado, ms) {
       ? `Rescate: ${resultado.slotsDevueltos}/${resultado.slotsEnviados} slots devueltos.`
       : `Rescate no intentado: ${resultado.razon}`,
     passport: ok ? B1_PASSPORT.VERDE : B1_PASSPORT.NARANJA,
-    elapsedMs: ms,
+    tiempos: t,
     detalle: {
       slotsEnviados: resultado.slotsEnviados,
       slotsDevueltos: resultado.slotsDevueltos,
@@ -149,8 +183,9 @@ function B1_diagRescate(buffer, resultado, ms) {
   });
 }
 
-function B1_diagMerge(buffer, merge, ms) {
+function B1_diagMerge(buffer, merge, tiempos) {
   if (!buffer) return;
+  const t = _B1_resolverTiemposDiag(tiempos);
   const cancelado = merge.mergeCancelado;
   buffer.emitir({
     tipoEvento: cancelado ? B1_TIPO_EVENTO.DEGRADACION : B1_TIPO_EVENTO.INFO,
@@ -159,7 +194,7 @@ function B1_diagMerge(buffer, merge, ms) {
       ? `Merge cancelado: ${merge.motivoCancelacion}`
       : `Merge OK. ${merge.correcciones.length} correcciones, ${merge.noResueltas.length} pendientes.`,
     passport: cancelado ? B1_PASSPORT.NARANJA : B1_PASSPORT.VERDE,
-    elapsedMs: ms,
+    tiempos: t,
     detalle: {
       mergeStatus: merge.mergeStatus,
       correcciones: merge.correcciones.length,
@@ -168,72 +203,78 @@ function B1_diagMerge(buffer, merge, ms) {
   });
 }
 
-function B1_diagTimeout(buffer, fase, ms) {
+function B1_diagTimeout(buffer, fase, tiempos) {
   if (!buffer) return;
+  const t = _B1_resolverTiemposDiag(tiempos);
   buffer.emitir({
     tipoEvento: B1_TIPO_EVENTO.TIMEOUT,
     code: 'B1_TIMEOUT',
     mensaje: `Presupuesto agotado en fase: ${fase}`,
     passport: B1_PASSPORT.NARANJA,
-    elapsedMs: ms,
+    tiempos: t,
     detalle: { fase }
   });
 }
 
-function B1_diagEncadenado(buffer, upstreamCode, upstreamModule, ms) {
+function B1_diagEncadenado(buffer, upstreamCode, upstreamModule, tiempos) {
   if (!buffer) return;
+  const t = _B1_resolverTiemposDiag(tiempos);
   buffer.emitir({
     tipoEvento: B1_TIPO_EVENTO.ENCADENADO,
     code: 'B1_ERROR_ENCADENADO',
     mensaje: `Error propagado desde ${upstreamModule}: ${upstreamCode}`,
     passport: B1_PASSPORT.ROJO,
-    elapsedMs: ms,
+    tiempos: t,
     detalle: { upstreamCode, upstreamModule }
   });
 }
 
-function B1_diagReparacion(buffer, descripcion, ms) {
+function B1_diagReparacion(buffer, descripcion, tiempos) {
   if (!buffer) return;
+  const t = _B1_resolverTiemposDiag(tiempos);
   buffer.emitir({
     tipoEvento: B1_TIPO_EVENTO.REPARACION,
     code: 'B1_REPARACION_SILENCIOSA',
     mensaje: descripcion,
     passport: B1_PASSPORT.VERDE,
-    elapsedMs: ms
+    tiempos: t
   });
 }
 
-function B1_diagPasaporte(buffer, estado, explicacion, ms) {
+function B1_diagPasaporte(buffer, estado, explicacion, tiempos) {
   if (!buffer) return;
+  const t = _B1_resolverTiemposDiag(tiempos);
   buffer.emitir({
     tipoEvento: B1_TIPO_EVENTO.INFO,
     code: `B1_PASAPORTE_${estado}`,
     mensaje: `Pasaporte ${estado}: ${explicacion}`,
     passport: estado,
-    elapsedMs: ms
+    tiempos: t
   });
 }
 
-function B1_diagRecuperacion(buffer, desde, hacia, ms, motivo) {
+function B1_diagRecuperacion(buffer, desde, hacia, tiempos, motivo) {
   if (!buffer) return;
+  const t = _B1_resolverTiemposDiag(tiempos);
   buffer.emitir({
     tipoEvento: B1_TIPO_EVENTO.RECUPERACION,
     code: 'B1_RECUPERACION',
     mensaje: `Recuperación ${desde} → ${hacia}. ${motivo || ''}`.trim(),
     passport: hacia,
-    elapsedMs: ms,
+    tiempos: t,
     detalle: { desde, hacia, motivo: motivo || null }
   });
 }
 
-function B1_diagModoSeguro(buffer, ms, motivo) {
+function B1_diagModoSeguro(buffer, tiempos, motivo) {
   if (!buffer) return;
+  const t = _B1_resolverTiemposDiag(tiempos);
   buffer.emitir({
     tipoEvento: B1_TIPO_EVENTO.MODO_SEGURO,
     code: 'B1_MODO_SEGURO',
     mensaje: motivo || 'Se activa modo seguro.',
     passport: B1_PASSPORT.NARANJA,
-    elapsedMs: ms,
+    tiempos: t,
     detalle: { motivo: motivo || null }
   });
 }

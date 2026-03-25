@@ -175,7 +175,7 @@
 
     <div id="b1Summary" class="summary"></div>
 
-    <div class="grid grid-2">
+    <div class="grid grid-3">
       <div>
         <label>Salida JSON de Boxer 1</label>
         <pre id="b1Out" class="mono"></pre>
@@ -183,6 +183,10 @@
       <div>
         <label>Diagnóstico exportado</label>
         <pre id="diagOut" class="mono"></pre>
+      </div>
+      <div>
+        <label>Tiempos detectados</label>
+        <pre id="timingsOut" class="mono"></pre>
       </div>
     </div>
   </section>
@@ -275,6 +279,17 @@
 
   function clearNode(id) { $(id).textContent = ''; }
 
+  function extractTimingBlock(result) {
+    return result && result.resultado && result.resultado.datos && result.resultado.datos.metricas
+      ? (result.resultado.datos.metricas.tiempos || null)
+      : null;
+  }
+
+  function renderTimings(result) {
+    const tiempos = extractTimingBlock(result);
+    $('timingsOut').textContent = tiempos ? json(tiempos) : '';
+  }
+
   $('img').addEventListener('change', (ev) => {
     const file = ev.target.files && ev.target.files[0];
     const box = $('previewBox');
@@ -288,12 +303,21 @@
 
   function renderSummary(result) {
     const summary = result && result.resultado ? result.resultado : {};
-    const estado = summary.estadoPasaporteModulo || '-';
     const cls = result && result.ok ? 'ok' : 'bad';
+    const metricas = summary && summary.datos ? (summary.datos.metricas || {}) : {};
+    const tiempos = metricas && metricas.tiempos ? metricas.tiempos : {};
+    const fetchVision = tiempos?.cliente?.t_fetch_vision_total_ms ?? '-';
+    const gasVision = tiempos?.upstream?.vision?.t_total_gas_interno_ms ?? '-';
+    const externoVision = tiempos?.estimaciones?.t_vision_externo_no_desglosado_ms ?? '-';
+    const rescate = tiempos?.cliente?.t_rescate_total_ms ?? '-';
     $('b1Summary').innerHTML = [
       `<span class="pill ${cls}">ok: ${String(result && result.ok)}</span>`,
-      `<span class="pill">pasaporte: ${estado}</span>`,
+      `<span class="pill">pasaporte: ${summary.estadoPasaporteModulo || '-'}</span>`,
       `<span class="pill">elapsedMs: ${summary.elapsedMs ?? '-'}</span>`,
+      `<span class="pill">fetch Vision: ${fetchVision}</span>`,
+      `<span class="pill">GAS Vision: ${gasVision}</span>`,
+      `<span class="pill">externo Vision: ${externoVision}</span>`,
+      `<span class="pill">rescate: ${rescate}</span>`,
       `<span class="pill">acción: ${summary.accionSugeridaParaCerebro || '-'}</span>`
     ].join(' ');
   }
@@ -334,20 +358,36 @@
     return walk(payload);
   }
 
+  function nowMs() {
+    return (typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now();
+  }
+
   async function postJsonSimple(url, body) {
+    const tInicio = nowMs();
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(body)
     });
     const raw = await resp.text();
+    const tFetchTotal = Math.round(nowMs() - tInicio);
+    const tParseInicio = nowMs();
     let payload;
     try {
       payload = raw ? JSON.parse(raw) : null;
     } catch {
       payload = { ok: false, error: { mensaje: raw || 'Respuesta no JSON.' } };
     }
-    return { resp, payload };
+    const tParseCliente = Math.round(nowMs() - tParseInicio);
+    return {
+      resp,
+      payload,
+      timings: {
+        t_fetch_total_ms: tFetchTotal,
+        t_parse_respuesta_cliente_ms: tParseCliente,
+        t_total_cliente_ms: Math.round(nowMs() - tInicio)
+      }
+    };
   }
 
   async function callSecurity(accion, datos) {
@@ -361,9 +401,10 @@
       sessionToken: accion === cfg.actionLogin ? '' : tokenActual,
       datos
     };
-    const { resp, payload } = await postJsonSimple(cfg.url, body);
+    const { resp, payload, timings } = await postJsonSimple(cfg.url, body);
     const result = payload && typeof payload === 'object' ? payload : { ok: false, error: { mensaje: 'Respuesta inválida de Seguridad.' } };
     result.__httpStatus = resp.status;
+    result.__timings = timings;
     return result;
   }
 
@@ -425,6 +466,7 @@
     $('b1Summary').innerHTML = '';
     clearNode('b1Out');
     clearNode('diagOut');
+    clearNode('timingsOut');
   });
 
   $('runManual').addEventListener('click', async () => {
@@ -452,11 +494,13 @@
       $('b1Out').textContent = json(result);
       const diag = result && result.resultado && result.resultado.datos ? (result.resultado.datos.diagnostico || null) : null;
       $('diagOut').textContent = json(diag);
+      renderTimings(result);
     } catch (err) {
       const payload = { ok: false, error: { mensaje: err.message || String(err) } };
       renderSummary(payload);
       $('b1Out').textContent = json(payload);
       $('diagOut').textContent = '';
+      $('timingsOut').textContent = '';
     }
   });
 
@@ -503,10 +547,10 @@
       add(fiab.huecos > 0 ? makePass('Huecos heurísticos vivos', json({ huecos: fiab.huecos })) : makeFail('Huecos heurísticos vivos', json({ huecos: fiab.huecos })));
 
       const simOk = B1_verificarSimetria([{slotId:'B1'},{slotId:'B2'}],[{slotId:'B1'},{slotId:'B2'}]);
-      add(simOk.exacta ? makePass('Simetría exacta', json(simOk)) : makeFail('Simetría exacta', json(simOk)));
+      add(simOk.simetrica ? makePass('Simetría exacta', json(simOk)) : makeFail('Simetría exacta', json(simOk)));
 
       const simKo = B1_verificarSimetria([{slotId:'B1'},{slotId:'B2'}],[{slotId:'B1'},{slotId:'B3'}]);
-      add(!simKo.exacta ? makePass('Asimetría detectada', json(simKo)) : makeFail('Asimetría detectada', json(simKo)));
+      add(!simKo.simetrica ? makePass('Asimetría detectada', json(simKo)) : makeFail('Asimetría detectada', json(simKo)));
 
       const mergeKo = B1_ejecutarMerge('texto base', [{slotId:'B1', textoOriginal:'har_ina', roiRef:'roi://1'}], { intentado:true, correcciones:[{slotId:'B2', solucion:'harina', estado:'aplicable'}], slotsEnviados:1, slotsDevueltos:1 });
       add(mergeKo.mergeCancelado ? makePass('Merge cancela asimetría', json({ mergeStatus: mergeKo.mergeStatus })) : makeFail('Merge cancela asimetría', json(mergeKo)));
@@ -517,20 +561,20 @@
       const originalFetch = window.fetch;
       try {
         let bodyVision = null;
-        window.fetch = async (_url, options) => ({ ok:true, status:200, async json(){ bodyVision = JSON.parse(options.body); return { ok:true, resultado:{ ocrTexto:'leche entera', vacio:false, metadatos:{ paginas:1, bloques:1 } } }; } });
+        window.fetch = async (_url, options) => ({ ok:true, status:200, async text(){ bodyVision = JSON.parse(options.body); return JSON.stringify({ ok:true, resultado:{ ocrTexto:'leche entera', vacio:false, metadatos:{ paginas:1, bloques:1 } } }); } });
         const canvas = document.createElement('canvas'); canvas.width = 4; canvas.height = 4;
         const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0,0,4,4);
-        await B1_llamarVisionOCR(canvas, 'base64', 'tok', 'https://dummy');
-        add((bodyVision && bodyVision.moduloOrigen === 'BOXER1' && bodyVision.moduloDestino === 'TRASTIENDA' && bodyVision.accion === 'procesarVision')
-          ? makePass('Payload Vision correcto', json(bodyVision))
-          : makeFail('Payload Vision correcto', json(bodyVision)));
+        const visionCall = await B1_llamarVisionOCR(canvas, 'base64', 'tok', 'https://dummy');
+        add((bodyVision && bodyVision.moduloOrigen === 'BOXER1' && bodyVision.moduloDestino === 'TRASTIENDA' && bodyVision.accion === 'procesarVision' && visionCall.tiempos && visionCall.tiempos.cliente)
+          ? makePass('Payload Vision correcto', json({ bodyVision, tiempos: visionCall.tiempos.cliente }))
+          : makeFail('Payload Vision correcto', json({ bodyVision, visionCall })));
 
         let bodyGemini = null;
-        window.fetch = async (_url, options) => ({ ok:true, status:200, async json(){ bodyGemini = JSON.parse(options.body); return { ok:true, resultado:{ respuestaGemini:{ correcciones:[], simetria:'exacta' } } }; } });
-        await B1_enviarRescateGemini('texto base completo', [{ slotId:'B1', textoOriginal:'har_ina', confidence:0.4, contexto:'ingredientes harina', roiBase64:'AAAA' }], 'tok', 'https://dummy');
-        add((bodyGemini && bodyGemini.moduloOrigen === 'BOXER1' && bodyGemini.datos.ocrTexto === 'texto base completo')
-          ? makePass('Payload Gemini usa textoBase', json(bodyGemini))
-          : makeFail('Payload Gemini usa textoBase', json(bodyGemini)));
+        window.fetch = async (_url, options) => ({ ok:true, status:200, async text(){ bodyGemini = JSON.parse(options.body); return JSON.stringify({ ok:true, resultado:{ respuestaGemini:{ correcciones:[], simetria:'exacta' } } }); } });
+        const geminiCall = await B1_enviarRescateGemini('texto base completo', [{ slotId:'B1', textoOriginal:'har_ina', confidence:0.4, contexto:'ingredientes harina', roiBase64:'AAAA' }], 'tok', 'https://dummy');
+        add((bodyGemini && bodyGemini.moduloOrigen === 'BOXER1' && bodyGemini.datos.ocrTexto === 'texto base completo' && geminiCall.tiempos && geminiCall.tiempos.cliente)
+          ? makePass('Payload Gemini usa textoBase', json({ bodyGemini, tiempos: geminiCall.tiempos.cliente }))
+          : makeFail('Payload Gemini usa textoBase', json({ bodyGemini, geminiCall })));
       } finally {
         window.fetch = originalFetch;
       }
