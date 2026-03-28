@@ -141,7 +141,7 @@ function B1_crearRespuestaError(params) {
     motivo = null,
     errorOriginal = null,
     diagnostico = null,
-    metricas = null  // ← AÑADIR ESTA LÍNEA
+    metricas = null
   } = params;
 
   const errorObj = {
@@ -165,6 +165,7 @@ function B1_crearRespuestaError(params) {
 
   const datos = {};
   if (textoBaseVision !== null && textoBaseVision !== undefined) datos.textoBaseVision = textoBaseVision;
+  if (metricas) datos.metricas = metricas;
   if (diagnostico) datos.diagnostico = diagnostico;
 
   const resultado = {
