@@ -235,10 +235,10 @@
 <script src="B1_contratos_unificado_patch.js"></script>
 <script src="B1_diagnostico_unificado_patch.js"></script>
 <script src="B1_prechequeo_unificado_patch.js"></script>
-<script <script src="B1_ocr_base_unificado_patch.js?v=2"></script>
+<script src="B1_ocr_base_unificado_patch.js?v=2"></script>
 <script src="B1_fiabilidad.js"></script>
 <script src="B1_slots.js"></script>
-<script src="B1_rescate.js"></script>
+<script src="B1_rescate.js?v=2"></script>
 <script src="B1_merge.js"></script>
 <script src="B1_core_unificado_patch.js"></script>
 <script>
@@ -305,7 +305,6 @@
     return walk(payload);
   }
 
-  // FORMATO FIREBASE: sin moduloOrigen, "payload" en lugar de "datos"
   async function callFirebase(moduloDestino, accion, payload) {
     const url = $('urlBackend').value.trim();
     if (!url) throw new Error('Falta URL Backend Firebase.');
@@ -371,7 +370,7 @@
       const token = $('token').value.trim();
       const payload = await callFirebase('Seguridad', 'renovarActividad', { token });
       const nuevo = extractToken(payload);
-      if (nuevo) $('token').value = nuevo;
+      if (nuevo) $('token').value = token;
       writeSecurityStatus(payload, payload && payload.ok === true);
     } catch (err) {
       writeSecurityStatus({ ok: false, error: { mensaje: err.message } }, false);
@@ -561,34 +560,23 @@
     body.innerHTML = '';
     tests.forEach((t, i) => {
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${i+1}</td><td>${t.name}</td><td class="${t.ok ? 'ok' : 'bad'}">${t.ok ? 'OK' : 'FALLO'}</td><td class="mono">${escapeHtml(String(t.detail || ''))}</td>`;
+      tr.innerHTML = `
+        <td>${i+1}</td>
+        <td>${t.name}</td>
+        <td class="${t.ok ? 'ok' : 'bad'}">${t.ok ? 'PASS' : 'FAIL'}</td>
+        <td class="mono" style="font-size:12px;">${String(t.detail || '')}</td>
+      `;
       body.appendChild(tr);
     });
-    
-    $('testsRaw').textContent = json({ 
-      total: tests.length, 
-      ok: tests.filter(t => t.ok).length, 
-      fail: tests.filter(t => !t.ok).length, 
-      tests 
-    });
-  }
 
-  function escapeHtml(str) {
-    return str.replace(/[&<>"']/g, c => ({ 
-      '&':'&amp;', 
-      '<':'&lt;', 
-      '>':'&gt;', 
-      '"':'&quot;', 
-      "'":'&#39;' 
-    }[c]));
+    $('testsRaw').textContent = json(tests);
   }
 
   $('runTests').addEventListener('click', runSmokeTests);
   $('clearTests').addEventListener('click', () => {
     $('testsBody').innerHTML = '';
-    clearNode('testsRaw');
+    $('testsRaw').textContent = '';
   });
-
 </script>
 </body>
 </html>
