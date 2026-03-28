@@ -47,14 +47,15 @@ async function B1_enviarRescateGemini(textoBase, slots, sessionToken, urlTrastie
   const fragmentosImagen = slots
     .filter(slot => slot.roiBase64)
     .map(slot => ({
-      imageBase64: slot.roiBase64,
-      mimeType: 'image/jpeg',
-      etiqueta: `ROI ${slot.slotId}`
-    }));
-
-  const body = {
-    moduloOrigen: B1_CONFIG.TRASTIENDA_MODULO_ORIGEN,
-    moduloDestino: B1_CONFIG.TRASTIENDA_MODULO_DESTINO,
+    const body = {
+  moduloDestino: B1_CONFIG.TRASTIENDA_MODULO_DESTINO,
+  accion: B1_CONFIG.TRASTIENDA_ACCION_GEMINI,
+  payload: {
+    ocrTexto: String(textoBase || '').trim(),
+    contexto: prompt,
+    fragmentosImagen
+  }
+};
     accion: B1_CONFIG.TRASTIENDA_ACCION_GEMINI,
     sessionToken,
     datos: {
