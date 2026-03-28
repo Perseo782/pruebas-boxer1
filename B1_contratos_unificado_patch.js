@@ -140,7 +140,8 @@ function B1_crearRespuestaError(params) {
     detail = null,
     motivo = null,
     errorOriginal = null,
-    diagnostico = null
+    diagnostico = null,
+    metricas = null  // ← AÑADIR ESTA LÍNEA
   } = params;
 
   const errorObj = {
