@@ -1,4 +1,3 @@
-
 /**
  * BOXER 1 · OCR base adaptado a GAS unificado + OCR rico completo.
  */
@@ -10,15 +9,14 @@ async function B1_llamarVisionOCR(canvas, sendMode, sessionToken, urlTrastienda)
   const base64 = dataUrl.split(',')[1];
   const tPayload = Date.now();
   const body = {
-    moduloOrigen: B1_CONFIG.TRASTIENDA_MODULO_ORIGEN,
-    const body = {
-  moduloDestino: B1_CONFIG.TRASTIENDA_MODULO_DESTINO,
-  accion: B1_CONFIG.TRASTIENDA_ACCION_VISION,
-  payload: { imageBase64: base64, mimeType: 'image/jpeg' }
-};
+    moduloDestino: B1_CONFIG.TRASTIENDA_MODULO_DESTINO,
+    accion: B1_CONFIG.TRASTIENDA_ACCION_VISION,
+    payload: { imageBase64: base64, mimeType: 'image/jpeg' }
+  };
+  const t_build_payload_vision_ms = Date.now() - tPayload;
   const tFetch = Date.now();
   const response = await fetch(urlTrastienda, {
-    method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body)
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
   });
   const t_fetch_vision_total_ms = Date.now() - tFetch;
 
