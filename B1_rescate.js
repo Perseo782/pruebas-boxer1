@@ -5,6 +5,33 @@
  * Adaptado al contrato real de Trastienda para Gemini.
  */
 
+// ══════════════════════════════════════════════════════════════
+// FUNCIONES AUXILIARES DE TIMING
+// ══════════════════════════════════════════════════════════════
+
+function _B1_nowMs() {
+  return Date.now();
+}
+
+function _B1_roundMs(ms) {
+  return Math.round(ms);
+}
+
+function _B1_extraerTiemposInternosResultado(respuesta) {
+  if (!respuesta || !respuesta.meta || !respuesta.meta.tiemposInternos) return null;
+  return respuesta.meta.tiemposInternos;
+}
+
+function _B1_estimarExternoNoDesglosado(fetchTotal, tiemposInternos) {
+  if (!tiemposInternos || typeof tiemposInternos.t_total_trastienda_ms !== 'number') return null;
+  if (typeof fetchTotal !== 'number') return null;
+  return Math.max(0, fetchTotal - tiemposInternos.t_total_trastienda_ms);
+}
+
+// ══════════════════════════════════════════════════════════════
+// RESCATE AVANZADO
+// ══════════════════════════════════════════════════════════════
+
 const B1_RESCUE_ESTIMATED_MS = 3000;
 
 function _B1_sumarObjetoNumerico(destino, origen) {
