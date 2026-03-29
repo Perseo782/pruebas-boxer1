@@ -125,8 +125,8 @@ async function B1_enviarRescateGemini(textoBase, slots, sessionToken, urlTrastie
     }));
 
   const body = {
-    moduloDestino: B1_CONFIG.TRASTIENDA_MODULO_DESTINO,
-    accion: B1_CONFIG.TRASTIENDA_ACCION_GEMINI,
+    moduloDestino: 'TRASTIENDA',
+    accion: 'procesarGemini',
     payload: {
       ocrTexto: String(textoBase || '').trim(),
       contexto: prompt,
@@ -160,7 +160,7 @@ async function B1_enviarRescateGemini(textoBase, slots, sessionToken, urlTrastie
     throw B1_crearErrorUpstream({
       message: err.mensaje || err.message || `Trastienda respondió ${response.status || 'sin status'} en rescate Gemini`,
       upstreamCode: err.codigo || `HTTP_${response.status || 'UNKNOWN'}`,
-      upstreamModule: err.modulo || B1_CONFIG.TRASTIENDA_MODULO_DESTINO,
+      upstreamModule: err.modulo || 'TRASTIENDA',
       raw: respuesta
     });
   }
