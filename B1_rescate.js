@@ -48,21 +48,67 @@ function _B1_sumarObjetoNumerico(destino, origen) {
 
 function B1_construirPromptRescate(slots) {
   const instrucciones = [
-    'Eres un corrector OCR especializado en etiquetas alimentarias.',
-    'Corrige SOLO lo deducible con certeza. No inventes.',
-    'Devuelve exactamente los mismos slotId. Si no puedes resolver, estado = "no_resuelta".',
-    'JSON estricto con {"correcciones":[...],"simetria":"exacta"}.',
+    'MOTOR DE RECONSTRUCCIÓN OCR - ETIQUETAS ALIMENTARIAS',
     '',
-    'SLOTS A CORREGIR:'
+    'CONTEXTO: Lenguaje de supermercados y seguridad alimentaria.',
+    'MISIÓN: Resolver palabras/cifras rotas en slots identificados.',
+    '',
+    'VALIDACIÓN DUAL (REGLA DE ORO):',
+    'Cada slot tiene imagen ROI + contexto intrabloque.',
+    'SIEMPRE cruza evidencia visual con palabras antes/después.',
+    '',
+    'REGLAS CRÍTICAS:',
+    '',
+    '1. AMBIGÜEDAD ENTRE ALÉRGENOS:',
+    '   Si dos alérgenos tienen sentido (maíz/maní, soja/soya):',
+    '   → Usa imagen para desempatar',
+    '   → Si imagen borrosa → estado="no_resuelta"',
+    '   PROHIBIDO elegir al azar.',
+    '',
+    '2. CIFRAS Y PESOS:',
+    '   Si número roto (1_, 5_0g) y la imagen NO permite ver 100% claro:',
+    '   → estado="no_resuelta"',
+    '   NO aproximes. El peso es dato legal.',
+    '',
+    '3. VACÍO ILEGIBLE:',
+    '   Si imagen es borrón/destello blanco:',
+    '   → estado="no_resuelta"',
+    '   Preferible error marcado que invención.',
+    '',
+    '4. UNIDADES DE MEDIDA:',
+    '   Ortografía fija (litro, kg, ml).',
+    '   Usa imagen para confirmar.',
+    '',
+    '5. NO TRADUCIR:',
+    '   Conserva idioma original del texto.',
+    '',
+    '6. CONSERVACIÓN:',
+    '   Si texto slot ya es válido y la imagen confirma → consérvalo.',
+    '',
+    'FORMATO SALIDA (JSON PURO - SIN MARKDOWN):',
+    '{',
+    '  "correcciones": [',
+    '    {"slotId":"B1", "solucion":"harina", "estado":"aplicable"},',
+    '    {"slotId":"B2", "solucion":"", "estado":"no_resuelta"}',
+    '  ],',
+    '  "simetria":"exacta"',
+    '}',
+    '',
+    'SLOTS:'
   ];
 
   slots.forEach(slot => {
-    instrucciones.push(`\n--- Slot ${slot.slotId} ---`);
-    instrucciones.push(`Texto OCR original: "${slot.textoOriginal}"`);
-    instrucciones.push(`Confianza OCR: ${slot.confidence}`);
-    instrucciones.push(`Contexto intrabloque: ${slot.contexto}`);
-    if (slot.roiBase64) instrucciones.push('[Imagen ROI adjunta para este slot]');
+    instrucciones.push('');
+    instrucciones.push(`--- ${slot.slotId} ---`);
+    instrucciones.push(`OCR: "${slot.textoOriginal}"`);
+    instrucciones.push(`Contexto: ${slot.contexto}`);
+    if (slot.roiBase64) {
+      instrucciones.push('[Imagen ROI adjunta - validación visual obligatoria]');
+    }
   });
+
+  instrucciones.push('');
+  instrucciones.push('RESPONDE SOLO JSON. SIN CHARLA.');
 
   return instrucciones.join('\n');
 }
