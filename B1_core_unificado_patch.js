@@ -1,4 +1,3 @@
-
 async function B1_analizar(input, config) {
   const traceId = B1_generarTraceId();
   const startTime = Date.now();
@@ -10,12 +9,38 @@ async function B1_analizar(input, config) {
   };
 
   const validacion = B1_validarEntrada(input);
-  if (!validacion.valid) return B1_crearRespuestaError({ code:B1_ERRORES.ERROR_INTERNO, message:validacion.reason, tipoFallo:B1_TIPO_FALLO.IRRECUPERABLE_POR_DISENO, retryable:false, traceId, elapsedMs:Date.now()-startTime, accionSugeridaParaCerebro:B1_ACCIONES_CEREBRO.PEDIR_DATO_AL_USUARIO, motivo:'Entrada incompleta o con valores no permitidos.', diagnostico:B1_exportarDiagnostico(diag) });
+  if (!validacion.valid) {
+    tiempos.total.t_total_boxer1_ms = Date.now() - startTime;
+    return B1_crearRespuestaError({ 
+      code:B1_ERRORES.ERROR_INTERNO, 
+      message:validacion.reason, 
+      tipoFallo:B1_TIPO_FALLO.IRRECUPERABLE_POR_DISENO, 
+      retryable:false, 
+      traceId, 
+      elapsedMs:Date.now()-startTime, 
+      accionSugeridaParaCerebro:B1_ACCIONES_CEREBRO.PEDIR_DATO_AL_USUARIO, 
+      motivo:'Entrada incompleta o con valores no permitidos.', 
+      metricas: B1_crearMetricas({ elapsedMs:Date.now()-startTime, abortReason:'Validación de entrada falló.', tiempos }),
+      diagnostico:B1_exportarDiagnostico(diag) 
+    });
+  }
 
   const validacionConfig = B1_validarConfig(config);
   if (!validacionConfig.valid) {
     if (typeof B1_diagModoSeguro === 'function') B1_diagModoSeguro(diag, Date.now() - startTime, validacionConfig.reason, 0);
-    return B1_crearRespuestaError({ code:B1_ERRORES.ERROR_INTERNO, message:validacionConfig.reason, tipoFallo:B1_TIPO_FALLO.IRRECUPERABLE_POR_DISENO, retryable:false, traceId, elapsedMs:Date.now()-startTime, accionSugeridaParaCerebro:B1_ACCIONES_CEREBRO.PEDIR_DATO_AL_USUARIO, motivo:'Configuración inválida de Boxer 1.', diagnostico:B1_exportarDiagnostico(diag) });
+    tiempos.total.t_total_boxer1_ms = Date.now() - startTime;
+    return B1_crearRespuestaError({ 
+      code:B1_ERRORES.ERROR_INTERNO, 
+      message:validacionConfig.reason, 
+      tipoFallo:B1_TIPO_FALLO.IRRECUPERABLE_POR_DISENO, 
+      retryable:false, 
+      traceId, 
+      elapsedMs:Date.now()-startTime, 
+      accionSugeridaParaCerebro:B1_ACCIONES_CEREBRO.PEDIR_DATO_AL_USUARIO, 
+      motivo:'Configuración inválida de Boxer 1.', 
+      metricas: B1_crearMetricas({ elapsedMs:Date.now()-startTime, abortReason:'Validación de config falló.', tiempos }),
+      diagnostico:B1_exportarDiagnostico(diag) 
+    });
   }
 
   const datos = validacion.datos;
@@ -33,7 +58,19 @@ async function B1_analizar(input, config) {
     B1_diagPrechequeo(diag, prechequeo.ok, prechequeo.problemas || [], Date.now() - startTime, preStage);
     if (!prechequeo.ok) {
       tiempos.total.t_total_boxer1_ms = Date.now() - startTime;
-      return B1_crearRespuestaError({ code:B1_ERRORES.IMAGEN_INVALIDA, message:prechequeo.abortReason || 'Foto imposible de procesar por mala calidad.', tipoFallo:B1_TIPO_FALLO.IRRECUPERABLE_POR_DISENO, retryable:false, traceId, elapsedMs:Date.now()-startTime, accionSugeridaParaCerebro:B1_ACCIONES_CEREBRO.CORTE_TEMPRANO, motivo:'La imagen no cumple los mínimos de calidad.', detail:{ problemas:prechequeo.problemas, metricas:prechequeo.metricasImagen }, diagnostico:B1_exportarDiagnostico(diag) });
+      return B1_crearRespuestaError({ 
+        code:B1_ERRORES.IMAGEN_INVALIDA, 
+        message:prechequeo.abortReason || 'Foto imposible de procesar por mala calidad.', 
+        tipoFallo:B1_TIPO_FALLO.IRRECUPERABLE_POR_DISENO, 
+        retryable:false, 
+        traceId, 
+        elapsedMs:Date.now()-startTime, 
+        accionSugeridaParaCerebro:B1_ACCIONES_CEREBRO.CORTE_TEMPRANO, 
+        motivo:'La imagen no cumple los mínimos de calidad.', 
+        detail:{ problemas:prechequeo.problemas, metricas:prechequeo.metricasImagen }, 
+        metricas: B1_crearMetricas({ elapsedMs:Date.now()-startTime, abortReason:prechequeo.abortReason || 'Prechequeo falló.', tiempos }),
+        diagnostico:B1_exportarDiagnostico(diag) 
+      });
     }
     canvasListo = prechequeo.canvas;
     if (cronometro.expired()) return _respuestaTimeout('antes_ocr', traceId, startTime, textoBase, null, diag, tiempos);
@@ -42,8 +79,21 @@ async function B1_analizar(input, config) {
     let respuestaVision;
     try { respuestaVision = await B1_llamarVisionOCR(canvasListo, datos.sendMode, input.sessionToken, cfg.urlTrastienda); }
     catch (err) {
+      tiempos.total.t_total_boxer1_ms = Date.now() - startTime;
       B1_diagEncadenado(diag, err.upstreamCode || 'UPSTREAM_UNKNOWN', err.upstreamModule || 'TRASTIENDA', Date.now() - startTime, 0);
-      return B1_crearRespuestaError({ code:B1_ERRORES.OCR_FAILED, message:`Fallo en Vision OCR: ${err.message}`, tipoFallo:B1_TIPO_FALLO.DESCONOCIDO, retryable:true, traceId, elapsedMs:Date.now()-startTime, accionSugeridaParaCerebro:B1_ACCIONES_CEREBRO.REINTENTAR, chainedFrom:err.upstreamCode || null, errorOriginal:{ upstreamModule:err.upstreamModule || null, raw:err.raw || null }, diagnostico:B1_exportarDiagnostico(diag) });
+      return B1_crearRespuestaError({ 
+        code:B1_ERRORES.OCR_FAILED, 
+        message:`Fallo en Vision OCR: ${err.message}`, 
+        tipoFallo:B1_TIPO_FALLO.DESCONOCIDO, 
+        retryable:true, 
+        traceId, 
+        elapsedMs:Date.now()-startTime, 
+        accionSugeridaParaCerebro:B1_ACCIONES_CEREBRO.REINTENTAR, 
+        chainedFrom:err.upstreamCode || null, 
+        errorOriginal:{ upstreamModule:err.upstreamModule || null, raw:err.raw || null }, 
+        metricas: B1_crearMetricas({ elapsedMs:Date.now()-startTime, abortReason:'Vision OCR falló.', tiempos }),
+        diagnostico:B1_exportarDiagnostico(diag) 
+      });
     }
     Object.assign(tiempos.cliente, respuestaVision.__b1TiemposCliente || {});
     tiempos.upstream.vision = respuestaVision.__b1Upstream || null;
@@ -60,7 +110,19 @@ async function B1_analizar(input, config) {
 
     if (ocrNormalizado.visionVacia) {
       tiempos.total.t_total_boxer1_ms = Date.now() - startTime;
-      return B1_crearRespuestaError({ code:B1_ERRORES.OCR_VACIO, message:'Vision no detectó texto en la imagen.', tipoFallo:B1_TIPO_FALLO.IRRECUPERABLE_POR_DISENO, retryable:false, traceId, elapsedMs:Date.now()-startTime, accionSugeridaParaCerebro:B1_ACCIONES_CEREBRO.CORTE_TEMPRANO, textoBaseVision:'', motivo:'La imagen no contiene texto detectable.', diagnostico:B1_exportarDiagnostico(diag) });
+      return B1_crearRespuestaError({ 
+        code:B1_ERRORES.OCR_VACIO, 
+        message:'Vision no detectó texto en la imagen.', 
+        tipoFallo:B1_TIPO_FALLO.IRRECUPERABLE_POR_DISENO, 
+        retryable:false, 
+        traceId, 
+        elapsedMs:Date.now()-startTime, 
+        accionSugeridaParaCerebro:B1_ACCIONES_CEREBRO.CORTE_TEMPRANO, 
+        textoBaseVision:'', 
+        motivo:'La imagen no contiene texto detectable.', 
+        metricas: B1_crearMetricas({ elapsedMs:Date.now()-startTime, abortReason:'Vision no detectó texto.', tiempos }),
+        diagnostico:B1_exportarDiagnostico(diag) 
+      });
     }
 
     const tFiab = Date.now();
@@ -69,9 +131,22 @@ async function B1_analizar(input, config) {
     B1_diagFiabilidad(diag, fiabilidad, Date.now() - startTime, tiempos.cliente.t_fiabilidad_ms);
 
     if (!fiabilidad.fotoViable) {
-      const metricas = B1_crearMetricas({ pageConfidence:fiabilidad.pageConfidence, criticalZoneScore:fiabilidad.criticalZoneScore, elapsedMs:Date.now()-startTime, abortReason:fiabilidad.razonInviable, tiempos:tiempos });
       tiempos.total.t_total_boxer1_ms = Date.now() - startTime;
-      return B1_crearRespuestaError({ code:B1_ERRORES.OCR_RUIDO, message:fiabilidad.razonInviable, tipoFallo:B1_TIPO_FALLO.IRRECUPERABLE_POR_DISENO, retryable:false, traceId, elapsedMs:Date.now()-startTime, accionSugeridaParaCerebro:B1_ACCIONES_CEREBRO.CORTE_TEMPRANO, textoBaseVision:textoBase, motivo:'El OCR devolvió texto pero la fiabilidad es insuficiente para continuar.', detail:{ fiabilidad:metricas }, diagnostico:B1_exportarDiagnostico(diag) });
+      const metricas = B1_crearMetricas({ pageConfidence:fiabilidad.pageConfidence, criticalZoneScore:fiabilidad.criticalZoneScore, elapsedMs:Date.now()-startTime, abortReason:fiabilidad.razonInviable, tiempos:tiempos });
+      return B1_crearRespuestaError({ 
+        code:B1_ERRORES.OCR_RUIDO, 
+        message:fiabilidad.razonInviable, 
+        tipoFallo:B1_TIPO_FALLO.IRRECUPERABLE_POR_DISENO, 
+        retryable:false, 
+        traceId, 
+        elapsedMs:Date.now()-startTime, 
+        accionSugeridaParaCerebro:B1_ACCIONES_CEREBRO.CORTE_TEMPRANO, 
+        textoBaseVision:textoBase, 
+        motivo:'El OCR devolvió texto pero la fiabilidad es insuficiente para continuar.', 
+        detail:{ fiabilidad:metricas }, 
+        metricas,
+        diagnostico:B1_exportarDiagnostico(diag) 
+      });
     }
 
     if (!datos.agentEnabled) {
@@ -103,8 +178,22 @@ async function B1_analizar(input, config) {
     let resultadoRescate;
     try { resultadoRescate = await B1_ejecutarRescate(loteRescate, textoBase, cronometro, input.sessionToken, cfg.urlTrastienda); }
     catch (err) {
+      tiempos.total.t_total_boxer1_ms = Date.now() - startTime;
       B1_diagEncadenado(diag, err.upstreamCode || 'UPSTREAM_UNKNOWN', err.upstreamModule || 'TRASTIENDA', Date.now() - startTime, 0);
-      return B1_crearRespuestaError({ code:B1_ERRORES.RESCATE_FALLIDO, message:`Fallo en rescate Gemini: ${err.message}`, tipoFallo:B1_TIPO_FALLO.DESCONOCIDO, retryable:true, traceId, elapsedMs:Date.now()-startTime, accionSugeridaParaCerebro:B1_ACCIONES_CEREBRO.REINTENTAR_UNA_VEZ, textoBaseVision:textoBase, chainedFrom:err.upstreamCode || null, errorOriginal:{ upstreamModule:err.upstreamModule || null, raw:err.raw || null }, diagnostico:B1_exportarDiagnostico(diag) });
+      return B1_crearRespuestaError({ 
+        code:B1_ERRORES.RESCATE_FALLIDO, 
+        message:`Fallo en rescate Gemini: ${err.message}`, 
+        tipoFallo:B1_TIPO_FALLO.DESCONOCIDO, 
+        retryable:true, 
+        traceId, 
+        elapsedMs:Date.now()-startTime, 
+        accionSugeridaParaCerebro:B1_ACCIONES_CEREBRO.REINTENTAR_UNA_VEZ, 
+        textoBaseVision:textoBase, 
+        chainedFrom:err.upstreamCode || null, 
+        errorOriginal:{ upstreamModule:err.upstreamModule || null, raw:err.raw || null }, 
+        metricas: B1_crearMetricas({ pageConfidence:fiabilidad.pageConfidence, criticalZoneScore:fiabilidad.criticalZoneScore, elapsedMs:Date.now()-startTime, abortReason:'Rescate Gemini falló.', tiempos }),
+        diagnostico:B1_exportarDiagnostico(diag) 
+      });
     }
     tiempos.cliente.t_rescate_total_ms = Date.now() - tRescate;
     B1_diagRescate(diag, resultadoRescate, Date.now() - startTime, tiempos.cliente.t_rescate_total_ms);
@@ -126,10 +215,35 @@ async function B1_analizar(input, config) {
     if (pasaporte.estado === B1_PASSPORT.VERDE || pasaporte.estado === B1_PASSPORT.NARANJA) {
       return B1_crearRespuestaOk({ textoBaseVision:textoBase, textoAuditado:merge.textoAuditado, estadoPasaporte:pasaporte.estado, correcciones:merge.correcciones, noResueltas:merge.noResueltas, roiRefsRevision:merge.roiRefsRevision, metricas, traceId, elapsedMs, accionSugeridaParaCerebro:pasaporte.accionSugeridaParaCerebro, warning:pasaporte.estado === B1_PASSPORT.NARANJA ? pasaporte.explicacion : null, diagnostico:B1_exportarDiagnostico(diag) });
     }
-    return B1_crearRespuestaError({ code:B1_ERRORES.RESCATE_FALLIDO, message:pasaporte.explicacion, tipoFallo:B1_TIPO_FALLO.IRRECUPERABLE_POR_DISENO, retryable:false, traceId, elapsedMs, accionSugeridaParaCerebro:pasaporte.accionSugeridaParaCerebro, textoBaseVision:textoBase, motivo:'Rescate y merge no dejaron salida fiable y no existe cadena real de autoreparación en Boxer 1.', diagnostico:B1_exportarDiagnostico(diag) });
+    tiempos.total.t_total_boxer1_ms = Date.now() - startTime;
+    return B1_crearRespuestaError({ 
+      code:B1_ERRORES.RESCATE_FALLIDO, 
+      message:pasaporte.explicacion, 
+      tipoFallo:B1_TIPO_FALLO.IRRECUPERABLE_POR_DISENO, 
+      retryable:false, 
+      traceId, 
+      elapsedMs, 
+      accionSugeridaParaCerebro:pasaporte.accionSugeridaParaCerebro, 
+      textoBaseVision:textoBase, 
+      motivo:'Rescate y merge no dejaron salida fiable y no existe cadena real de autoreparación en Boxer 1.', 
+      metricas: B1_crearMetricas({ pageConfidence:fiabilidad.pageConfidence, criticalZoneScore:fiabilidad.criticalZoneScore, elapsedMs, abortReason:'Pasaporte ROJO final.', tiempos }),
+      diagnostico:B1_exportarDiagnostico(diag) 
+    });
   } catch (errorInesperado) {
     tiempos.total.t_total_boxer1_ms = Date.now() - startTime;
-    return B1_crearRespuestaError({ code:B1_ERRORES.ERROR_INTERNO, message:`Error inesperado: ${errorInesperado.message}`, tipoFallo:B1_TIPO_FALLO.DESCONOCIDO, retryable:true, traceId, elapsedMs:Date.now()-startTime, accionSugeridaParaCerebro:B1_ACCIONES_CEREBRO.REINTENTAR_UNA_VEZ, textoBaseVision:textoBase || null, errorOriginal:{ message:errorInesperado.message, stack:errorInesperado.stack || null, upstreamCode:errorInesperado.upstreamCode || null, upstreamModule:errorInesperado.upstreamModule || null, raw:errorInesperado.raw || null }, diagnostico:B1_exportarDiagnostico(diag) });
+    return B1_crearRespuestaError({ 
+      code:B1_ERRORES.ERROR_INTERNO, 
+      message:`Error inesperado: ${errorInesperado.message}`, 
+      tipoFallo:B1_TIPO_FALLO.DESCONOCIDO, 
+      retryable:true, 
+      traceId, 
+      elapsedMs:Date.now()-startTime, 
+      accionSugeridaParaCerebro:B1_ACCIONES_CEREBRO.REINTENTAR_UNA_VEZ, 
+      textoBaseVision:textoBase || null, 
+      errorOriginal:{ message:errorInesperado.message, stack:errorInesperado.stack || null, upstreamCode:errorInesperado.upstreamCode || null, upstreamModule:errorInesperado.upstreamModule || null, raw:errorInesperado.raw || null }, 
+      metricas: B1_crearMetricas({ elapsedMs:Date.now()-startTime, abortReason:'Error inesperado en catch.', tiempos }),
+      diagnostico:B1_exportarDiagnostico(diag) 
+    });
   }
 }
 
@@ -141,5 +255,16 @@ function _respuestaTimeout(fase, traceId, startTime, textoBase, fiabilidad, diag
   if (textoBase) {
     return B1_crearRespuestaOk({ textoBaseVision:textoBase, textoAuditado:textoBase, estadoPasaporte:B1_PASSPORT.NARANJA, metricas, traceId, elapsedMs, accionSugeridaParaCerebro:B1_ACCIONES_CEREBRO.CONTINUAR_Y_MARCAR, warning:'Presupuesto de tiempo agotado. Solo texto base disponible.', diagnostico:B1_exportarDiagnostico(diag) });
   }
-  return B1_crearRespuestaError({ code:B1_ERRORES.PRESUPUESTO_AGOTADO, message:'Presupuesto de tiempo agotado sin obtener texto.', tipoFallo:B1_TIPO_FALLO.IRRECUPERABLE_POR_DISENO, retryable:true, traceId, elapsedMs, accionSugeridaParaCerebro:B1_ACCIONES_CEREBRO.REINTENTAR_MAS_TARDE, motivo:'Presupuesto agotado sin cadena real de autoreparación interna.', diagnostico:B1_exportarDiagnostico(diag) });
+  return B1_crearRespuestaError({ 
+    code:B1_ERRORES.PRESUPUESTO_AGOTADO, 
+    message:'Presupuesto de tiempo agotado sin obtener texto.', 
+    tipoFallo:B1_TIPO_FALLO.IRRECUPERABLE_POR_DISENO, 
+    retryable:true, 
+    traceId, 
+    elapsedMs, 
+    accionSugeridaParaCerebro:B1_ACCIONES_CEREBRO.REINTENTAR_MAS_TARDE, 
+    motivo:'Presupuesto agotado sin cadena real de autoreparación interna.', 
+    metricas,
+    diagnostico:B1_exportarDiagnostico(diag) 
+  });
 }
