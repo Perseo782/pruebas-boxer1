@@ -43,9 +43,11 @@ function B1_medirFiabilidad(ocrNormalizado, sensitivityMode) {
   // ── 2. TODAS LAS PALABRAS CON SU CONFIANZA ───────────────
   const todasPalabras = _extraerTodasPalabras(ocrNormalizado);
 
-  // ── 3. PALABRAS DUDOSAS (por debajo del umbral) ───────────
+  // ── 3. PALABRAS DUDOSAS - TODAS LAS PALABRAS ENTRAN ──────
+  // Ya no filtramos por confianza aquí.
+  // El filtro de rescatables está en B1_slots.js
   const palabrasDudosas = todasPalabras.filter(
-    p => p.confidence !== null && p.confidence < config.minConfidenceWord
+    p => p.confidence !== null
   );
 
   // ── 4. RACHAS MALAS (3+ palabras dudosas consecutivas) ────
