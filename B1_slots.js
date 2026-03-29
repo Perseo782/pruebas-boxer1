@@ -35,32 +35,18 @@ function _nextSlotId() {
  *
  * Criterios de "esperanza real":
  * - La palabra tiene al menos algún carácter legible
- * - Su confianza no está en 0 absoluto (ruido puro)
- * - El bloque padre tiene al menos algo de texto legible alrededor
- * - No es una palabra de 1 carácter sin sentido
+ * - No es una palabra vacía o de un solo carácter
  *
  * @param {Array} palabrasDudosas - Del medidor de fiabilidad
  * @param {string} sensitivityMode
  * @returns {Array} Palabras que merecen rescate
  */
 function B1_filtrarDudasRescatables(palabrasDudosas, sensitivityMode) {
-  const config = B1_PRESUPUESTOS[sensitivityMode];
-
   return palabrasDudosas.filter(p => {
-    // Ruido puro: confianza 0 o casi 0
-    if (p.confidence !== null && p.confidence < 0.05) return false;
-
     // Palabra vacía o de un solo carácter basura
     if (!p.texto || p.texto.trim().length < 2) return false;
 
-    // El bloque padre debe tener al menos 2 palabras legibles
-    if (p.bloque) {
-      const palabrasLegibles = p.bloque.palabras.filter(
-        w => w.confidence === null || w.confidence >= config.minConfidenceWord
-      );
-      if (palabrasLegibles.length < 2) return false;
-    }
-
+    // TODAS las demás palabras dudosas merecen una oportunidad
     return true;
   });
 }
