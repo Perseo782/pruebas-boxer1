@@ -3,37 +3,31 @@
  * BOXER 1 CORE · ENUMS Y CONSTANTES
  * ═══════════════════════════════════════════════════════════════
  */
-
 const B1_SENSITIVITY = Object.freeze({
   BAJA: 'baja',
   MEDIA: 'media',
   ALTA: 'alta'
 });
-
 const B1_SEND_MODE = Object.freeze({
   BASE64: 'base64',
   NORMAL: 'normal'
 });
-
 const B1_PASSPORT = Object.freeze({
   VERDE: 'VERDE',
   NARANJA: 'NARANJA',
   ROJO: 'ROJO'
 });
-
 const B1_SLOT_STATUS = Object.freeze({
   APLICABLE: 'aplicable',
   APLICADA: 'aplicada',
   DESCARTADA: 'descartada',
   NO_RESUELTA: 'no_resuelta'
 });
-
 const B1_MERGE_STATUS = Object.freeze({
   OK: 'ok',
   CANCELADO_POR_ASIMETRIA: 'cancelado_por_asimetria',
   NO_INTENTADO: 'no_intentado'
 });
-
 const B1_ACCIONES_CEREBRO = Object.freeze({
   REINTENTAR: 'reintentar',
   REINTENTAR_UNA_VEZ: 'reintentar_una_vez',
@@ -45,14 +39,11 @@ const B1_ACCIONES_CEREBRO = Object.freeze({
   CORTE_TEMPRANO: 'corte_temprano',
   PEDIR_DATO_AL_USUARIO: 'pedir_dato_al_usuario'
 });
-
-// 00B v4.1: SOLO estos 3 tipos de fallo para escalar en ROJO.
 const B1_TIPO_FALLO = Object.freeze({
   REPARACION_AGOTADA: 'reparacion_agotada',
   IRRECUPERABLE_POR_DISENO: 'irrecuperable_por_diseño',
   DESCONOCIDO: 'desconocido'
 });
-
 const B1_ERRORES = Object.freeze({
   IMAGEN_INVALIDA: 'B1_IMAGEN_INVALIDA',
   IMAGEN_DESENFOCADA: 'B1_IMAGEN_DESENFOCADA',
@@ -69,28 +60,26 @@ const B1_ERRORES = Object.freeze({
   PRESUPUESTO_AGOTADO: 'B1_PRESUPUESTO_AGOTADO',
   ERROR_INTERNO: 'B1_ERROR_INTERNO'
 });
-
 const B1_PRESUPUESTOS = Object.freeze({
   [B1_SENSITIVITY.BAJA]: {
-    maxSlots: 12,
+    maxSlots: 999,
     minConfidenceWord: 0.70,
     minConfidencePage: 0.60,
     rescateAgresivo: false
   },
   [B1_SENSITIVITY.MEDIA]: {
-    maxSlots: 18,
+    maxSlots: 999,
     minConfidenceWord: 0.55,
     minConfidencePage: 0.50,
     rescateAgresivo: false
   },
   [B1_SENSITIVITY.ALTA]: {
-    maxSlots: 24,
+    maxSlots: 999,
     minConfidenceWord: 0.40,
     minConfidencePage: 0.35,
     rescateAgresivo: true
   }
 });
-
 const B1_CONFIG = Object.freeze({
   MAX_IMAGE_SIDE_PX: 1280,
   DEFAULT_TIME_BUDGET_MS: 8000,
