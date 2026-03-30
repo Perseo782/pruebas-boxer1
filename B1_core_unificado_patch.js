@@ -1,3 +1,4 @@
+
 async function B1_analizar(input, config) {
   const traceId = B1_generarTraceId();
   const startTime = Date.now();
@@ -174,6 +175,7 @@ async function B1_analizar(input, config) {
         motivo: 'El OCR devolvió texto pero la fiabilidad es insuficiente para continuar.',
         detail: { fiabilidad: metricas },
         metricas,
+        selectorOCR,
         diagnostico: B1_exportarDiagnostico(diag)
       });
     }
