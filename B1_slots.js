@@ -30,25 +30,15 @@ function _nextSlotId() {
 // ─── FILTRAR DUDAS RESCATABLES ──────────────────────────────
 /**
  * Sección 5.5: Filtro de rescate.
- * Solo las dudas con esperanza real pasan a rescate.
- * El ruido puro se elimina.
- *
- * Criterios de "esperanza real":
- * - La palabra tiene al menos algún carácter legible
- * - No es una palabra vacía o de un solo carácter
+ * SOLO el filtro de sensibilidad - sin filtros adicionales.
  *
  * @param {Array} palabrasDudosas - Del medidor de fiabilidad
  * @param {string} sensitivityMode
  * @returns {Array} Palabras que merecen rescate
  */
 function B1_filtrarDudasRescatables(palabrasDudosas, sensitivityMode) {
-  return palabrasDudosas.filter(p => {
-    // Palabra vacía o de un solo carácter basura
-    if (!p.texto || p.texto.trim().length < 2) return false;
-
-    // TODAS las demás palabras dudosas merecen una oportunidad
-    return true;
-  });
+  // SOLO el filtro de sensibilidad - devolver todas las palabras dudosas
+  return palabrasDudosas;
 }
 
 
