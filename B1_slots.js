@@ -30,15 +30,46 @@ function _nextSlotId() {
 // ─── FILTRAR DUDAS RESCATABLES ──────────────────────────────
 /**
  * Sección 5.5: Filtro de rescate.
- * SOLO el filtro de sensibilidad - sin filtros adicionales.
+ * Solo elimina basura pura sin tocar el contrato del agente.
  *
  * @param {Array} palabrasDudosas - Del medidor de fiabilidad
  * @param {string} sensitivityMode
  * @returns {Array} Palabras que merecen rescate
  */
 function B1_filtrarDudasRescatables(palabrasDudosas, sensitivityMode) {
-  // SOLO el filtro de sensibilidad - devolver todas las palabras dudosas
-  return palabrasDudosas;
+  if (!Array.isArray(palabrasDudosas) || palabrasDudosas.length === 0) {
+    return [];
+  }
+
+  return palabrasDudosas.filter(p => {
+    const textoOriginal = (p && typeof p.texto === 'string') ? p.texto : '';
+    const texto = textoOriginal.trim();
+
+    if (!texto) return false;
+
+    const textoSinEspacios = texto.replace(/\s+/g, '');
+    if (!textoSinEspacios) return false;
+
+    // Si no hay letras ni números, es basura pura
+    if (!/[\p{L}\p{N}]/u.test(textoSinEspacios)) return false;
+
+    // Nube de signos/puntuación aislada
+    if (/^[*\-_=~.,:;!?¡¿'"`´^|\\\/()[\]{}<>+]+$/u.test(textoSinEspacios)) return false;
+
+    // Quitar solo basura de los bordes para ver si queda núcleo útil
+    const sinBordes = texto
+      .toLowerCase()
+      .replace(/^[^\p{L}\p{N}]+/gu, '')
+      .replace(/[^\p{L}\p{N}]+$/gu, '');
+
+    if (!sinBordes) return false;
+
+    // Si tras limpiar bordes no queda núcleo útil, fuera
+    if (!sinBordes.replace(/[^\p{L}\p{N}]/gu, '')) return false;
+
+    // Todo lo demás se deja pasar al agente
+    return true;
+  });
 }
 
 
@@ -209,11 +240,11 @@ function B1_prepararLoteRescate(palabrasDudosas, canvas, sensitivityMode) {
   });
 
   return {
-    totalDudas:      palabrasDudosas.length,
-    totalRescatables:rescatables.length,
-    totalSlots:      slotsPreparados.length,
-    maxSlots:        config.maxSlots,
-    truncado:        rescatables.length > config.maxSlots,
-    slots:           slotsPreparados
+    totalDudas:       palabrasDudosas.length,
+    totalRescatables: rescatables.length,
+    totalSlots:       slotsPreparados.length,
+    maxSlots:         config.maxSlots,
+    truncado:         rescatables.length > config.maxSlots,
+    slots:            slotsPreparados
   };
 }
