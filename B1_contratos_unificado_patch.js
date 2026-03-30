@@ -92,6 +92,7 @@ function B1_crearRespuestaOk(params) {
     noResueltas = [],
     roiRefsRevision = [],
     metricas,
+    selectorOCR = null,
     traceId,
     elapsedMs,
     accionSugeridaParaCerebro = null,
@@ -108,6 +109,7 @@ function B1_crearRespuestaOk(params) {
     metricas
   };
 
+  if (selectorOCR) datos.selectorOCR = selectorOCR;
   if (diagnostico) datos.diagnostico = diagnostico;
 
   const resultado = {
@@ -141,7 +143,8 @@ function B1_crearRespuestaError(params) {
     motivo = null,
     errorOriginal = null,
     diagnostico = null,
-    metricas = null
+    metricas = null,
+    selectorOCR = null
   } = params;
 
   const errorObj = {
@@ -166,6 +169,7 @@ function B1_crearRespuestaError(params) {
   const datos = {};
   if (textoBaseVision !== null && textoBaseVision !== undefined) datos.textoBaseVision = textoBaseVision;
   if (metricas) datos.metricas = metricas;
+  if (selectorOCR) datos.selectorOCR = selectorOCR;
   if (diagnostico) datos.diagnostico = diagnostico;
 
   const resultado = {
@@ -222,7 +226,6 @@ function B1_crearCronometro(timeBudgetMs) {
     }
   };
 }
-
 
 function B1_crearErrorUpstream({ message, upstreamCode, upstreamModule, raw, intentCount = 0 }) {
   const err = new Error(message || 'Error upstream');
