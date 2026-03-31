@@ -12,6 +12,12 @@
  * - Posibles huecos
  *
  * La nota global NO decide sola. La zona crítica pesa más.
+ *
+ * PARCHE: Segunda puerta de entrada para palabrasDudosas.
+ * Un token corto en zona crítica con parecido real a una familia
+ * de alérgenos entra como dudoso aunque supere el umbral de
+ * confianza. Usa las mismas funciones del selector (B1_slots.js)
+ * para no duplicar lógica ni crear un segundo cerebro.
  * ═══════════════════════════════════════════════════════════════
  */
 
@@ -43,10 +49,15 @@ function B1_medirFiabilidad(ocrNormalizado, sensitivityMode) {
   // ── 2. TODAS LAS PALABRAS CON SU CONFIANZA ───────────────
   const todasPalabras = _extraerTodasPalabras(ocrNormalizado);
 
-  // ── 3. PALABRAS DUDOSAS (por debajo del umbral) ───────────
-  const palabrasDudosas = todasPalabras.filter(
-    p => p.confidence !== null && p.confidence < config.minConfidenceWord
-  );
+  // ── 3. PALABRAS DUDOSAS ───────────────────────────────────
+  // Puerta 1 (original): confianza por debajo del umbral.
+  // Puerta 2 (parche): token corto en zona crítica con parecido
+  // real a familia de alérgenos, aunque supere el umbral.
+  const palabrasDudosas = todasPalabras.filter(p => {
+    if (p.confidence === null) return false;
+    if (p.confidence < config.minConfidenceWord) return true;
+    return _B1_esDudosaPorTokenCortoZonaCritica(p);
+  });
 
   // ── 4. RACHAS MALAS (3+ palabras dudosas consecutivas) ────
   const rachasMalas = _contarRachasMalas(todasPalabras, config.minConfidenceWord);
@@ -57,12 +68,9 @@ function B1_medirFiabilidad(ocrNormalizado, sensitivityMode) {
   ).length;
 
   // ── 6. ZONA CRÍTICA ───────────────────────────────────────
-  // La zona crítica son los bloques que contienen palabras clave
-  // de etiquetado: ingredientes, alérgenos, contiene, trazas, etc.
   const criticalZoneScore = _calcularZonaCritica(ocrNormalizado, config.minConfidenceWord);
 
   // ── 7. VEREDICTO DE VIABILIDAD ────────────────────────────
-  // La decisión depende de zona crítica + dudas, NO solo de media global
   const { fotoViable, razonInviable } = _decidirViabilidad(
     pageConfidence,
     criticalZoneScore,
@@ -82,6 +90,46 @@ function B1_medirFiabilidad(ocrNormalizado, sensitivityMode) {
     fotoViable:        fotoViable,
     razonInviable:     razonInviable
   };
+}
+
+
+// ─── PUERTA 2: TOKEN CORTO EN ZONA CRÍTICA ──────────────────
+function _B1_esDudosaPorTokenCortoZonaCritica(p) {
+  if (
+    typeof _B1_compactarComparacion !== 'function' ||
+    typeof _B1_esBasuraPura !== 'function' ||
+    typeof _B1_deducirContextoSemantico !== 'function' ||
+    typeof _B1_puntuarFamiliaPrioritaria !== 'function' ||
+    typeof _B1_mejorCoincidenciaCatalogo !== 'function'
+  ) return false;
+
+  const texto = String(p.texto || '').trim();
+  const tokenCompacto = _B1_compactarComparacion(texto);
+
+  if (!tokenCompacto || tokenCompacto.length < 3 || tokenCompacto.length > 6) return false;
+  if (_B1_esBasuraPura(texto)) return false;
+
+  const contexto = _B1_deducirContextoSemantico(p);
+  if (contexto.zona !== 'ingredientes_alergenos') return false;
+
+  const resultado = _B1_puntuarFamiliaPrioritaria(p, tokenCompacto, contexto, 2);
+  if (!resultado || !resultado.familia || !resultado.matchedStem) return false;
+
+  const mejor = _B1_mejorCoincidenciaCatalogo(texto, [resultado.matchedStem]);
+  if (!mejor) return false;
+  if (mejor.dist === 0) return false;
+
+  const pasaForma =
+    mejor.dist <= 2 &&
+    (
+      mejor.mismoInicio2 ||
+      mejor.mismoInicio1 ||
+      mejor.mismoFinal2 ||
+      mejor.stemCompacto.startsWith(mejor.variante) ||
+      mejor.variante.startsWith(mejor.stemCompacto)
+    );
+
+  return pasaForma;
 }
 
 
@@ -190,11 +238,9 @@ function _calcularZonaCritica(ocrNormalizado, umbral) {
   });
 
   if (bloquesCriticos.length === 0) {
-    // Sin zona crítica detectada, devolver confianza global
     return _calcularConfianzaPagina(ocrNormalizado);
   }
 
-  // Confianza media de las palabras en bloques críticos
   let sumConf = 0;
   let count = 0;
 
@@ -218,15 +264,12 @@ function _calcularZonaCritica(ocrNormalizado, umbral) {
  * - La decisión real depende de zona crítica + dudas + tiempo.
  */
 function _decidirViabilidad(pageConf, criticalScore, numDudosas, totalPalabras, rachas, config) {
-  // Si no hay palabras, inviable
   if (totalPalabras === 0) {
     return { fotoViable: false, razonInviable: 'Sin texto detectado.' };
   }
 
-  // Ratio de palabras dudosas
   const ratioDudas = numDudosas / totalPalabras;
 
-  // Si la zona crítica está muy mal Y hay muchas rachas malas
   if (criticalScore < 0.30 && rachas >= 3) {
     return {
       fotoViable: false,
@@ -234,7 +277,6 @@ function _decidirViabilidad(pageConf, criticalScore, numDudosas, totalPalabras, 
     };
   }
 
-  // Si más del 70% son dudas, la foto es ruido
   if (ratioDudas > 0.70) {
     return {
       fotoViable: false,
@@ -242,7 +284,6 @@ function _decidirViabilidad(pageConf, criticalScore, numDudosas, totalPalabras, 
     };
   }
 
-  // Si la confianza global es catastrófica Y la zona crítica también
   if (pageConf < 0.25 && criticalScore < 0.35) {
     return {
       fotoViable: false,
