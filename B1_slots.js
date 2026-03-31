@@ -19,6 +19,10 @@
  * NUEVOS BLOQUES:
  * - FILTRO_DE_VALIDACION_FINAL_DE_NEGOCIO
  * - FILTRO_DE_SOSPECHA_CONTEXTUAL_ACUMULADA
+ *
+ * ARREGLO ACTUAL:
+ * - CONTEXTO CANÓNICO ÚNICO
+ * - evita mezclar "zona crítica" con "zona no crítica"
  * ═══════════════════════════════════════════════════════════════
  */
 
@@ -298,25 +302,34 @@ function _B1_deducirContextoSemantico(p) {
   const next = _B1_normalizarComparacion(_B1_obtenerTextoVecino(p, 1));
   const alrededor = `${prev} ${bloqueNorm} ${next}`.trim();
 
-  const ingredientes = _B1_incluyeAlguna(alrededor, B1_CONTEXTO_INGREDIENTES);
-  const alergenos = _B1_incluyeAlguna(alrededor, B1_CONTEXTO_ALERGENOS);
-  const nutricional = _B1_incluyeAlguna(alrededor, B1_CONTEXTO_NUTRICIONAL);
-  const peso = _B1_incluyeAlguna(alrededor, B1_CONTEXTO_PESO);
-  const irrelevante = _B1_incluyeAlguna(alrededor, B1_CONTEXTO_IRRELEVANTE);
+  const ingredientesRaw = _B1_incluyeAlguna(alrededor, B1_CONTEXTO_INGREDIENTES);
+  const alergenosRaw = _B1_incluyeAlguna(alrededor, B1_CONTEXTO_ALERGENOS);
+  const nutricionalRaw = _B1_incluyeAlguna(alrededor, B1_CONTEXTO_NUTRICIONAL);
+  const pesoRaw = _B1_incluyeAlguna(alrededor, B1_CONTEXTO_PESO);
+  const irrelevanteRaw = _B1_incluyeAlguna(alrededor, B1_CONTEXTO_IRRELEVANTE);
 
   let zona = 'neutral';
-  if (ingredientes || alergenos) zona = 'ingredientes_alergenos';
-  else if (peso) zona = 'peso_formato';
-  else if (nutricional) zona = 'nutricional';
-  else if (irrelevante) zona = 'irrelevante';
+  if (ingredientesRaw || alergenosRaw) zona = 'ingredientes_alergenos';
+  else if (pesoRaw) zona = 'peso_formato';
+  else if (nutricionalRaw) zona = 'nutricional';
+  else if (irrelevanteRaw) zona = 'irrelevante';
 
   return {
-    ingredientes,
-    alergenos,
-    nutricional,
-    peso,
-    irrelevante,
+    // señales crudas para diagnóstico
+    ingredientesRaw,
+    alergenosRaw,
+    nutricionalRaw,
+    pesoRaw,
+    irrelevanteRaw,
+
+    // zona canónica única
     zona,
+    ingredientes: zona === 'ingredientes_alergenos',
+    alergenos: zona === 'ingredientes_alergenos',
+    nutricional: zona === 'nutricional',
+    peso: zona === 'peso_formato',
+    irrelevante: zona === 'irrelevante',
+
     bloqueNorm,
     blockWordCount: Array.isArray(p && p.bloque && p.bloque.palabras) ? p.bloque.palabras.length : 0
   };
@@ -549,7 +562,7 @@ function _B1_aprobarFamiliaEnValidacionFinal(decision, contexto) {
   let puntos = 0;
   const razones = [];
 
-  if (contexto.ingredientes || contexto.alergenos) {
+  if (contexto.zona === 'ingredientes_alergenos') {
     puntos++;
     razones.push('contexto_ingredientes_alergenos');
   }
@@ -606,7 +619,7 @@ function _B1_aprobarPesoFormatoEnValidacionFinal(decision, contexto) {
   const original = String(decision.textoOriginal || '').trim();
 
   const aprobado =
-    contexto.peso ||
+    contexto.zona === 'peso_formato' ||
     (/^\d+([.,]\d+)?(kg|g|gr|ml|cl|l)$/i.test(token)) ||
     (/^\d+[x×]\d+([.,]\d+)?$/i.test(original));
 
@@ -614,7 +627,7 @@ function _B1_aprobarPesoFormatoEnValidacionFinal(decision, contexto) {
     aprobado,
     motivo: aprobado ? 'peso_formato_validado' : 'peso_formato_rechazado_por_validacion_final',
     detalle: {
-      contextoPeso: contexto.peso,
+      contextoZona: contexto.zona,
       token,
       original
     }
@@ -630,11 +643,7 @@ function _B1_aprobarNombreEnValidacionFinal(decision, contexto) {
   const ratioMayusculas = letras > 0 ? mayusculas / letras : 0;
 
   const aprobado =
-    !contexto.ingredientes &&
-    !contexto.alergenos &&
-    !contexto.nutricional &&
-    !contexto.irrelevante &&
-    !contexto.peso &&
+    contexto.zona === 'neutral' &&
     token.length >= 4 &&
     !B1_STOPWORDS_NOMBRE.has(token) &&
     contexto.blockWordCount <= 6 &&
@@ -740,7 +749,7 @@ function _B1_puntuarSospechaContextualAcumulada(decision, palabraOriginal) {
   let puntos = 0;
   const razones = [];
 
-  if (contexto.ingredientes || contexto.alergenos) {
+  if (contexto.zona === 'ingredientes_alergenos') {
     puntos += 2;
     razones.push('zona_critica');
   }
@@ -783,7 +792,7 @@ function _B1_puntuarSospechaContextualAcumulada(decision, palabraOriginal) {
     razones.push('penalizacion_contexto_preparacion');
   }
 
-  if (contexto.nutricional || contexto.irrelevante || contexto.peso) {
+  if (contexto.zona === 'nutricional' || contexto.zona === 'irrelevante' || contexto.zona === 'peso_formato') {
     puntos -= 2;
     razones.push('penalizacion_zona_no_critica');
   }
@@ -791,7 +800,7 @@ function _B1_puntuarSospechaContextualAcumulada(decision, palabraOriginal) {
   const aprobado =
     puntos >= 5 &&
     familiasVentana.size >= 2 &&
-    (contexto.ingredientes || contexto.alergenos);
+    contexto.zona === 'ingredientes_alergenos';
 
   return {
     aprobado,
@@ -805,6 +814,13 @@ function _B1_puntuarSospechaContextualAcumulada(decision, palabraOriginal) {
       haySeparadores,
       preparacionCerca,
       contextoZona: contexto.zona,
+      contextoRaw: {
+        ingredientesRaw: contexto.ingredientesRaw,
+        alergenosRaw: contexto.alergenosRaw,
+        nutricionalRaw: contexto.nutricionalRaw,
+        pesoRaw: contexto.pesoRaw,
+        irrelevanteRaw: contexto.irrelevanteRaw
+      },
       token
     }
   };
@@ -895,7 +911,7 @@ function _B1_puntuarFamiliaPrioritaria(p, tokenCompacto, contexto, tolerancia) {
           }
         }
 
-        if (score > 0 && (contexto.ingredientes || contexto.alergenos)) {
+        if (score > 0 && contexto.zona === 'ingredientes_alergenos') {
           score += 40;
         }
 
@@ -918,7 +934,7 @@ function _B1_puntuarFamiliaPrioritaria(p, tokenCompacto, contexto, tolerancia) {
 
 // ─── PUNTUAR PESO / FORMATO / PACK ──────────────────────────
 function _B1_puntuarPesoFormato(p, tokenOriginal, tokenCompacto, contexto) {
-  if (contexto.nutricional) {
+  if (contexto.zona === 'nutricional') {
     return { score: 0, motivo: null, evidencia: null };
   }
 
@@ -946,7 +962,7 @@ function _B1_puntuarPesoFormato(p, tokenOriginal, tokenCompacto, contexto) {
   if (
     /^\d+([.,]\d+)?$/i.test(texto) &&
     /(kg|g|gr|ml|cl|l)\b/.test(contextoLocal) &&
-    (contexto.peso || /(peso|neto|poids|weight|p\.?net)/.test(contexto.bloqueNorm))
+    (contexto.zona === 'peso_formato' || /(peso|neto|poids|weight|p\.?net)/.test(contexto.bloqueNorm))
   ) {
     if (260 > score) {
       score = 260;
@@ -955,7 +971,7 @@ function _B1_puntuarPesoFormato(p, tokenOriginal, tokenCompacto, contexto) {
     }
   }
 
-  if (/^(kg|g|gr|ml|cl|l)$/i.test(tokenCompacto) && /\d/.test(contextoLocal) && contexto.peso) {
+  if (/^(kg|g|gr|ml|cl|l)$/i.test(tokenCompacto) && /\d/.test(contextoLocal) && contexto.zona === 'peso_formato') {
     if (250 > score) {
       score = 250;
       motivo = 'unidad_con_numero_comercial';
@@ -963,7 +979,7 @@ function _B1_puntuarPesoFormato(p, tokenOriginal, tokenCompacto, contexto) {
     }
   }
 
-  if (contexto.peso && (/\d/.test(tokenCompacto) || B1_PALABRAS_PESO_FORMATO.includes(tokenCompacto))) {
+  if (contexto.zona === 'peso_formato' && (/\d/.test(tokenCompacto) || B1_PALABRAS_PESO_FORMATO.includes(tokenCompacto))) {
     if (230 > score) {
       score = 230;
       motivo = 'bloque_peso_formato';
@@ -981,7 +997,7 @@ function _B1_puntuarNombreProducto(p, tokenOriginal, tokenCompacto, contexto) {
   if (!tokenCompacto || tokenCompacto.length < 4) return { score: 0, motivo: null, evidencia: null };
   if (/\d/.test(tokenCompacto)) return { score: 0, motivo: null, evidencia: null };
 
-  if (contexto.ingredientes || contexto.alergenos || contexto.nutricional || contexto.irrelevante || contexto.peso) {
+  if (contexto.zona !== 'neutral') {
     return { score: 0, motivo: null, evidencia: null };
   }
 
@@ -1019,7 +1035,7 @@ function _B1_clasificarPalabraDudosa(p, sensitivityMode) {
   const toleranciaBase = sensitivityMode === B1_SENSITIVITY.ALTA ? 2 : 1;
 
   const contexto = _B1_deducirContextoSemantico(p);
-  const tolerancia = (contexto.ingredientes || contexto.alergenos) ? Math.max(toleranciaBase, 2) : toleranciaBase;
+  const tolerancia = contexto.zona === 'ingredientes_alergenos' ? Math.max(toleranciaBase, 2) : toleranciaBase;
 
   const base = {
     textoOriginal,
