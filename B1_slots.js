@@ -1,25 +1,19 @@
+
 /**
  * ═══════════════════════════════════════════════════════════════
  * BOXER 1 CORE · PASO 5 · SLOTS, ROI Y CONTEXTO
  * ═══════════════════════════════════════════════════════════════
- * Nombre del sistema:
- * SELECTOR PRIORITARIO DE RESCATE OCR
+ * Selector Prioritario de Rescate OCR
  *
- * Qué hace:
- * 1) Elimina basura pura
- * 2) Detecta sospechas importantes rotas
- * 3) Manda a slot solo lo importante para la app
- * 4) Expone una auditoría completa en selectorOCR
- * 5) Fuerza rescate de familias críticas aunque no vengan por la ruta normal
- *
- * Importante:
- * - No corrige texto final
- * - No decide negocio
- * - Solo decide qué merece llegar al agente
+ * Objetivo:
+ * - Quitar basura pura
+ * - Priorizar familias críticas / peso-formato / nombre
+ * - Añadir una vigilancia crítica MUY estrecha para casos tipo "hvo"
+ * - No saturar al agente
  * ═══════════════════════════════════════════════════════════════
  */
 
-// ─── CAPTURAR OCR COMPLETO PARA VIGILANCIA CRÍTICA ──────────
+// ─── CAPTURAR OCR NORMALIZADO RECIENTE ──────────────────────
 (function _B1_instalarCapturaOCRGlobal() {
   if (typeof globalThis === 'undefined') return;
   if (globalThis.__B1_WRAP_NORMALIZAR_OCR_INSTALADO__) return;
@@ -34,8 +28,7 @@
   globalThis.__B1_WRAP_NORMALIZAR_OCR_INSTALADO__ = true;
 })();
 
-
-// ─── CONTADOR GLOBAL DE SLOTS (por ejecución) ───────────────
+// ─── CONTADOR GLOBAL DE SLOTS ───────────────────────────────
 let _b1SlotCounter = 0;
 
 function _resetSlotCounter() {
@@ -47,39 +40,32 @@ function _nextSlotId() {
   return `B${_b1SlotCounter}`;
 }
 
-
-// ─── FAMILIAS IMPORTANTES DEL NEGOCIO ───────────────────────
+// ─── FAMILIAS IMPORTANTES ───────────────────────────────────
 const B1_FAMILIAS_PRIORITARIAS = [
   {
     id: 'gluten',
     stems: [
       'gluten', 'trigo', 'wheat', 'blé', 'ble', 'cebada', 'barley',
-      'centeno', 'rye', 'avena', 'oats', 'espelta', 'kamut', 'semola', 'sémola', 'semoule'
+      'centeno', 'rye', 'avena', 'oats', 'espelta', 'kamut',
+      'semola', 'sémola', 'semoule'
     ]
   },
   {
     id: 'leche',
     stems: [
-      'leche', 'milk', 'lait', 'lactosa', 'lactose', 'lact', 'lacteo',
-      'caseina', 'caseine', 'casein', 'caseinato', 'suero', 'whey',
-      'mantequilla', 'butter', 'queso', 'cheese', 'fromage',
-      'yogur', 'yogurt', 'nata', 'cream', 'leite', 'caseinate', 'caseinato'
+      'leche', 'milk', 'lait', 'leite', 'lacteo', 'lácteo',
+      'lactosa', 'lactose', 'caseina', 'caseine', 'casein',
+      'caseinato', 'caseinate', 'suero', 'whey', 'queso',
+      'cheese', 'fromage', 'butter', 'mantequilla', 'cream',
+      'nata', 'yogur', 'yogurt'
     ]
   },
   {
     id: 'huevo',
-    stems: [
-      'huevo', 'egg', 'oeuf', 'ovo', 'albumina', 'ovalbumina', 'ovalbumin'
-    ]
+    stems: ['huevo', 'ovo', 'egg', 'oeuf', 'albumina', 'ovalbumina', 'ovalbumin']
   },
-  {
-    id: 'soja',
-    stems: ['soja', 'soya', 'soy']
-  },
-  {
-    id: 'pescado',
-    stems: ['pescado', 'fish', 'poisson']
-  },
+  { id: 'soja', stems: ['soja', 'soya', 'soy'] },
+  { id: 'pescado', stems: ['pescado', 'fish', 'poisson'] },
   {
     id: 'crustaceos',
     stems: [
@@ -90,83 +76,59 @@ const B1_FAMILIAS_PRIORITARIAS = [
   },
   {
     id: 'moluscos',
-    stems: [
-      'moluscos', 'molusco', 'molluscs', 'mollusc', 'moule',
-      'mejillon', 'mejillones', 'calamar', 'pulpo', 'sepia'
-    ]
+    stems: ['moluscos', 'molusco', 'mollusc', 'molluscs', 'moule', 'mejillon', 'mejillones', 'calamar', 'pulpo', 'sepia']
   },
-  {
-    id: 'cacahuete',
-    stems: ['cacahuete', 'cacahuetes', 'peanut', 'peanuts', 'arachid', 'arachide']
-  },
+  { id: 'cacahuete', stems: ['cacahuete', 'cacahuetes', 'peanut', 'peanuts', 'arachid', 'arachide'] },
   {
     id: 'frutos_secos',
     stems: [
-      'frutos secos', 'fruto seco', 'almendra', 'almendras', 'avellana',
-      'avellanas', 'nuez', 'nueces', 'pistacho', 'pistachos',
-      'anacardo', 'anacardos', 'cashew', 'hazelnut', 'walnut', 'nut', 'nuts'
+      'frutos secos', 'fruto seco', 'almendra', 'almendras', 'avellana', 'avellanas',
+      'nuez', 'nueces', 'pistacho', 'pistachos', 'anacardo', 'anacardos',
+      'cashew', 'hazelnut', 'walnut', 'nut', 'nuts'
     ]
   },
-  {
-    id: 'apio',
-    stems: ['apio', 'celery', 'celeri', 'céleri']
-  },
-  {
-    id: 'mostaza',
-    stems: ['mostaza', 'mustard', 'moutarde']
-  },
-  {
-    id: 'sesamo',
-    stems: ['sesamo', 'sésamo', 'sesame']
-  },
+  { id: 'apio', stems: ['apio', 'celery', 'celeri', 'céleri'] },
+  { id: 'mostaza', stems: ['mostaza', 'mustard', 'moutarde'] },
+  { id: 'sesamo', stems: ['sesamo', 'sésamo', 'sesame'] },
   {
     id: 'sulfitos',
-    stems: [
-      'sulfitos', 'sulfito', 'sulfites', 'sulphites', 'sulphite',
-      'metabisulfito', 'metabisulfit', 'disulfite', 'sodium metabisulfite'
-    ]
+    stems: ['sulfitos', 'sulfito', 'sulfites', 'sulphites', 'sulphite', 'metabisulfito', 'metabisulfit', 'disulfite']
   },
-  {
-    id: 'altramuz',
-    stems: ['altramuz', 'altramuces', 'lupin', 'lupino', 'lupins']
-  }
+  { id: 'altramuz', stems: ['altramuz', 'altramuces', 'lupin', 'lupino', 'lupins'] }
 ];
 
 const B1_PALABRAS_PESO_FORMATO = [
-  'peso', 'p.net', 'pnet', 'neto', 'poids', 'poids net', 'weight', 'net weight',
-  'kg', 'g', 'gr', 'gram', 'grams', 'ml', 'cl', 'l', 'litro', 'litros',
-  'litre', 'litres', 'pack', 'formato', 'x', 'unidades', 'unidad', 'bandeja', 'botella'
+  'peso', 'p.net', 'pnet', 'neto', 'poids', 'weight', 'kg', 'g', 'gr', 'ml', 'cl', 'l',
+  'litro', 'litros', 'litre', 'litres', 'pack', 'formato', 'x', 'unidades', 'unidad',
+  'bandeja', 'botella'
 ];
 
 const B1_STOPWORDS_NOMBRE = new Set([
-  'desde', 'para', 'con', 'sin', 'por',
-  'ingredientes', 'informacion', 'información', 'information',
-  'nutritionnelle', 'valor', 'energetico', 'energetique',
-  'producto', 'produit', 'puede', 'contener',
-  'trazas', 'de', 'del', 'la', 'el', 'los', 'las'
+  'desde', 'para', 'con', 'sin', 'por', 'ingredientes', 'informacion', 'información',
+  'information', 'nutritionnelle', 'valor', 'energetico', 'energético', 'energetique',
+  'producto', 'produit', 'puede', 'contener', 'trazas', 'de', 'del', 'la', 'el', 'los', 'las'
 ]);
 
 const B1_CONTEXTO_INGREDIENTES = ['ingred', 'ingredient'];
 const B1_CONTEXTO_ALERGENOS = [
-  'alerg', 'allerg', 'allergen',
-  'trazas', 'contener', 'contiene', 'contains', 'contain',
-  'may contain', 'peut contenir', 'pode conter', 'contém', 'contém',
+  'alerg', 'allerg', 'allergen', 'trazas', 'contener', 'contiene', 'contains',
+  'contain', 'may contain', 'peut contenir', 'pode conter', 'contém',
   'manipula', 'manipulado', 'mayuscul', 'mayúscul'
 ];
 const B1_CONTEXTO_NUTRICIONAL = [
-  'informacion nutric', 'información nutric', 'nutrition',
-  'valor energet', 'kcal', 'grasas', 'hidratos', 'proteinas',
-  'proteínas', 'protein', 'sal', 'por 100', 'pour 100'
+  'informacion nutric', 'información nutric', 'nutrition', 'valor energet',
+  'kcal', 'grasas', 'hidratos', 'proteinas', 'proteínas', 'protein', 'sal', 'por 100', 'pour 100'
 ];
-const B1_CONTEXTO_PESO = [
-  'p.net', 'pnet', 'peso net', 'poids net', 'net weight', 'contenido neto', 'peso'
-];
+const B1_CONTEXTO_PESO = ['p.net', 'pnet', 'peso net', 'poids net', 'net weight', 'contenido neto', 'peso'];
 const B1_CONTEXTO_IRRELEVANTE = [
-  'lote', 'lot', 'rgseaa', 'rsseaa', 'elaborado por', 'fabricado por',
-  'conservar', 'consumir preferentemente', 'antes del fin', 'c/', 's.l', 's.a',
-  'origin', 'fecha de produccion', 'production date', 'best before', 'ref:'
+  'lote', 'lot', 'rgseaa', 'rsseaa', 'elaborado por', 'fabricado por', 'conservar',
+  'consumir preferentemente', 'antes del fin', 'c/', 's.l', 's.a', 'origin',
+  'fecha de produccion', 'production date', 'best before', 'ref:'
 ];
 
+// Solo para rescate forzado crítico
+const B1_MAX_FORZADOS_CRITICOS = 2;
+const B1_TOLERANCIA_FAMILIA_CRITICA = 1;
 
 // ─── NORMALIZACIÓN SUAVE OCR ────────────────────────────────
 function _B1_normalizarComparacion(texto) {
@@ -206,7 +168,6 @@ function _B1_compactarBruto(texto) {
     .replace(/[^a-z0-9]/g, '');
 }
 
-
 // ─── BASURA PURA ────────────────────────────────────────────
 function _B1_esBasuraPura(textoOriginal) {
   const texto = String(textoOriginal || '').trim();
@@ -229,7 +190,6 @@ function _B1_esBasuraPura(textoOriginal) {
 
   return false;
 }
-
 
 // ─── UTILIDADES ─────────────────────────────────────────────
 function _B1_distanciaSimple(a, b) {
@@ -265,9 +225,7 @@ function _B1_bigramas(texto) {
   const t = String(texto || '');
   const out = new Set();
   if (t.length < 2) return out;
-  for (let i = 0; i < t.length - 1; i++) {
-    out.add(t.slice(i, i + 2));
-  }
+  for (let i = 0; i < t.length - 1; i++) out.add(t.slice(i, i + 2));
   return out;
 }
 
@@ -297,10 +255,8 @@ function _B1_obtenerTextoVecino(p, offset) {
   if (!p || !p.bloque || !Array.isArray(p.bloque.palabras)) return '';
   const idx = Number(p.wordIndex);
   if (!Number.isFinite(idx)) return '';
-
   const pos = idx + offset;
   if (pos < 0 || pos >= p.bloque.palabras.length) return '';
-
   const vecino = p.bloque.palabras[pos];
   return vecino && typeof vecino.texto === 'string' ? vecino.texto : '';
 }
@@ -350,7 +306,6 @@ function _B1_unionBoundingPolys(words) {
   ]);
 }
 
-
 // ─── CONTEXTO SEMÁNTICO ─────────────────────────────────────
 function _B1_deducirContextoSemantico(p) {
   const bloqueTexto = _B1_obtenerTextoBloque(p);
@@ -383,42 +338,19 @@ function _B1_deducirContextoSemantico(p) {
   };
 }
 
-
-// ─── VENTANAS DE COMPARACIÓN ────────────────────────────────
-function _B1_obtenerVentanasComparacion(p, tokenCompacto) {
-  const prevCompacto = _B1_compactarComparacion(_B1_obtenerTextoVecino(p, -1));
-  const nextCompacto = _B1_compactarComparacion(_B1_obtenerTextoVecino(p, 1));
-
-  const ventanas = [];
-
-  if (tokenCompacto) ventanas.push({ valor: tokenCompacto, tipo: 'actual' });
-  if (tokenCompacto && nextCompacto) ventanas.push({ valor: tokenCompacto + nextCompacto, tipo: 'actual_next' });
-  if (prevCompacto && tokenCompacto) ventanas.push({ valor: prevCompacto + tokenCompacto, tipo: 'prev_actual' });
-  if (prevCompacto && tokenCompacto && nextCompacto) ventanas.push({ valor: prevCompacto + tokenCompacto + nextCompacto, tipo: 'prev_actual_next' });
-
-  const seen = new Set();
-  return ventanas.filter(v => {
-    if (!v.valor) return false;
-    const key = `${v.tipo}:${v.valor}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-
 // ─── PUNTUAR FAMILIA PRIORITARIA ────────────────────────────
 function _B1_puntuarFamiliaPrioritaria(p, tokenCompacto, contexto, tolerancia, opts = {}) {
   const opciones = Object.assign({
-    forzadoCritico: false,
-    permitirExactaNormalizada: true
+    permitirExactaNormalizada: true,
+    bonusCritico: 0,
+    exigirZonaCritica: false
   }, opts || {});
 
   if (!tokenCompacto || tokenCompacto.length < 3) {
     return { score: 0, familia: null, motivo: null, matchedStem: null, evidencia: null };
   }
 
-  if (!(contexto.ingredientes || contexto.alergenos)) {
+  if (opciones.exigirZonaCritica && !(contexto.ingredientes || contexto.alergenos)) {
     return { score: 0, familia: null, motivo: null, matchedStem: null, evidencia: null };
   }
 
@@ -431,7 +363,6 @@ function _B1_puntuarFamiliaPrioritaria(p, tokenCompacto, contexto, tolerancia, o
     return { score: 0, familia: null, motivo: null, matchedStem: null, evidencia: null };
   }
 
-  const ventanas = _B1_obtenerVentanasComparacion(p, tokenCompacto);
   const rawCompact = _B1_compactarBruto(p && p.texto);
   let mejor = { score: 0, familia: null, motivo: null, matchedStem: null, evidencia: null };
 
@@ -440,66 +371,47 @@ function _B1_puntuarFamiliaPrioritaria(p, tokenCompacto, contexto, tolerancia, o
       const stemCompacto = _B1_compactarComparacion(stem);
       if (!stemCompacto) return;
 
-      ventanas.forEach(ventana => {
-        let score = 0;
-        let motivo = null;
+      let score = 0;
+      let motivo = null;
 
-        if (
-          opciones.permitirExactaNormalizada &&
-          ventana.valor === stemCompacto &&
-          rawCompact !== stemCompacto
-        ) {
-          score = opciones.forzadoCritico ? 380 : 320;
-          motivo = 'coincidencia_exacta_normalizada';
+      if (opciones.permitirExactaNormalizada && tokenCompacto === stemCompacto && rawCompact !== stemCompacto) {
+        score = 320 + opciones.bonusCritico;
+        motivo = 'coincidencia_exacta_normalizada';
+      } else {
+        const dist = _B1_distanciaSimple(tokenCompacto, stemCompacto);
+        const haySolape = _B1_tieneSolapeBigramas(tokenCompacto, stemCompacto);
+
+        if (dist <= tolerancia && haySolape) {
+          score = 240 + opciones.bonusCritico - (dist * 20);
+          motivo = 'parecido_familia';
         } else if (
-          stemCompacto.startsWith(ventana.valor) &&
-          ventana.valor.length >= 3 &&
-          _B1_tieneSolapeBigramas(ventana.valor, stemCompacto)
+          tokenCompacto.length >= 4 &&
+          (stemCompacto.startsWith(tokenCompacto) || tokenCompacto.startsWith(stemCompacto)) &&
+          haySolape
         ) {
-          score = opciones.forzadoCritico ? 360 : 290;
+          score = 260 + opciones.bonusCritico;
           motivo = 'prefijo_familia';
-        } else if (
-          (ventana.valor.includes(stemCompacto) || stemCompacto.includes(ventana.valor)) &&
-          ventana.valor.length >= 4 &&
-          _B1_tieneSolapeBigramas(ventana.valor, stemCompacto)
-        ) {
-          score = opciones.forzadoCritico ? 340 : 270;
-          motivo = 'subcadena_familia';
-        } else {
-          const dist = _B1_distanciaSimple(ventana.valor, stemCompacto);
-          const haySolape = _B1_tieneSolapeBigramas(ventana.valor, stemCompacto);
-          if (dist <= tolerancia && haySolape) {
-            score = (opciones.forzadoCritico ? 320 : 240) - (dist * 20);
-            motivo = 'parecido_familia';
-          }
         }
+      }
 
-        if (score > 0) {
-          score += 40;
-        }
-
-        if (score > mejor.score) {
-          mejor = {
-            score,
-            familia: familia.id,
-            motivo,
-            matchedStem: stem,
-            evidencia: `${ventana.tipo}:${ventana.valor}`
-          };
-        }
-      });
+      if (score > mejor.score) {
+        mejor = {
+          score,
+          familia: familia.id,
+          motivo,
+          matchedStem: stem,
+          evidencia: `actual:${tokenCompacto}`
+        };
+      }
     });
   });
 
   return mejor;
 }
 
-
 // ─── PUNTUAR PESO / FORMATO / PACK ──────────────────────────
 function _B1_puntuarPesoFormato(p, tokenOriginal, tokenCompacto, contexto) {
-  if (contexto.nutricional) {
-    return { score: 0, motivo: null, evidencia: null };
-  }
+  if (contexto.nutricional) return { score: 0, motivo: null, evidencia: null };
 
   const texto = String(tokenOriginal || '').trim();
   const prev = _B1_normalizarComparacion(_B1_obtenerTextoVecino(p, -1));
@@ -542,17 +454,8 @@ function _B1_puntuarPesoFormato(p, tokenOriginal, tokenCompacto, contexto) {
     }
   }
 
-  if (contexto.peso && (/\d/.test(tokenCompacto) || B1_PALABRAS_PESO_FORMATO.includes(tokenCompacto))) {
-    if (230 > score) {
-      score = 230;
-      motivo = 'bloque_peso_formato';
-      evidencia = contexto.bloqueNorm;
-    }
-  }
-
   return { score, motivo, evidencia };
 }
-
 
 // ─── PUNTUAR NOMBRE DE PRODUCTO ─────────────────────────────
 function _B1_puntuarNombreProducto(p, tokenOriginal, tokenCompacto, contexto) {
@@ -568,7 +471,7 @@ function _B1_puntuarNombreProducto(p, tokenOriginal, tokenCompacto, contexto) {
     return { score: 0, motivo: null, evidencia: null };
   }
 
-  if (contexto.blockWordCount < 2 || contexto.blockWordCount > 6) {
+  if (contexto.blockWordCount < 2 || contexto.blockWordCount > 5) {
     return { score: 0, motivo: null, evidencia: null };
   }
 
@@ -578,9 +481,9 @@ function _B1_puntuarNombreProducto(p, tokenOriginal, tokenCompacto, contexto) {
   const ratioMayusculas = letras > 0 ? mayusculas / letras : 0;
 
   let score = 0;
-  if (ratioMayusculas >= 0.6) score += 150;
-  else if (contexto.blockWordCount <= 3) score += 120;
-  else score += 90;
+  if (ratioMayusculas >= 0.6) score = 140;
+  else if (contexto.blockWordCount <= 3 && ratioMayusculas >= 0.3) score = 110;
+  else return { score: 0, motivo: null, evidencia: null };
 
   return {
     score,
@@ -589,16 +492,13 @@ function _B1_puntuarNombreProducto(p, tokenOriginal, tokenCompacto, contexto) {
   };
 }
 
-
-// ─── CLASIFICAR UNA PALABRA DUDOSA ──────────────────────────
+// ─── CLASIFICAR PALABRA DUDOSA NORMAL ───────────────────────
 function _B1_clasificarPalabraDudosa(p, sensitivityMode) {
   const textoOriginal = (p && typeof p.texto === 'string') ? p.texto : '';
   const textoNormalizado = _B1_normalizarComparacion(textoOriginal);
   const tokenCompacto = _B1_compactarComparacion(textoOriginal);
-  const toleranciaBase = sensitivityMode === B1_SENSITIVITY.ALTA ? 2 : 1;
-
+  const tolerancia = sensitivityMode === B1_SENSITIVITY.ALTA ? 2 : 1;
   const contexto = _B1_deducirContextoSemantico(p);
-  const tolerancia = (contexto.ingredientes || contexto.alergenos) ? Math.max(toleranciaBase, 2) : toleranciaBase;
 
   const base = {
     textoOriginal,
@@ -627,18 +527,15 @@ function _B1_clasificarPalabraDudosa(p, sensitivityMode) {
     return base;
   }
 
-  const familia = _B1_puntuarFamiliaPrioritaria(p, tokenCompacto, contexto, tolerancia);
+  const familia = _B1_puntuarFamiliaPrioritaria(p, tokenCompacto, contexto, tolerancia, {
+    permitirExactaNormalizada: true,
+    bonusCritico: 0,
+    exigirZonaCritica: true
+  });
   const peso = _B1_puntuarPesoFormato(p, textoOriginal, tokenCompacto, contexto);
   const nombre = _B1_puntuarNombreProducto(p, textoOriginal, tokenCompacto, contexto);
 
-  let ganador = {
-    tipo: null,
-    score: 0,
-    motivo: null,
-    familia: null,
-    matchedStem: null,
-    evidencia: null
-  };
+  let ganador = { tipo: null, score: 0, motivo: null, familia: null, matchedStem: null, evidencia: null };
 
   if (familia.score > ganador.score) {
     ganador = {
@@ -703,7 +600,6 @@ function _B1_clasificarPalabraDudosa(p, sensitivityMode) {
   base.evidencia = ganador.evidencia;
   return base;
 }
-
 
 // ─── EXTRACCIÓN OCR COMPLETO PARA VIGILANCIA CRÍTICA ───────
 function _B1_extraerPalabrasOCR(ocrNormalizado) {
@@ -777,6 +673,22 @@ function _B1_crearPalabraSintetica(words) {
   };
 }
 
+function _B1_esContextoCriticoForzado(p) {
+  const ctx = _B1_deducirContextoSemantico(p);
+  return ctx.alergenos || (
+    ctx.ingredientes &&
+    (
+      ctx.bloqueNorm.includes('puede contener') ||
+      ctx.bloqueNorm.includes('may contain') ||
+      ctx.bloqueNorm.includes('peut contenir') ||
+      ctx.bloqueNorm.includes('pode conter') ||
+      ctx.bloqueNorm.includes('contiene') ||
+      ctx.bloqueNorm.includes('contains') ||
+      ctx.bloqueNorm.includes('trazas')
+    )
+  );
+}
+
 function _B1_generarCandidatosVigilanciaCritica(ocrNormalizado, palabrasDudosas) {
   const todas = _B1_extraerPalabrasOCR(ocrNormalizado);
   const yaEnDudas = new Set((Array.isArray(palabrasDudosas) ? palabrasDudosas : []).map(_B1_keyPalabra));
@@ -792,30 +704,50 @@ function _B1_generarCandidatosVigilanciaCritica(ocrNormalizado, palabrasDudosas)
 
   porBloque.forEach(words => {
     words.sort((a, b) => (a.wordIndex || 0) - (b.wordIndex || 0));
+
     for (let i = 0; i < words.length; i++) {
       const single = words[i];
-      const contexto = _B1_deducirContextoSemantico(single);
-      if (!(contexto.ingredientes || contexto.alergenos)) continue;
+      if (!_B1_esContextoCriticoForzado(single)) continue;
 
-      const packs = [[single]];
-      if (i + 1 < words.length) packs.push([single, words[i + 1]]);
-      if (i + 2 < words.length) packs.push([single, words[i + 1], words[i + 2]]);
+      const textoSingle = String(single.texto || '').trim();
+      const compactSingle = _B1_compactarComparacion(textoSingle);
 
-      packs.forEach(group => {
-        const candidata = _B1_crearPalabraSintetica(group);
-        if (!candidata) return;
-        const key = _B1_keyPalabra(candidata);
-        if (yaEnDudas.has(key) || seen.has(key)) return;
-        seen.add(key);
-        out.push(candidata);
-      });
+      if (_B1_esBasuraPura(textoSingle)) continue;
+      if (_B1_esSoloNumerico(textoSingle)) continue;
+      if (!compactSingle || compactSingle.length < 3 || compactSingle.length > 8) continue;
+
+      const tipoChars = _B1_contarTipoCaracteres(textoSingle);
+      if (tipoChars.letras < 2) continue;
+
+      const candidata1 = _B1_crearPalabraSintetica([single]);
+      const key1 = _B1_keyPalabra(candidata1);
+      if (!yaEnDudas.has(key1) && !seen.has(key1)) {
+        out.push(candidata1);
+        seen.add(key1);
+      }
+
+      if (i + 1 < words.length) {
+        const next = words[i + 1];
+        const textoNext = String(next.texto || '').trim();
+        if (!_B1_esBasuraPura(textoNext)) {
+          const candidata2 = _B1_crearPalabraSintetica([single, next]);
+          const compact2 = _B1_compactarComparacion(candidata2.texto);
+          if (compact2.length >= 4 && compact2.length <= 10) {
+            const key2 = _B1_keyPalabra(candidata2);
+            if (!yaEnDudas.has(key2) && !seen.has(key2)) {
+              out.push(candidata2);
+              seen.add(key2);
+            }
+          }
+        }
+      }
     }
   });
 
   return out;
 }
 
-function _B1_clasificarVigilanciaCritica(p, sensitivityMode) {
+function _B1_clasificarVigilanciaCritica(p) {
   const textoOriginal = (p && typeof p.texto === 'string') ? p.texto : '';
   const textoNormalizado = _B1_normalizarComparacion(textoOriginal);
   const tokenCompacto = _B1_compactarComparacion(textoOriginal);
@@ -844,9 +776,16 @@ function _B1_clasificarVigilanciaCritica(p, sensitivityMode) {
     return base;
   }
 
-  const familia = _B1_puntuarFamiliaPrioritaria(p, tokenCompacto, contexto, 2, {
-    forzadoCritico: true,
-    permitirExactaNormalizada: true
+  if (!_B1_esContextoCriticoForzado(p)) {
+    base.decision = 'descartado_no_prioritario';
+    base.motivo = 'vigilancia_fuera_de_contexto_critico';
+    return base;
+  }
+
+  const familia = _B1_puntuarFamiliaPrioritaria(p, tokenCompacto, contexto, B1_TOLERANCIA_FAMILIA_CRITICA, {
+    permitirExactaNormalizada: true,
+    bonusCritico: 60,
+    exigirZonaCritica: true
   });
 
   if (familia.score <= 0) {
@@ -855,7 +794,8 @@ function _B1_clasificarVigilanciaCritica(p, sensitivityMode) {
     return base;
   }
 
-  if (rawCompact === _B1_compactarComparacion(familia.matchedStem)) {
+  const stemCompacto = _B1_compactarComparacion(familia.matchedStem);
+  if (rawCompact === stemCompacto) {
     base.decision = 'descartado_no_prioritario';
     base.motivo = 'familia_ya_legible';
     return base;
@@ -864,39 +804,50 @@ function _B1_clasificarVigilanciaCritica(p, sensitivityMode) {
   base.decision = 'candidato_agente_familia';
   base.motivo = 'vigilancia_familia_critica';
   base.familia = familia.familia;
-  base.prioridad = familia.score + 50;
+  base.prioridad = familia.score;
   base.matchedStem = familia.matchedStem;
   base.evidencia = familia.evidencia;
   return base;
 }
-
 
 // ─── EJECUTAR SELECTOR OCR ──────────────────────────────────
 function _B1_ejecutarSelectorOCR(palabrasDudosas, ocrNormalizado, sensitivityMode, maxSlots) {
   const dudas = Array.isArray(palabrasDudosas) ? palabrasDudosas : [];
   const decisiones = dudas.map(p => _B1_clasificarPalabraDudosa(p, sensitivityMode));
 
-  const candidatas = decisiones
-    .map((decision, idx) => ({ idx, decision, palabra: dudas[idx] }))
+  const candidatasNormales = decisiones
+    .map((decision, idx) => ({ decision, palabra: dudas[idx] }))
     .filter(x =>
       x.decision.decision === 'candidato_agente_familia' ||
       x.decision.decision === 'candidato_agente_peso_formato' ||
       x.decision.decision === 'candidato_agente_nombre'
     );
 
+  const familiaNormalPorBloque = new Set(
+    candidatasNormales
+      .filter(x => x.decision.decision === 'candidato_agente_familia')
+      .map(x => `${x.decision.pageIndex}:${x.decision.blockIndex}:${x.decision.familia}`)
+  );
+
   const candidatasForzadas = [];
   const palabrasForzadas = _B1_generarCandidatosVigilanciaCritica(ocrNormalizado, dudas);
 
   palabrasForzadas.forEach(p => {
-    const decision = _B1_clasificarVigilanciaCritica(p, sensitivityMode);
+    const decision = _B1_clasificarVigilanciaCritica(p);
     decisiones.push(decision);
 
     if (decision.decision === 'candidato_agente_familia') {
-      candidatasForzadas.push({ decision, palabra: p });
+      const claveBloqueFamilia = `${decision.pageIndex}:${decision.blockIndex}:${decision.familia}`;
+      if (!familiaNormalPorBloque.has(claveBloqueFamilia)) {
+        candidatasForzadas.push({ decision, palabra: p });
+      }
     }
   });
 
-  const todasCandidatas = candidatas.concat(candidatasForzadas);
+  candidatasForzadas.sort((a, b) => b.decision.prioridad - a.decision.prioridad);
+  const candidatasForzadasCortas = candidatasForzadas.slice(0, B1_MAX_FORZADOS_CRITICOS);
+
+  const todasCandidatas = candidatasNormales.concat(candidatasForzadasCortas);
 
   const dedupe = new Map();
   todasCandidatas.forEach(item => {
@@ -947,7 +898,7 @@ function _B1_ejecutarSelectorOCR(palabrasDudosas, ocrNormalizado, sensitivityMod
       totalEnviadoAgente: enviadoAgente.length,
       totalNoPrioritario: descartadoNoPrioritario.length,
       totalDescartadoPorCupo: descartadoPorCupo.length,
-      totalForzadoCritico: candidatasForzadas.length,
+      totalForzadoCritico: candidatasForzadasCortas.length,
       descartadoBasura,
       enviadoAgente,
       descartadoNoPrioritario,
@@ -957,14 +908,14 @@ function _B1_ejecutarSelectorOCR(palabrasDudosas, ocrNormalizado, sensitivityMod
   };
 }
 
-
 // ─── FILTRAR DUDAS RESCATABLES ──────────────────────────────
 function B1_filtrarDudasRescatables(palabrasDudosas, sensitivityMode) {
   const config = B1_PRESUPUESTOS[sensitivityMode] || {};
-  const ocrNormalizado = (typeof globalThis !== 'undefined' && globalThis.__B1_LAST_OCR_NORMALIZADO__) ? globalThis.__B1_LAST_OCR_NORMALIZADO__ : null;
+  const ocrNormalizado = (typeof globalThis !== 'undefined' && globalThis.__B1_LAST_OCR_NORMALIZADO__)
+    ? globalThis.__B1_LAST_OCR_NORMALIZADO__
+    : null;
   return _B1_ejecutarSelectorOCR(palabrasDudosas, ocrNormalizado, sensitivityMode, config.maxSlots).seleccionadas;
 }
-
 
 // ─── CREAR SLOTS INDEXADOS ──────────────────────────────────
 function B1_crearSlots(dudasRescatables, maxSlots) {
@@ -985,7 +936,6 @@ function B1_crearSlots(dudasRescatables, maxSlots) {
     bloque: p.bloque
   }));
 }
-
 
 // ─── RECORTAR ROI ───────────────────────────────────────────
 function B1_recortarROI(canvasOriginal, boundingPoly, margen) {
@@ -1029,7 +979,6 @@ function B1_recortarROI(canvasOriginal, boundingPoly, margen) {
   return roiCanvas.toDataURL('image/jpeg', 0.90).split(',')[1];
 }
 
-
 // ─── CONSTRUIR CONTEXTO INTRABLOQUE ─────────────────────────
 function B1_construirContexto(slot, ventana) {
   if (!slot.bloque || !slot.bloque.palabras) {
@@ -1057,7 +1006,6 @@ function B1_construirContexto(slot, ventana) {
   return partes.join(' ');
 }
 
-
 // ─── VENTANA DE CONTEXTO POR SENSIBILIDAD ───────────────────
 function B1_getVentanaContexto(sensitivityMode) {
   switch (sensitivityMode) {
@@ -1068,11 +1016,13 @@ function B1_getVentanaContexto(sensitivityMode) {
   }
 }
 
-
 // ─── PREPARAR LOTE COMPLETO PARA RESCATE ────────────────────
 function B1_prepararLoteRescate(palabrasDudosas, canvas, sensitivityMode) {
   const config = B1_PRESUPUESTOS[sensitivityMode];
-  const ocrNormalizado = (typeof globalThis !== 'undefined' && globalThis.__B1_LAST_OCR_NORMALIZADO__) ? globalThis.__B1_LAST_OCR_NORMALIZADO__ : null;
+  const ocrNormalizado = (typeof globalThis !== 'undefined' && globalThis.__B1_LAST_OCR_NORMALIZADO__)
+    ? globalThis.__B1_LAST_OCR_NORMALIZADO__
+    : null;
+
   const selector = _B1_ejecutarSelectorOCR(palabrasDudosas, ocrNormalizado, sensitivityMode, config.maxSlots);
 
   const rescatables = selector.seleccionadas;
