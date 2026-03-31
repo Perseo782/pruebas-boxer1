@@ -1,4 +1,3 @@
-
 /**
  * ═══════════════════════════════════════════════════════════════
  * BOXER 1 CORE · PASO 5 · SLOTS, ROI Y CONTEXTO
@@ -11,6 +10,7 @@
  * 2) Detecta sospechas importantes rotas
  * 3) Manda a slot solo lo importante para la app
  * 4) Expone una auditoría completa en selectorOCR
+ * 5) Fuerza rescate de familias críticas aunque no vengan por la ruta normal
  *
  * Importante:
  * - No corrige texto final
@@ -18,6 +18,22 @@
  * - Solo decide qué merece llegar al agente
  * ═══════════════════════════════════════════════════════════════
  */
+
+// ─── CAPTURAR OCR COMPLETO PARA VIGILANCIA CRÍTICA ──────────
+(function _B1_instalarCapturaOCRGlobal() {
+  if (typeof globalThis === 'undefined') return;
+  if (globalThis.__B1_WRAP_NORMALIZAR_OCR_INSTALADO__) return;
+  if (typeof globalThis.B1_normalizarOCR !== 'function') return;
+
+  const original = globalThis.B1_normalizarOCR;
+  globalThis.B1_normalizarOCR = function (...args) {
+    const out = original.apply(this, args);
+    globalThis.__B1_LAST_OCR_NORMALIZADO__ = out;
+    return out;
+  };
+  globalThis.__B1_WRAP_NORMALIZAR_OCR_INSTALADO__ = true;
+})();
+
 
 // ─── CONTADOR GLOBAL DE SLOTS (por ejecución) ───────────────
 let _b1SlotCounter = 0;
@@ -38,21 +54,23 @@ const B1_FAMILIAS_PRIORITARIAS = [
     id: 'gluten',
     stems: [
       'gluten', 'trigo', 'wheat', 'blé', 'ble', 'cebada', 'barley',
-      'centeno', 'rye', 'avena', 'oats', 'espelta', 'kamut'
+      'centeno', 'rye', 'avena', 'oats', 'espelta', 'kamut', 'semola', 'sémola', 'semoule'
     ]
   },
   {
     id: 'leche',
     stems: [
       'leche', 'milk', 'lait', 'lactosa', 'lactose', 'lact', 'lacteo',
-      'caseina', 'caseine', 'casein', 'suero', 'whey', 'mantequilla',
-      'butter', 'queso', 'cheese', 'fromage', 'yogur', 'yogurt',
-      'nata', 'cream'
+      'caseina', 'caseine', 'casein', 'caseinato', 'suero', 'whey',
+      'mantequilla', 'butter', 'queso', 'cheese', 'fromage',
+      'yogur', 'yogurt', 'nata', 'cream', 'leite', 'caseinate', 'caseinato'
     ]
   },
   {
     id: 'huevo',
-    stems: ['huevo', 'egg', 'oeuf', 'ovo', 'albumina', 'ovalbumina', 'ovalbumin']
+    stems: [
+      'huevo', 'egg', 'oeuf', 'ovo', 'albumina', 'ovalbumina', 'ovalbumin'
+    ]
   },
   {
     id: 'soja',
@@ -128,28 +146,25 @@ const B1_STOPWORDS_NOMBRE = new Set([
   'trazas', 'de', 'del', 'la', 'el', 'los', 'las'
 ]);
 
-const B1_CONTEXTO_INGREDIENTES = [
-  'ingred', 'ingredient'
-];
-
+const B1_CONTEXTO_INGREDIENTES = ['ingred', 'ingredient'];
 const B1_CONTEXTO_ALERGENOS = [
-  'alerg', 'allerg', 'allergen', 'trazas', 'contener', 'contiene',
-  'manipula', 'manipulado', 'manipula', 'mayuscul', 'mayúscul'
+  'alerg', 'allerg', 'allergen',
+  'trazas', 'contener', 'contiene', 'contains', 'contain',
+  'may contain', 'peut contenir', 'pode conter', 'contém', 'contém',
+  'manipula', 'manipulado', 'mayuscul', 'mayúscul'
 ];
-
 const B1_CONTEXTO_NUTRICIONAL = [
   'informacion nutric', 'información nutric', 'nutrition',
   'valor energet', 'kcal', 'grasas', 'hidratos', 'proteinas',
   'proteínas', 'protein', 'sal', 'por 100', 'pour 100'
 ];
-
 const B1_CONTEXTO_PESO = [
   'p.net', 'pnet', 'peso net', 'poids net', 'net weight', 'contenido neto', 'peso'
 ];
-
 const B1_CONTEXTO_IRRELEVANTE = [
   'lote', 'lot', 'rgseaa', 'rsseaa', 'elaborado por', 'fabricado por',
-  'conservar', 'consumir preferentemente', 'antes del fin', 'c/', 's.l', 's.a'
+  'conservar', 'consumir preferentemente', 'antes del fin', 'c/', 's.l', 's.a',
+  'origin', 'fecha de produccion', 'production date', 'best before', 'ref:'
 ];
 
 
@@ -183,6 +198,14 @@ function _B1_compactarComparacion(texto) {
   return _B1_normalizarComparacion(texto).replace(/[^a-z0-9]/g, '');
 }
 
+function _B1_compactarBruto(texto) {
+  return String(texto || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
 
 // ─── BASURA PURA ────────────────────────────────────────────
 function _B1_esBasuraPura(textoOriginal) {
@@ -208,7 +231,7 @@ function _B1_esBasuraPura(textoOriginal) {
 }
 
 
-// ─── DISTANCIA SIMPLE ───────────────────────────────────────
+// ─── UTILIDADES ─────────────────────────────────────────────
 function _B1_distanciaSimple(a, b) {
   const s = String(a || '');
   const t = String(b || '');
@@ -238,8 +261,38 @@ function _B1_distanciaSimple(a, b) {
   return dp[s.length][t.length];
 }
 
+function _B1_bigramas(texto) {
+  const t = String(texto || '');
+  const out = new Set();
+  if (t.length < 2) return out;
+  for (let i = 0; i < t.length - 1; i++) {
+    out.add(t.slice(i, i + 2));
+  }
+  return out;
+}
 
-// ─── CONTEXTO CERCANO ───────────────────────────────────────
+function _B1_tieneSolapeBigramas(a, b) {
+  const A = _B1_bigramas(a);
+  const B = _B1_bigramas(b);
+  if (!A.size || !B.size) return false;
+  for (const bg of A) {
+    if (B.has(bg)) return true;
+  }
+  return false;
+}
+
+function _B1_esSoloNumerico(textoOriginal) {
+  const texto = String(textoOriginal || '').trim();
+  return !!texto && /^\d+([.,]\d+)?$/.test(texto);
+}
+
+function _B1_contarTipoCaracteres(textoOriginal) {
+  const texto = String(textoOriginal || '');
+  const letras = (texto.match(/[A-Za-zÁÉÍÓÚÜÑÀÈÌÒÙÇáéíóúüñàèìòùç]/g) || []).length;
+  const digitos = (texto.match(/\d/g) || []).length;
+  return { letras, digitos };
+}
+
 function _B1_obtenerTextoVecino(p, offset) {
   if (!p || !p.bloque || !Array.isArray(p.bloque.palabras)) return '';
   const idx = Number(p.wordIndex);
@@ -260,6 +313,45 @@ function _B1_incluyeAlguna(textoNormalizado, lista) {
   return lista.some(k => textoNormalizado.includes(_B1_normalizarComparacion(k)));
 }
 
+function _B1_clonarBounding(vertices) {
+  return {
+    vertices: (vertices || []).map(v => ({ x: v.x || 0, y: v.y || 0 }))
+  };
+}
+
+function _B1_unionBoundingPolys(words) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let count = 0;
+
+  words.forEach(w => {
+    const bp = w && w.boundingPoly;
+    const verts = bp && Array.isArray(bp.vertices) ? bp.vertices : [];
+    verts.forEach(v => {
+      const x = v.x || 0;
+      const y = v.y || 0;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+      count++;
+    });
+  });
+
+  if (!count) return null;
+
+  return _B1_clonarBounding([
+    { x: minX, y: minY },
+    { x: maxX, y: minY },
+    { x: maxX, y: maxY },
+    { x: minX, y: maxY }
+  ]);
+}
+
+
+// ─── CONTEXTO SEMÁNTICO ─────────────────────────────────────
 function _B1_deducirContextoSemantico(p) {
   const bloqueTexto = _B1_obtenerTextoBloque(p);
   const bloqueNorm = _B1_normalizarComparacion(bloqueTexto);
@@ -299,41 +391,48 @@ function _B1_obtenerVentanasComparacion(p, tokenCompacto) {
 
   const ventanas = [];
 
-  if (tokenCompacto) {
-    ventanas.push({ valor: tokenCompacto, tipo: 'actual' });
-  }
-  if (tokenCompacto && nextCompacto) {
-    ventanas.push({ valor: tokenCompacto + nextCompacto, tipo: 'actual_next' });
-  }
-  if (prevCompacto && tokenCompacto) {
-    ventanas.push({ valor: prevCompacto + tokenCompacto, tipo: 'prev_actual' });
-  }
-  if (prevCompacto && tokenCompacto && nextCompacto) {
-    ventanas.push({ valor: prevCompacto + tokenCompacto + nextCompacto, tipo: 'prev_actual_next' });
-  }
+  if (tokenCompacto) ventanas.push({ valor: tokenCompacto, tipo: 'actual' });
+  if (tokenCompacto && nextCompacto) ventanas.push({ valor: tokenCompacto + nextCompacto, tipo: 'actual_next' });
+  if (prevCompacto && tokenCompacto) ventanas.push({ valor: prevCompacto + tokenCompacto, tipo: 'prev_actual' });
+  if (prevCompacto && tokenCompacto && nextCompacto) ventanas.push({ valor: prevCompacto + tokenCompacto + nextCompacto, tipo: 'prev_actual_next' });
 
-  const unicas = [];
   const seen = new Set();
-
-  ventanas.forEach(v => {
-    if (!v.valor) return;
+  return ventanas.filter(v => {
+    if (!v.valor) return false;
     const key = `${v.tipo}:${v.valor}`;
-    if (seen.has(key)) return;
+    if (seen.has(key)) return false;
     seen.add(key);
-    unicas.push(v);
+    return true;
   });
-
-  return unicas;
 }
 
 
 // ─── PUNTUAR FAMILIA PRIORITARIA ────────────────────────────
-function _B1_puntuarFamiliaPrioritaria(p, tokenCompacto, contexto, tolerancia) {
+function _B1_puntuarFamiliaPrioritaria(p, tokenCompacto, contexto, tolerancia, opts = {}) {
+  const opciones = Object.assign({
+    forzadoCritico: false,
+    permitirExactaNormalizada: true
+  }, opts || {});
+
   if (!tokenCompacto || tokenCompacto.length < 3) {
     return { score: 0, familia: null, motivo: null, matchedStem: null, evidencia: null };
   }
 
+  if (!(contexto.ingredientes || contexto.alergenos)) {
+    return { score: 0, familia: null, motivo: null, matchedStem: null, evidencia: null };
+  }
+
+  if (_B1_esSoloNumerico(p && p.texto)) {
+    return { score: 0, familia: null, motivo: null, matchedStem: null, evidencia: null };
+  }
+
+  const tipoChars = _B1_contarTipoCaracteres(p && p.texto);
+  if (tipoChars.letras < 2) {
+    return { score: 0, familia: null, motivo: null, matchedStem: null, evidencia: null };
+  }
+
   const ventanas = _B1_obtenerVentanasComparacion(p, tokenCompacto);
+  const rawCompact = _B1_compactarBruto(p && p.texto);
   let mejor = { score: 0, familia: null, motivo: null, matchedStem: null, evidencia: null };
 
   B1_FAMILIAS_PRIORITARIAS.forEach(familia => {
@@ -345,24 +444,37 @@ function _B1_puntuarFamiliaPrioritaria(p, tokenCompacto, contexto, tolerancia) {
         let score = 0;
         let motivo = null;
 
-        if (ventana.valor === stemCompacto) {
-          score = 320;
-          motivo = 'coincidencia_exacta_familia';
-        } else if (stemCompacto.startsWith(ventana.valor) && ventana.valor.length >= 3) {
-          score = 290;
+        if (
+          opciones.permitirExactaNormalizada &&
+          ventana.valor === stemCompacto &&
+          rawCompact !== stemCompacto
+        ) {
+          score = opciones.forzadoCritico ? 380 : 320;
+          motivo = 'coincidencia_exacta_normalizada';
+        } else if (
+          stemCompacto.startsWith(ventana.valor) &&
+          ventana.valor.length >= 3 &&
+          _B1_tieneSolapeBigramas(ventana.valor, stemCompacto)
+        ) {
+          score = opciones.forzadoCritico ? 360 : 290;
           motivo = 'prefijo_familia';
-        } else if (ventana.valor.includes(stemCompacto) || stemCompacto.includes(ventana.valor)) {
-          score = 270;
+        } else if (
+          (ventana.valor.includes(stemCompacto) || stemCompacto.includes(ventana.valor)) &&
+          ventana.valor.length >= 4 &&
+          _B1_tieneSolapeBigramas(ventana.valor, stemCompacto)
+        ) {
+          score = opciones.forzadoCritico ? 340 : 270;
           motivo = 'subcadena_familia';
         } else {
           const dist = _B1_distanciaSimple(ventana.valor, stemCompacto);
-          if (dist <= tolerancia) {
-            score = 240 - (dist * 20);
+          const haySolape = _B1_tieneSolapeBigramas(ventana.valor, stemCompacto);
+          if (dist <= tolerancia && haySolape) {
+            score = (opciones.forzadoCritico ? 320 : 240) - (dist * 20);
             motivo = 'parecido_familia';
           }
         }
 
-        if (score > 0 && (contexto.ingredientes || contexto.alergenos)) {
+        if (score > 0) {
           score += 40;
         }
 
@@ -448,7 +560,6 @@ function _B1_puntuarNombreProducto(p, tokenOriginal, tokenCompacto, contexto) {
   if (!tokenCompacto || tokenCompacto.length < 4) return { score: 0, motivo: null, evidencia: null };
   if (/\d/.test(tokenCompacto)) return { score: 0, motivo: null, evidencia: null };
 
-  // Nombre solo por exclusión de zonas funcionales.
   if (contexto.ingredientes || contexto.alergenos || contexto.nutricional || contexto.irrelevante || contexto.peso) {
     return { score: 0, motivo: null, evidencia: null };
   }
@@ -457,15 +568,14 @@ function _B1_puntuarNombreProducto(p, tokenOriginal, tokenCompacto, contexto) {
     return { score: 0, motivo: null, evidencia: null };
   }
 
+  if (contexto.blockWordCount < 2 || contexto.blockWordCount > 6) {
+    return { score: 0, motivo: null, evidencia: null };
+  }
+
   const texto = String(tokenOriginal || '').trim();
   const mayusculas = texto.replace(/[^A-ZÁÉÍÓÚÜÑÀÈÌÒÙÇ]/gu, '').length;
   const letras = texto.replace(/[^A-Za-zÁÉÍÓÚÜÑÀÈÌÒÙÇáéíóúüñàèìòùç]/gu, '').length;
   const ratioMayusculas = letras > 0 ? mayusculas / letras : 0;
-
-  // Bloque corto y bastante "tipo nombre".
-  if (contexto.blockWordCount > 6) {
-    return { score: 0, motivo: null, evidencia: null };
-  }
 
   let score = 0;
   if (ratioMayusculas >= 0.6) score += 150;
@@ -595,46 +705,219 @@ function _B1_clasificarPalabraDudosa(p, sensitivityMode) {
 }
 
 
-// ─── EJECUTAR SELECTOR OCR ──────────────────────────────────
-function _B1_ejecutarSelectorOCR(palabrasDudosas, sensitivityMode, maxSlots) {
-  if (!Array.isArray(palabrasDudosas) || palabrasDudosas.length === 0) {
-    return {
-      seleccionadas: [],
-      selectorOCR: {
-        totalDudas: 0,
-        totalBasura: 0,
-        totalEnviadoAgente: 0,
-        totalNoPrioritario: 0,
-        totalDescartadoPorCupo: 0,
-        descartadoBasura: [],
-        enviadoAgente: [],
-        descartadoNoPrioritario: [],
-        descartadoPorCupo: [],
-        decisiones: []
-      }
-    };
+// ─── EXTRACCIÓN OCR COMPLETO PARA VIGILANCIA CRÍTICA ───────
+function _B1_extraerPalabrasOCR(ocrNormalizado) {
+  const salida = [];
+  if (!ocrNormalizado || typeof ocrNormalizado !== 'object') return salida;
+
+  const pushBlock = (bloque, pageIndexDefault, blockIndexDefault) => {
+    if (!bloque || !Array.isArray(bloque.palabras)) return;
+    const blockIndex = Number.isFinite(bloque.blockIndex) ? bloque.blockIndex : blockIndexDefault;
+    const pageIndex = Number.isFinite(bloque.pageIndex) ? bloque.pageIndex : pageIndexDefault;
+
+    bloque.palabras.forEach((palabra, wordIndex) => {
+      const texto = palabra && typeof palabra.texto === 'string' ? palabra.texto : '';
+      salida.push({
+        texto,
+        confidence: palabra && typeof palabra.confidence === 'number' ? palabra.confidence : null,
+        boundingPoly: palabra && palabra.boundingPoly ? palabra.boundingPoly : null,
+        pageIndex,
+        blockIndex,
+        wordIndex: Number.isFinite(palabra && palabra.wordIndex) ? palabra.wordIndex : wordIndex,
+        bloque
+      });
+    });
+  };
+
+  if (Array.isArray(ocrNormalizado.bloques)) {
+    ocrNormalizado.bloques.forEach((bloque, idx) => pushBlock(bloque, 0, idx));
   }
 
-  const decisiones = palabrasDudosas.map(p => _B1_clasificarPalabraDudosa(p, sensitivityMode));
+  if (Array.isArray(ocrNormalizado.paginas)) {
+    ocrNormalizado.paginas.forEach((pagina, pIdx) => {
+      if (Array.isArray(pagina && pagina.bloques)) {
+        pagina.bloques.forEach((bloque, bIdx) => pushBlock(bloque, pIdx, bIdx));
+      }
+    });
+  }
+
+  return salida;
+}
+
+function _B1_keyPalabra(p) {
+  const start = Number.isFinite(p && p.spanStartIndex) ? p.spanStartIndex : (p && p.wordIndex);
+  const end = Number.isFinite(p && p.spanEndIndex) ? p.spanEndIndex : (p && p.wordIndex);
+  return [
+    p && p.pageIndex != null ? p.pageIndex : 'x',
+    p && p.blockIndex != null ? p.blockIndex : 'x',
+    start != null ? start : 'x',
+    end != null ? end : 'x',
+    _B1_compactarBruto(p && p.texto)
+  ].join(':');
+}
+
+function _B1_crearPalabraSintetica(words) {
+  if (!Array.isArray(words) || !words.length) return null;
+  const primera = words[0];
+  const ultima = words[words.length - 1];
+
+  return {
+    texto: words.map(w => w.texto).join(' '),
+    confidence: words.reduce((min, w) => {
+      const c = typeof w.confidence === 'number' ? w.confidence : 1;
+      return c < min ? c : min;
+    }, 1),
+    boundingPoly: _B1_unionBoundingPolys(words),
+    pageIndex: primera.pageIndex,
+    blockIndex: primera.blockIndex,
+    wordIndex: primera.wordIndex,
+    spanStartIndex: primera.wordIndex,
+    spanEndIndex: ultima.wordIndex,
+    bloque: primera.bloque
+  };
+}
+
+function _B1_generarCandidatosVigilanciaCritica(ocrNormalizado, palabrasDudosas) {
+  const todas = _B1_extraerPalabrasOCR(ocrNormalizado);
+  const yaEnDudas = new Set((Array.isArray(palabrasDudosas) ? palabrasDudosas : []).map(_B1_keyPalabra));
+  const out = [];
+  const seen = new Set();
+
+  const porBloque = new Map();
+  todas.forEach(p => {
+    const key = `${p.pageIndex}:${p.blockIndex}`;
+    if (!porBloque.has(key)) porBloque.set(key, []);
+    porBloque.get(key).push(p);
+  });
+
+  porBloque.forEach(words => {
+    words.sort((a, b) => (a.wordIndex || 0) - (b.wordIndex || 0));
+    for (let i = 0; i < words.length; i++) {
+      const single = words[i];
+      const contexto = _B1_deducirContextoSemantico(single);
+      if (!(contexto.ingredientes || contexto.alergenos)) continue;
+
+      const packs = [[single]];
+      if (i + 1 < words.length) packs.push([single, words[i + 1]]);
+      if (i + 2 < words.length) packs.push([single, words[i + 1], words[i + 2]]);
+
+      packs.forEach(group => {
+        const candidata = _B1_crearPalabraSintetica(group);
+        if (!candidata) return;
+        const key = _B1_keyPalabra(candidata);
+        if (yaEnDudas.has(key) || seen.has(key)) return;
+        seen.add(key);
+        out.push(candidata);
+      });
+    }
+  });
+
+  return out;
+}
+
+function _B1_clasificarVigilanciaCritica(p, sensitivityMode) {
+  const textoOriginal = (p && typeof p.texto === 'string') ? p.texto : '';
+  const textoNormalizado = _B1_normalizarComparacion(textoOriginal);
+  const tokenCompacto = _B1_compactarComparacion(textoOriginal);
+  const rawCompact = _B1_compactarBruto(textoOriginal);
+  const contexto = _B1_deducirContextoSemantico(p);
+
+  const base = {
+    textoOriginal,
+    textoNormalizado,
+    pageIndex: p && typeof p.pageIndex === 'number' ? p.pageIndex : null,
+    blockIndex: p && typeof p.blockIndex === 'number' ? p.blockIndex : null,
+    wordIndex: p && typeof p.wordIndex === 'number' ? p.wordIndex : null,
+    decision: null,
+    motivo: null,
+    familia: null,
+    prioridad: 0,
+    matchedStem: null,
+    evidencia: null,
+    zona: contexto.zona,
+    forcedCritical: true
+  };
+
+  if (_B1_esBasuraPura(textoOriginal) || !tokenCompacto) {
+    base.decision = 'descartado_no_prioritario';
+    base.motivo = 'vigilancia_critica_sin_nucleo';
+    return base;
+  }
+
+  const familia = _B1_puntuarFamiliaPrioritaria(p, tokenCompacto, contexto, 2, {
+    forzadoCritico: true,
+    permitirExactaNormalizada: true
+  });
+
+  if (familia.score <= 0) {
+    base.decision = 'descartado_no_prioritario';
+    base.motivo = 'vigilancia_critica_sin_match';
+    return base;
+  }
+
+  if (rawCompact === _B1_compactarComparacion(familia.matchedStem)) {
+    base.decision = 'descartado_no_prioritario';
+    base.motivo = 'familia_ya_legible';
+    return base;
+  }
+
+  base.decision = 'candidato_agente_familia';
+  base.motivo = 'vigilancia_familia_critica';
+  base.familia = familia.familia;
+  base.prioridad = familia.score + 50;
+  base.matchedStem = familia.matchedStem;
+  base.evidencia = familia.evidencia;
+  return base;
+}
+
+
+// ─── EJECUTAR SELECTOR OCR ──────────────────────────────────
+function _B1_ejecutarSelectorOCR(palabrasDudosas, ocrNormalizado, sensitivityMode, maxSlots) {
+  const dudas = Array.isArray(palabrasDudosas) ? palabrasDudosas : [];
+  const decisiones = dudas.map(p => _B1_clasificarPalabraDudosa(p, sensitivityMode));
 
   const candidatas = decisiones
-    .map((decision, idx) => ({ idx, decision, palabra: palabrasDudosas[idx] }))
+    .map((decision, idx) => ({ idx, decision, palabra: dudas[idx] }))
     .filter(x =>
       x.decision.decision === 'candidato_agente_familia' ||
       x.decision.decision === 'candidato_agente_peso_formato' ||
       x.decision.decision === 'candidato_agente_nombre'
     );
 
-  candidatas.sort((a, b) => {
+  const candidatasForzadas = [];
+  const palabrasForzadas = _B1_generarCandidatosVigilanciaCritica(ocrNormalizado, dudas);
+
+  palabrasForzadas.forEach(p => {
+    const decision = _B1_clasificarVigilanciaCritica(p, sensitivityMode);
+    decisiones.push(decision);
+
+    if (decision.decision === 'candidato_agente_familia') {
+      candidatasForzadas.push({ decision, palabra: p });
+    }
+  });
+
+  const todasCandidatas = candidatas.concat(candidatasForzadas);
+
+  const dedupe = new Map();
+  todasCandidatas.forEach(item => {
+    const key = _B1_keyPalabra(item.palabra);
+    const prev = dedupe.get(key);
+    if (!prev || item.decision.prioridad > prev.decision.prioridad) {
+      dedupe.set(key, item);
+    }
+  });
+
+  const candidatasOrdenadas = Array.from(dedupe.values());
+  candidatasOrdenadas.sort((a, b) => {
     if (b.decision.prioridad !== a.decision.prioridad) return b.decision.prioridad - a.decision.prioridad;
     if ((a.decision.pageIndex || 0) !== (b.decision.pageIndex || 0)) return (a.decision.pageIndex || 0) - (b.decision.pageIndex || 0);
     if ((a.decision.blockIndex || 0) !== (b.decision.blockIndex || 0)) return (a.decision.blockIndex || 0) - (b.decision.blockIndex || 0);
     return (a.decision.wordIndex || 0) - (b.decision.wordIndex || 0);
   });
 
-  const limite = Number.isFinite(maxSlots) && maxSlots > 0 ? maxSlots : candidatas.length;
-  const enviadas = candidatas.slice(0, limite);
-  const porCupo = candidatas.slice(limite);
+  const limite = Number.isFinite(maxSlots) && maxSlots > 0 ? maxSlots : candidatasOrdenadas.length;
+  const enviadas = candidatasOrdenadas.slice(0, limite);
+  const porCupo = candidatasOrdenadas.slice(limite);
 
   enviadas.forEach(x => {
     if (x.decision.decision === 'candidato_agente_familia') x.decision.decision = 'enviado_agente_familia';
@@ -659,11 +942,12 @@ function _B1_ejecutarSelectorOCR(palabrasDudosas, sensitivityMode, maxSlots) {
   return {
     seleccionadas: enviadas.map(x => x.palabra),
     selectorOCR: {
-      totalDudas: palabrasDudosas.length,
+      totalDudas: dudas.length,
       totalBasura: descartadoBasura.length,
       totalEnviadoAgente: enviadoAgente.length,
       totalNoPrioritario: descartadoNoPrioritario.length,
       totalDescartadoPorCupo: descartadoPorCupo.length,
+      totalForzadoCritico: candidatasForzadas.length,
       descartadoBasura,
       enviadoAgente,
       descartadoNoPrioritario,
@@ -677,7 +961,8 @@ function _B1_ejecutarSelectorOCR(palabrasDudosas, sensitivityMode, maxSlots) {
 // ─── FILTRAR DUDAS RESCATABLES ──────────────────────────────
 function B1_filtrarDudasRescatables(palabrasDudosas, sensitivityMode) {
   const config = B1_PRESUPUESTOS[sensitivityMode] || {};
-  return _B1_ejecutarSelectorOCR(palabrasDudosas, sensitivityMode, config.maxSlots).seleccionadas;
+  const ocrNormalizado = (typeof globalThis !== 'undefined' && globalThis.__B1_LAST_OCR_NORMALIZADO__) ? globalThis.__B1_LAST_OCR_NORMALIZADO__ : null;
+  return _B1_ejecutarSelectorOCR(palabrasDudosas, ocrNormalizado, sensitivityMode, config.maxSlots).seleccionadas;
 }
 
 
@@ -688,14 +973,16 @@ function B1_crearSlots(dudasRescatables, maxSlots) {
   const limitadas = dudasRescatables.slice(0, maxSlots);
 
   return limitadas.map(p => ({
-    slotId:       _nextSlotId(),
-    textoOriginal:p.texto,
-    confidence:   p.confidence,
+    slotId: _nextSlotId(),
+    textoOriginal: p.texto,
+    confidence: p.confidence,
     boundingPoly: p.boundingPoly,
-    pageIndex:    p.pageIndex,
-    blockIndex:   p.blockIndex,
-    wordIndex:    p.wordIndex,
-    bloque:       p.bloque
+    pageIndex: p.pageIndex,
+    blockIndex: p.blockIndex,
+    wordIndex: p.wordIndex,
+    spanStartIndex: Number.isFinite(p.spanStartIndex) ? p.spanStartIndex : p.wordIndex,
+    spanEndIndex: Number.isFinite(p.spanEndIndex) ? p.spanEndIndex : p.wordIndex,
+    bloque: p.bloque
   }));
 }
 
@@ -750,15 +1037,18 @@ function B1_construirContexto(slot, ventana) {
   }
 
   const palabras = slot.bloque.palabras;
-  const idx = slot.wordIndex;
-  const inicio = Math.max(0, idx - ventana);
-  const fin = Math.min(palabras.length - 1, idx + ventana);
+  const idxInicio = Number.isFinite(slot.spanStartIndex) ? slot.spanStartIndex : slot.wordIndex;
+  const idxFin = Number.isFinite(slot.spanEndIndex) ? slot.spanEndIndex : slot.wordIndex;
+  const inicio = Math.max(0, idxInicio - ventana);
+  const fin = Math.min(palabras.length - 1, idxFin + ventana);
 
   const partes = [];
 
   for (let i = inicio; i <= fin; i++) {
-    if (i === idx) {
+    if (i === idxInicio) {
       partes.push(`[[${slot.slotId}|${slot.textoOriginal}]]`);
+    } else if (i > idxInicio && i <= idxFin) {
+      // ya representado por el span
     } else {
       partes.push(palabras[i].texto);
     }
@@ -771,9 +1061,9 @@ function B1_construirContexto(slot, ventana) {
 // ─── VENTANA DE CONTEXTO POR SENSIBILIDAD ───────────────────
 function B1_getVentanaContexto(sensitivityMode) {
   switch (sensitivityMode) {
-    case B1_SENSITIVITY.BAJA:  return 3;
+    case B1_SENSITIVITY.BAJA: return 3;
     case B1_SENSITIVITY.MEDIA: return 5;
-    case B1_SENSITIVITY.ALTA:  return 8;
+    case B1_SENSITIVITY.ALTA: return 8;
     default: return 5;
   }
 }
@@ -782,7 +1072,8 @@ function B1_getVentanaContexto(sensitivityMode) {
 // ─── PREPARAR LOTE COMPLETO PARA RESCATE ────────────────────
 function B1_prepararLoteRescate(palabrasDudosas, canvas, sensitivityMode) {
   const config = B1_PRESUPUESTOS[sensitivityMode];
-  const selector = _B1_ejecutarSelectorOCR(palabrasDudosas, sensitivityMode, config.maxSlots);
+  const ocrNormalizado = (typeof globalThis !== 'undefined' && globalThis.__B1_LAST_OCR_NORMALIZADO__) ? globalThis.__B1_LAST_OCR_NORMALIZADO__ : null;
+  const selector = _B1_ejecutarSelectorOCR(palabrasDudosas, ocrNormalizado, sensitivityMode, config.maxSlots);
 
   const rescatables = selector.seleccionadas;
   const slots = B1_crearSlots(rescatables, config.maxSlots);
@@ -793,24 +1084,24 @@ function B1_prepararLoteRescate(palabrasDudosas, canvas, sensitivityMode) {
     const contexto = B1_construirContexto(slot, ventana);
 
     return {
-      slotId:        slot.slotId,
+      slotId: slot.slotId,
       textoOriginal: slot.textoOriginal,
-      confidence:    slot.confidence,
+      confidence: slot.confidence,
       contexto,
       roiBase64,
-      boundingPoly:  slot.boundingPoly,
-      pageIndex:     slot.pageIndex,
-      blockIndex:    slot.blockIndex
+      boundingPoly: slot.boundingPoly,
+      pageIndex: slot.pageIndex,
+      blockIndex: slot.blockIndex
     };
   });
 
   return {
-    totalDudas:       palabrasDudosas.length,
+    totalDudas: Array.isArray(palabrasDudosas) ? palabrasDudosas.length : 0,
     totalRescatables: rescatables.length,
-    totalSlots:       slotsPreparados.length,
-    maxSlots:         config.maxSlots,
-    truncado:         rescatables.length > config.maxSlots,
-    selectorOCR:      selector.selectorOCR,
-    slots:            slotsPreparados
+    totalSlots: slotsPreparados.length,
+    maxSlots: config.maxSlots,
+    truncado: rescatables.length > config.maxSlots,
+    selectorOCR: selector.selectorOCR,
+    slots: slotsPreparados
   };
 }
