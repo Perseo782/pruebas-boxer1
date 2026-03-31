@@ -1,4 +1,3 @@
-
 /**
  * ═══════════════════════════════════════════════════════════════
  * BOXER 1 CORE · PASO 5 · SLOTS, ROI Y CONTEXTO
@@ -16,6 +15,12 @@
  * - No corrige texto final
  * - No decide negocio
  * - Solo decide qué merece llegar al agente
+ *
+ * NUEVO BLOQUE:
+ * FILTRO DE VALIDACIÓN FINAL DE NEGOCIO
+ * - Revisa la selección antes de enviarla al agente
+ * - Corta falsos positivos como "maiz" -> "leche"
+ * - Deja rastro visible en selectorOCR.validacionFinal
  * ═══════════════════════════════════════════════════════════════
  */
 
@@ -151,6 +156,24 @@ const B1_CONTEXTO_IRRELEVANTE = [
   'lote', 'lot', 'rgseaa', 'rsseaa', 'elaborado por', 'fabricado por',
   'conservar', 'consumir preferentemente', 'antes del fin', 'c/', 's.l', 's.a'
 ];
+
+const B1_CONFUSIONES_OCR = {
+  '0': ['o'],
+  '1': ['i', 'l'],
+  '2': ['z'],
+  '3': ['e'],
+  '4': ['a'],
+  '5': ['s'],
+  '6': ['g'],
+  '7': ['t'],
+  '8': ['b'],
+  '9': ['g'],
+  '@': ['a'],
+  '$': ['s'],
+  '|': ['l'],
+  '¡': ['i'],
+  '!': ['i']
+};
 
 
 // ─── NORMALIZACIÓN SUAVE OCR ────────────────────────────────
@@ -327,6 +350,250 @@ function _B1_obtenerVentanasComparacion(p, tokenCompacto) {
 }
 
 
+// ─── AYUDAS DE NEGOCIO / VALIDACIÓN FINAL ───────────────────
+function _B1_mismoInicio(a, b, n = 1) {
+  const s = String(a || '');
+  const t = String(b || '');
+  if (!s || !t) return false;
+  return s.slice(0, n) === t.slice(0, n);
+}
+
+function _B1_mismoFinal(a, b, n = 2) {
+  const s = String(a || '');
+  const t = String(b || '');
+  if (!s || !t || s.length < n || t.length < n) return false;
+  return s.slice(-n) === t.slice(-n);
+}
+
+function _B1_longitudCompatible(a, b) {
+  return Math.abs(String(a || '').length - String(b || '').length) <= 1;
+}
+
+function _B1_esTokenRaroOCR(textoOriginal) {
+  const texto = String(textoOriginal || '');
+  if (!texto.trim()) return false;
+
+  if (/[0-9]/.test(texto) && /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/u.test(texto)) return true;
+  if (/[|@$]/.test(texto)) return true;
+  if (/[^\u0000-\u007F]/.test(texto)) {
+    const normal = _B1_normalizarComparacion(texto);
+    const compacto = _B1_compactarComparacion(texto);
+    if (normal !== texto.toLowerCase() || compacto !== texto.toLowerCase().replace(/[^a-z0-9]/g, '')) return true;
+  }
+
+  const compacto = _B1_compactarComparacion(texto);
+  if (!compacto) return false;
+
+  if (/(.)\1\1/.test(compacto)) return true;
+  return false;
+}
+
+function _B1_generarVariantesOCR(tokenOriginal) {
+  const base = String(tokenOriginal || '');
+  const norm = _B1_normalizarComparacion(base);
+  const compacto = _B1_compactarComparacion(base);
+
+  const variantes = new Set();
+  if (compacto) variantes.add(compacto);
+  if (norm && norm !== compacto) variantes.add(_B1_compactarComparacion(norm));
+
+  const chars = [...norm];
+  chars.forEach((ch, idx) => {
+    const reemplazos = B1_CONFUSIONES_OCR[ch] || [];
+    reemplazos.forEach(rep => {
+      const clon = [...chars];
+      clon[idx] = rep;
+      variantes.add(_B1_compactarComparacion(clon.join('')));
+    });
+  });
+
+  return [...variantes].filter(Boolean);
+}
+
+function _B1_mejorCoincidenciaCatalogo(tokenOriginal, stems) {
+  const variantes = _B1_generarVariantesOCR(tokenOriginal);
+  const resultados = [];
+
+  stems.forEach(stem => {
+    const stemCompacto = _B1_compactarComparacion(stem);
+    if (!stemCompacto) return;
+
+    variantes.forEach(variante => {
+      const dist = _B1_distanciaSimple(variante, stemCompacto);
+      resultados.push({
+        stem,
+        stemCompacto,
+        variante,
+        dist,
+        mismoInicio1: _B1_mismoInicio(variante, stemCompacto, 1),
+        mismoInicio2: _B1_mismoInicio(variante, stemCompacto, 2),
+        mismoFinal2: _B1_mismoFinal(variante, stemCompacto, 2),
+        longitudCompatible: _B1_longitudCompatible(variante, stemCompacto)
+      });
+    });
+  });
+
+  resultados.sort((a, b) => {
+    if (a.dist !== b.dist) return a.dist - b.dist;
+    if (a.mismoInicio2 !== b.mismoInicio2) return a.mismoInicio2 ? -1 : 1;
+    if (a.mismoFinal2 !== b.mismoFinal2) return a.mismoFinal2 ? -1 : 1;
+    return 0;
+  });
+
+  return resultados.length ? resultados[0] : null;
+}
+
+function _B1_aprobarFamiliaEnValidacionFinal(decision, contexto) {
+  const token = _B1_compactarComparacion(decision.textoOriginal);
+  if (!token || !decision.matchedStem) {
+    return {
+      aprobado: false,
+      motivo: 'sin_stem_o_token',
+      detalle: null
+    };
+  }
+
+  const mejor = _B1_mejorCoincidenciaCatalogo(decision.textoOriginal, [decision.matchedStem]);
+  if (!mejor) {
+    return {
+      aprobado: false,
+      motivo: 'sin_mejor_coincidencia',
+      detalle: null
+    };
+  }
+
+  let puntos = 0;
+  const razones = [];
+
+  if (contexto.ingredientes || contexto.alergenos) {
+    puntos++;
+    razones.push('contexto_ingredientes_alergenos');
+  }
+
+  if (mejor.dist === 0) {
+    puntos += 3;
+    razones.push('distancia_0');
+  } else if (mejor.dist === 1) {
+    puntos += 2;
+    razones.push('distancia_1');
+  } else if (mejor.dist === 2) {
+    puntos += 1;
+    razones.push('distancia_2');
+  }
+
+  if (mejor.mismoInicio2) {
+    puntos += 2;
+    razones.push('mismo_inicio_2');
+  } else if (mejor.mismoInicio1) {
+    puntos += 1;
+    razones.push('mismo_inicio_1');
+  }
+
+  if (mejor.mismoFinal2) {
+    puntos += 1;
+    razones.push('mismo_final_2');
+  }
+
+  if (mejor.longitudCompatible) {
+    puntos += 1;
+    razones.push('longitud_compatible');
+  }
+
+  const aprobado = puntos >= 4;
+
+  return {
+    aprobado,
+    motivo: aprobado ? 'familia_validada' : 'familia_rechazada_por_validacion_final',
+    detalle: {
+      puntos,
+      razones,
+      dist: mejor.dist,
+      stem: mejor.stem,
+      variante: mejor.variante,
+      mismoInicio2: mejor.mismoInicio2,
+      mismoFinal2: mejor.mismoFinal2,
+      longitudCompatible: mejor.longitudCompatible
+    }
+  };
+}
+
+function _B1_aprobarPesoFormatoEnValidacionFinal(decision, contexto) {
+  const token = _B1_compactarComparacion(decision.textoOriginal);
+  const original = String(decision.textoOriginal || '').trim();
+
+  const aprobado =
+    contexto.peso ||
+    (/^\d+([.,]\d+)?(kg|g|gr|ml|cl|l)$/i.test(token)) ||
+    (/^\d+[x×]\d+([.,]\d+)?$/i.test(original));
+
+  return {
+    aprobado,
+    motivo: aprobado ? 'peso_formato_validado' : 'peso_formato_rechazado_por_validacion_final',
+    detalle: {
+      contextoPeso: contexto.peso,
+      token,
+      original
+    }
+  };
+}
+
+function _B1_aprobarNombreEnValidacionFinal(decision, contexto) {
+  const token = _B1_compactarComparacion(decision.textoOriginal);
+  const original = String(decision.textoOriginal || '').trim();
+
+  const letras = original.replace(/[^A-Za-zÁÉÍÓÚÜÑÀÈÌÒÙÇáéíóúüñàèìòùç]/gu, '').length;
+  const mayusculas = original.replace(/[^A-ZÁÉÍÓÚÜÑÀÈÌÒÙÇ]/gu, '').length;
+  const ratioMayusculas = letras > 0 ? mayusculas / letras : 0;
+
+  const aprobado =
+    !contexto.ingredientes &&
+    !contexto.alergenos &&
+    !contexto.nutricional &&
+    !contexto.irrelevante &&
+    !contexto.peso &&
+    token.length >= 4 &&
+    !B1_STOPWORDS_NOMBRE.has(token) &&
+    contexto.blockWordCount <= 6 &&
+    ratioMayusculas >= 0.45;
+
+  return {
+    aprobado,
+    motivo: aprobado ? 'nombre_validado' : 'nombre_rechazado_por_validacion_final',
+    detalle: {
+      token,
+      ratioMayusculas,
+      blockWordCount: contexto.blockWordCount
+    }
+  };
+}
+
+function _B1_validarDecisionFinal(decision, palabraOriginal) {
+  const contexto = _B1_deducirContextoSemantico(palabraOriginal);
+
+  let resultado = {
+    aprobado: false,
+    motivo: 'sin_validacion',
+    detalle: null,
+    contextoZona: contexto.zona
+  };
+
+  if (decision.decision === 'candidato_agente_familia') {
+    resultado = _B1_aprobarFamiliaEnValidacionFinal(decision, contexto);
+  } else if (decision.decision === 'candidato_agente_peso_formato') {
+    resultado = _B1_aprobarPesoFormatoEnValidacionFinal(decision, contexto);
+  } else if (decision.decision === 'candidato_agente_nombre') {
+    resultado = _B1_aprobarNombreEnValidacionFinal(decision, contexto);
+  }
+
+  return {
+    aprobado: resultado.aprobado,
+    motivo: resultado.motivo,
+    detalle: resultado.detalle,
+    contextoZona: contexto.zona
+  };
+}
+
+
 // ─── PUNTUAR FAMILIA PRIORITARIA ────────────────────────────
 function _B1_puntuarFamiliaPrioritaria(p, tokenCompacto, contexto, tolerancia) {
   if (!tokenCompacto || tokenCompacto.length < 3) {
@@ -448,7 +715,6 @@ function _B1_puntuarNombreProducto(p, tokenOriginal, tokenCompacto, contexto) {
   if (!tokenCompacto || tokenCompacto.length < 4) return { score: 0, motivo: null, evidencia: null };
   if (/\d/.test(tokenCompacto)) return { score: 0, motivo: null, evidencia: null };
 
-  // Nombre solo por exclusión de zonas funcionales.
   if (contexto.ingredientes || contexto.alergenos || contexto.nutricional || contexto.irrelevante || contexto.peso) {
     return { score: 0, motivo: null, evidencia: null };
   }
@@ -462,7 +728,6 @@ function _B1_puntuarNombreProducto(p, tokenOriginal, tokenCompacto, contexto) {
   const letras = texto.replace(/[^A-Za-zÁÉÍÓÚÜÑÀÈÌÒÙÇáéíóúüñàèìòùç]/gu, '').length;
   const ratioMayusculas = letras > 0 ? mayusculas / letras : 0;
 
-  // Bloque corto y bastante "tipo nombre".
   if (contexto.blockWordCount > 6) {
     return { score: 0, motivo: null, evidencia: null };
   }
@@ -502,7 +767,8 @@ function _B1_clasificarPalabraDudosa(p, sensitivityMode) {
     prioridad: 0,
     matchedStem: null,
     evidencia: null,
-    zona: contexto.zona
+    zona: contexto.zona,
+    tokenRaroOCR: _B1_esTokenRaroOCR(textoOriginal)
   };
 
   if (_B1_esBasuraPura(textoOriginal)) {
@@ -595,6 +861,58 @@ function _B1_clasificarPalabraDudosa(p, sensitivityMode) {
 }
 
 
+// ─── FILTRO DE VALIDACIÓN FINAL DE NEGOCIO ──────────────────
+function _B1_aplicarFiltroValidacionFinal(candidatas) {
+  const aprobadas = [];
+  const descartadas = [];
+
+  candidatas.forEach(item => {
+    const validacion = _B1_validarDecisionFinal(item.decision, item.palabra);
+
+    item.decision.validacionFinal = {
+      nombreFiltro: 'FILTRO_DE_VALIDACION_FINAL_DE_NEGOCIO',
+      aprobado: validacion.aprobado,
+      motivo: validacion.motivo,
+      contextoZona: validacion.contextoZona,
+      detalle: validacion.detalle
+    };
+
+    if (validacion.aprobado) {
+      aprobadas.push(item);
+    } else {
+      item.decision.decision = 'descartado_validacion_final';
+      item.decision.motivo = validacion.motivo;
+      descartadas.push(item);
+    }
+  });
+
+  return {
+    aprobadas,
+    descartadas,
+    auditoria: {
+      nombreFiltro: 'FILTRO_DE_VALIDACION_FINAL_DE_NEGOCIO',
+      totalCandidatasRevisadas: candidatas.length,
+      totalAprobadas: aprobadas.length,
+      totalDescartadas: descartadas.length,
+      aprobadas: aprobadas.map(x => ({
+        textoOriginal: x.decision.textoOriginal,
+        decisionOriginal: x.decision.decision,
+        familia: x.decision.familia || null,
+        prioridad: x.decision.prioridad,
+        validacionFinal: x.decision.validacionFinal
+      })),
+      descartadas: descartadas.map(x => ({
+        textoOriginal: x.decision.textoOriginal,
+        decisionOriginal: 'candidata_descartada_por_validacion_final',
+        familia: x.decision.familia || null,
+        prioridad: x.decision.prioridad,
+        validacionFinal: x.decision.validacionFinal
+      }))
+    }
+  };
+}
+
+
 // ─── EJECUTAR SELECTOR OCR ──────────────────────────────────
 function _B1_ejecutarSelectorOCR(palabrasDudosas, sensitivityMode, maxSlots) {
   if (!Array.isArray(palabrasDudosas) || palabrasDudosas.length === 0) {
@@ -606,24 +924,37 @@ function _B1_ejecutarSelectorOCR(palabrasDudosas, sensitivityMode, maxSlots) {
         totalEnviadoAgente: 0,
         totalNoPrioritario: 0,
         totalDescartadoPorCupo: 0,
+        totalDescartadoValidacionFinal: 0,
         descartadoBasura: [],
         enviadoAgente: [],
         descartadoNoPrioritario: [],
         descartadoPorCupo: [],
-        decisiones: []
+        descartadoValidacionFinal: [],
+        decisiones: [],
+        validacionFinal: {
+          nombreFiltro: 'FILTRO_DE_VALIDACION_FINAL_DE_NEGOCIO',
+          totalCandidatasRevisadas: 0,
+          totalAprobadas: 0,
+          totalDescartadas: 0,
+          aprobadas: [],
+          descartadas: []
+        }
       }
     };
   }
 
   const decisiones = palabrasDudosas.map(p => _B1_clasificarPalabraDudosa(p, sensitivityMode));
 
-  const candidatas = decisiones
+  const candidatasBrutas = decisiones
     .map((decision, idx) => ({ idx, decision, palabra: palabrasDudosas[idx] }))
     .filter(x =>
       x.decision.decision === 'candidato_agente_familia' ||
       x.decision.decision === 'candidato_agente_peso_formato' ||
       x.decision.decision === 'candidato_agente_nombre'
     );
+
+  const filtroValidacionFinal = _B1_aplicarFiltroValidacionFinal(candidatasBrutas);
+  const candidatas = filtroValidacionFinal.aprobadas;
 
   candidatas.sort((a, b) => {
     if (b.decision.prioridad !== a.decision.prioridad) return b.decision.prioridad - a.decision.prioridad;
@@ -655,6 +986,7 @@ function _B1_ejecutarSelectorOCR(palabrasDudosas, sensitivityMode, maxSlots) {
   );
   const descartadoNoPrioritario = decisiones.filter(d => d.decision === 'descartado_no_prioritario');
   const descartadoPorCupo = decisiones.filter(d => d.decision === 'descartado_por_cupo');
+  const descartadoValidacionFinal = decisiones.filter(d => d.decision === 'descartado_validacion_final');
 
   return {
     seleccionadas: enviadas.map(x => x.palabra),
@@ -664,11 +996,14 @@ function _B1_ejecutarSelectorOCR(palabrasDudosas, sensitivityMode, maxSlots) {
       totalEnviadoAgente: enviadoAgente.length,
       totalNoPrioritario: descartadoNoPrioritario.length,
       totalDescartadoPorCupo: descartadoPorCupo.length,
+      totalDescartadoValidacionFinal: descartadoValidacionFinal.length,
       descartadoBasura,
       enviadoAgente,
       descartadoNoPrioritario,
       descartadoPorCupo,
-      decisiones
+      descartadoValidacionFinal,
+      decisiones,
+      validacionFinal: filtroValidacionFinal.auditoria
     }
   };
 }
