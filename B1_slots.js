@@ -16,11 +16,9 @@
  * - No decide negocio
  * - Solo decide qué merece llegar al agente
  *
- * NUEVO BLOQUE:
- * FILTRO DE VALIDACIÓN FINAL DE NEGOCIO
- * - Revisa la selección antes de enviarla al agente
- * - Corta falsos positivos como "maiz" -> "leche"
- * - Deja rastro visible en selectorOCR.validacionFinal
+ * NUEVOS BLOQUES:
+ * - FILTRO_DE_VALIDACION_FINAL_DE_NEGOCIO
+ * - FILTRO_DE_SOSPECHA_CONTEXTUAL_ACUMULADA
  * ═══════════════════════════════════════════════════════════════
  */
 
@@ -156,6 +154,16 @@ const B1_CONTEXTO_IRRELEVANTE = [
   'lote', 'lot', 'rgseaa', 'rsseaa', 'elaborado por', 'fabricado por',
   'conservar', 'consumir preferentemente', 'antes del fin', 'c/', 's.l', 's.a'
 ];
+
+const B1_CONTEXTO_PREPARACION = [
+  'freidora', 'horno', 'precalentar', 'calentar', 'freir', 'freír',
+  'descongelar', 'minuto', 'minutos', 'tanda', 'aceite', 'reposar',
+  'dorado', 'preparacion', 'preparación'
+];
+
+const B1_CONECTORES_LISTA = new Set([
+  'y', 'e', 'o', 'u', 'and', 'or', 'et'
+]);
 
 const B1_CONFUSIONES_OCR = {
   '0': ['o'],
@@ -314,43 +322,81 @@ function _B1_deducirContextoSemantico(p) {
   };
 }
 
+function _B1_obtenerVentanaPalabras(p, radio) {
+  if (!p || !p.bloque || !Array.isArray(p.bloque.palabras)) return [];
+  const idx = Number(p.wordIndex);
+  if (!Number.isFinite(idx)) return [];
 
-// ─── VENTANAS DE COMPARACIÓN ────────────────────────────────
-function _B1_obtenerVentanasComparacion(p, tokenCompacto) {
-  const prevCompacto = _B1_compactarComparacion(_B1_obtenerTextoVecino(p, -1));
-  const nextCompacto = _B1_compactarComparacion(_B1_obtenerTextoVecino(p, 1));
+  const inicio = Math.max(0, idx - (radio || 4));
+  const fin = Math.min(p.bloque.palabras.length - 1, idx + (radio || 4));
+  const out = [];
 
-  const ventanas = [];
-
-  if (tokenCompacto) {
-    ventanas.push({ valor: tokenCompacto, tipo: 'actual' });
+  for (let i = inicio; i <= fin; i++) {
+    const palabra = p.bloque.palabras[i];
+    if (palabra && typeof palabra.texto === 'string') out.push(palabra.texto);
   }
-  if (tokenCompacto && nextCompacto) {
-    ventanas.push({ valor: tokenCompacto + nextCompacto, tipo: 'actual_next' });
-  }
-  if (prevCompacto && tokenCompacto) {
-    ventanas.push({ valor: prevCompacto + tokenCompacto, tipo: 'prev_actual' });
-  }
-  if (prevCompacto && tokenCompacto && nextCompacto) {
-    ventanas.push({ valor: prevCompacto + tokenCompacto + nextCompacto, tipo: 'prev_actual_next' });
-  }
-
-  const unicas = [];
-  const seen = new Set();
-
-  ventanas.forEach(v => {
-    if (!v.valor) return;
-    const key = `${v.tipo}:${v.valor}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    unicas.push(v);
-  });
-
-  return unicas;
+  return out;
 }
 
 
-// ─── AYUDAS DE NEGOCIO / VALIDACIÓN FINAL ───────────────────
+// ─── AYUDAS DE TEXTO Y CATÁLOGO ─────────────────────────────
+function _B1_textoIncluyeStemComoToken(texto, stem) {
+  const textoNorm = _B1_normalizarComparacion(texto);
+  const stemNorm = _B1_normalizarComparacion(stem);
+  if (!textoNorm || !stemNorm) return false;
+
+  if (stemNorm.includes(' ')) {
+    return textoNorm.includes(stemNorm);
+  }
+
+  const tokens = textoNorm.split(/[^a-z0-9]+/).filter(Boolean);
+  return tokens.includes(stemNorm);
+}
+
+function _B1_contarFamiliasDistintasEnTexto(texto) {
+  const set = new Set();
+
+  B1_FAMILIAS_PRIORITARIAS.forEach(familia => {
+    const hit = familia.stems.some(stem => _B1_textoIncluyeStemComoToken(texto, stem));
+    if (hit) set.add(familia.id);
+  });
+
+  return set;
+}
+
+function _B1_contarFamiliasDistintasEnVentana(p, radio) {
+  const ventana = _B1_obtenerVentanaPalabras(p, radio || 4).join(' ');
+  return _B1_contarFamiliasDistintasEnTexto(ventana);
+}
+
+function _B1_tieneContextoPreparacionCercano(p, radio) {
+  const ventana = _B1_normalizarComparacion(_B1_obtenerVentanaPalabras(p, radio || 4).join(' '));
+  return _B1_incluyeAlguna(ventana, B1_CONTEXTO_PREPARACION);
+}
+
+function _B1_contarConectoresListaCercanos(p) {
+  const prev = _B1_normalizarComparacion(_B1_obtenerTextoVecino(p, -1));
+  const next = _B1_normalizarComparacion(_B1_obtenerTextoVecino(p, 1));
+  let count = 0;
+
+  if (B1_CONECTORES_LISTA.has(prev)) count++;
+  if (B1_CONECTORES_LISTA.has(next)) count++;
+
+  return count;
+}
+
+function _B1_haySeparadoresCercanos(p) {
+  const prev = String(_B1_obtenerTextoVecino(p, -1) || '').trim();
+  const next = String(_B1_obtenerTextoVecino(p, 1) || '').trim();
+
+  const esSep = t => /^[,;:/|]$/.test(t);
+  return esSep(prev) || esSep(next);
+}
+
+function _B1_tokenCompatibleParaSospecha(tokenCompacto) {
+  return /^[a-z]{3,14}$/.test(String(tokenCompacto || ''));
+}
+
 function _B1_mismoInicio(a, b, n = 1) {
   const s = String(a || '');
   const t = String(b || '');
@@ -375,6 +421,7 @@ function _B1_esTokenRaroOCR(textoOriginal) {
 
   if (/[0-9]/.test(texto) && /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/u.test(texto)) return true;
   if (/[|@$]/.test(texto)) return true;
+
   if (/[^\u0000-\u007F]/.test(texto)) {
     const normal = _B1_normalizarComparacion(texto);
     const compacto = _B1_compactarComparacion(texto);
@@ -383,8 +430,8 @@ function _B1_esTokenRaroOCR(textoOriginal) {
 
   const compacto = _B1_compactarComparacion(texto);
   if (!compacto) return false;
-
   if (/(.)\1\1/.test(compacto)) return true;
+
   return false;
 }
 
@@ -443,6 +490,43 @@ function _B1_mejorCoincidenciaCatalogo(tokenOriginal, stems) {
   return resultados.length ? resultados[0] : null;
 }
 
+
+// ─── VENTANAS DE COMPARACIÓN ────────────────────────────────
+function _B1_obtenerVentanasComparacion(p, tokenCompacto) {
+  const prevCompacto = _B1_compactarComparacion(_B1_obtenerTextoVecino(p, -1));
+  const nextCompacto = _B1_compactarComparacion(_B1_obtenerTextoVecino(p, 1));
+
+  const ventanas = [];
+
+  if (tokenCompacto) {
+    ventanas.push({ valor: tokenCompacto, tipo: 'actual' });
+  }
+  if (tokenCompacto && nextCompacto) {
+    ventanas.push({ valor: tokenCompacto + nextCompacto, tipo: 'actual_next' });
+  }
+  if (prevCompacto && tokenCompacto) {
+    ventanas.push({ valor: prevCompacto + tokenCompacto, tipo: 'prev_actual' });
+  }
+  if (prevCompacto && tokenCompacto && nextCompacto) {
+    ventanas.push({ valor: prevCompacto + tokenCompacto + nextCompacto, tipo: 'prev_actual_next' });
+  }
+
+  const unicas = [];
+  const seen = new Set();
+
+  ventanas.forEach(v => {
+    if (!v.valor) return;
+    const key = `${v.tipo}:${v.valor}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    unicas.push(v);
+  });
+
+  return unicas;
+}
+
+
+// ─── VALIDACIÓN FINAL DE NEGOCIO ────────────────────────────
 function _B1_aprobarFamiliaEnValidacionFinal(decision, contexto) {
   const token = _B1_compactarComparacion(decision.textoOriginal);
   if (!token || !decision.matchedStem) {
@@ -590,6 +674,188 @@ function _B1_validarDecisionFinal(decision, palabraOriginal) {
     motivo: resultado.motivo,
     detalle: resultado.detalle,
     contextoZona: contexto.zona
+  };
+}
+
+function _B1_aplicarFiltroValidacionFinal(candidatas) {
+  const aprobadas = [];
+  const descartadas = [];
+
+  candidatas.forEach(item => {
+    const validacion = _B1_validarDecisionFinal(item.decision, item.palabra);
+
+    item.decision.validacionFinal = {
+      nombreFiltro: 'FILTRO_DE_VALIDACION_FINAL_DE_NEGOCIO',
+      aprobado: validacion.aprobado,
+      motivo: validacion.motivo,
+      contextoZona: validacion.contextoZona,
+      detalle: validacion.detalle
+    };
+
+    if (validacion.aprobado) {
+      aprobadas.push(item);
+    } else {
+      item.decision.decision = 'descartado_validacion_final';
+      item.decision.motivo = validacion.motivo;
+      descartadas.push(item);
+    }
+  });
+
+  return {
+    aprobadas,
+    descartadas,
+    auditoria: {
+      nombreFiltro: 'FILTRO_DE_VALIDACION_FINAL_DE_NEGOCIO',
+      totalCandidatasRevisadas: candidatas.length,
+      totalAprobadas: aprobadas.length,
+      totalDescartadas: descartadas.length,
+      aprobadas: aprobadas.map(x => ({
+        textoOriginal: x.decision.textoOriginal,
+        decisionOriginal: x.decision.decision,
+        familia: x.decision.familia || null,
+        prioridad: x.decision.prioridad,
+        validacionFinal: x.decision.validacionFinal
+      })),
+      descartadas: descartadas.map(x => ({
+        textoOriginal: x.decision.textoOriginal,
+        decisionOriginal: 'candidata_descartada_por_validacion_final',
+        familia: x.decision.familia || null,
+        prioridad: x.decision.prioridad,
+        validacionFinal: x.decision.validacionFinal
+      }))
+    }
+  };
+}
+
+
+// ─── FILTRO DE SOSPECHA CONTEXTUAL ACUMULADA ────────────────
+function _B1_puntuarSospechaContextualAcumulada(decision, palabraOriginal) {
+  const contexto = _B1_deducirContextoSemantico(palabraOriginal);
+  const token = _B1_compactarComparacion(decision.textoOriginal);
+  const familiasVentana = _B1_contarFamiliasDistintasEnVentana(palabraOriginal, 4);
+  const conectores = _B1_contarConectoresListaCercanos(palabraOriginal);
+  const haySeparadores = _B1_haySeparadoresCercanos(palabraOriginal);
+  const preparacionCerca = _B1_tieneContextoPreparacionCercano(palabraOriginal, 4);
+
+  let puntos = 0;
+  const razones = [];
+
+  if (contexto.ingredientes || contexto.alergenos) {
+    puntos += 2;
+    razones.push('zona_critica');
+  }
+
+  if (familiasVentana.size >= 2) {
+    puntos += 3;
+    razones.push('vecindad_con_varios_alergenos');
+  } else if (familiasVentana.size === 1) {
+    puntos += 1;
+    razones.push('vecindad_con_un_alergeno');
+  }
+
+  if (conectores > 0) {
+    puntos += 1;
+    razones.push('conector_de_lista_cercano');
+  }
+
+  if (haySeparadores) {
+    puntos += 1;
+    razones.push('separador_cercano');
+  }
+
+  if (decision.tokenRaroOCR || (typeof decision.confidence === 'number' && decision.confidence < 0.85)) {
+    puntos += 1;
+    razones.push('token_sospechoso');
+  }
+
+  if (_B1_tokenCompatibleParaSospecha(token)) {
+    puntos += 1;
+    razones.push('token_compatible');
+  }
+
+  if (decision.decision === 'descartado_validacion_final') {
+    puntos += 1;
+    razones.push('venia_de_validacion_final');
+  }
+
+  if (preparacionCerca) {
+    puntos -= 3;
+    razones.push('penalizacion_contexto_preparacion');
+  }
+
+  if (contexto.nutricional || contexto.irrelevante || contexto.peso) {
+    puntos -= 2;
+    razones.push('penalizacion_zona_no_critica');
+  }
+
+  const aprobado =
+    puntos >= 5 &&
+    familiasVentana.size >= 2 &&
+    (contexto.ingredientes || contexto.alergenos);
+
+  return {
+    aprobado,
+    motivo: aprobado ? 'rescatado_por_sospecha_contextual_acumulada' : 'descartado_por_sospecha_contextual_insuficiente',
+    detalle: {
+      puntos,
+      razones,
+      familiasDetectadasEnVentana: [...familiasVentana],
+      totalFamiliasEnVentana: familiasVentana.size,
+      conectores,
+      haySeparadores,
+      preparacionCerca,
+      contextoZona: contexto.zona,
+      token
+    }
+  };
+}
+
+function _B1_aplicarFiltroSospechaContextualAcumulada(pool) {
+  const rescatadas = [];
+  const descartadas = [];
+
+  pool.forEach(item => {
+    const evaluacion = _B1_puntuarSospechaContextualAcumulada(item.decision, item.palabra);
+
+    item.decision.sospechaContextualAcumulada = {
+      nombreFiltro: 'FILTRO_DE_SOSPECHA_CONTEXTUAL_ACUMULADA',
+      aprobado: evaluacion.aprobado,
+      motivo: evaluacion.motivo,
+      detalle: evaluacion.detalle
+    };
+
+    if (evaluacion.aprobado) {
+      item.decision.decision = 'candidato_agente_contexto_critico';
+      item.decision.motivo = 'rescatado_por_sospecha_contextual_acumulada';
+      rescatadas.push(item);
+    } else {
+      descartadas.push(item);
+    }
+  });
+
+  return {
+    rescatadas,
+    descartadas,
+    auditoria: {
+      nombreFiltro: 'FILTRO_DE_SOSPECHA_CONTEXTUAL_ACUMULADA',
+      totalRevisadas: pool.length,
+      totalRescatadas: rescatadas.length,
+      totalDescartadas: descartadas.length,
+      rescatadas: rescatadas.map(x => ({
+        textoOriginal: x.decision.textoOriginal,
+        decisionFinal: x.decision.decision,
+        familia: x.decision.familia || null,
+        prioridad: x.decision.prioridad,
+        sospechaContextualAcumulada: x.decision.sospechaContextualAcumulada
+      })),
+      descartadas: descartadas.map(x => ({
+        textoOriginal: x.decision.textoOriginal,
+        decisionFinal: x.decision.decision,
+        familia: x.decision.familia || null,
+        prioridad: x.decision.prioridad,
+        sospechaContextualAcumulada: x.decision.sospechaContextualAcumulada
+      }))
+    }
   };
 }
 
@@ -761,6 +1027,7 @@ function _B1_clasificarPalabraDudosa(p, sensitivityMode) {
     pageIndex: p && typeof p.pageIndex === 'number' ? p.pageIndex : null,
     blockIndex: p && typeof p.blockIndex === 'number' ? p.blockIndex : null,
     wordIndex: p && typeof p.wordIndex === 'number' ? p.wordIndex : null,
+    confidence: p && typeof p.confidence === 'number' ? p.confidence : null,
     decision: null,
     motivo: null,
     familia: null,
@@ -861,58 +1128,6 @@ function _B1_clasificarPalabraDudosa(p, sensitivityMode) {
 }
 
 
-// ─── FILTRO DE VALIDACIÓN FINAL DE NEGOCIO ──────────────────
-function _B1_aplicarFiltroValidacionFinal(candidatas) {
-  const aprobadas = [];
-  const descartadas = [];
-
-  candidatas.forEach(item => {
-    const validacion = _B1_validarDecisionFinal(item.decision, item.palabra);
-
-    item.decision.validacionFinal = {
-      nombreFiltro: 'FILTRO_DE_VALIDACION_FINAL_DE_NEGOCIO',
-      aprobado: validacion.aprobado,
-      motivo: validacion.motivo,
-      contextoZona: validacion.contextoZona,
-      detalle: validacion.detalle
-    };
-
-    if (validacion.aprobado) {
-      aprobadas.push(item);
-    } else {
-      item.decision.decision = 'descartado_validacion_final';
-      item.decision.motivo = validacion.motivo;
-      descartadas.push(item);
-    }
-  });
-
-  return {
-    aprobadas,
-    descartadas,
-    auditoria: {
-      nombreFiltro: 'FILTRO_DE_VALIDACION_FINAL_DE_NEGOCIO',
-      totalCandidatasRevisadas: candidatas.length,
-      totalAprobadas: aprobadas.length,
-      totalDescartadas: descartadas.length,
-      aprobadas: aprobadas.map(x => ({
-        textoOriginal: x.decision.textoOriginal,
-        decisionOriginal: x.decision.decision,
-        familia: x.decision.familia || null,
-        prioridad: x.decision.prioridad,
-        validacionFinal: x.decision.validacionFinal
-      })),
-      descartadas: descartadas.map(x => ({
-        textoOriginal: x.decision.textoOriginal,
-        decisionOriginal: 'candidata_descartada_por_validacion_final',
-        familia: x.decision.familia || null,
-        prioridad: x.decision.prioridad,
-        validacionFinal: x.decision.validacionFinal
-      }))
-    }
-  };
-}
-
-
 // ─── EJECUTAR SELECTOR OCR ──────────────────────────────────
 function _B1_ejecutarSelectorOCR(palabrasDudosas, sensitivityMode, maxSlots) {
   if (!Array.isArray(palabrasDudosas) || palabrasDudosas.length === 0) {
@@ -925,11 +1140,13 @@ function _B1_ejecutarSelectorOCR(palabrasDudosas, sensitivityMode, maxSlots) {
         totalNoPrioritario: 0,
         totalDescartadoPorCupo: 0,
         totalDescartadoValidacionFinal: 0,
+        totalRescatadoContextoCritico: 0,
         descartadoBasura: [],
         enviadoAgente: [],
         descartadoNoPrioritario: [],
         descartadoPorCupo: [],
         descartadoValidacionFinal: [],
+        rescatadoContextoCritico: [],
         decisiones: [],
         validacionFinal: {
           nombreFiltro: 'FILTRO_DE_VALIDACION_FINAL_DE_NEGOCIO',
@@ -938,6 +1155,14 @@ function _B1_ejecutarSelectorOCR(palabrasDudosas, sensitivityMode, maxSlots) {
           totalDescartadas: 0,
           aprobadas: [],
           descartadas: []
+        },
+        sospechaContextualAcumulada: {
+          nombreFiltro: 'FILTRO_DE_SOSPECHA_CONTEXTUAL_ACUMULADA',
+          totalRevisadas: 0,
+          totalRescatadas: 0,
+          totalDescartadas: 0,
+          rescatadas: [],
+          descartadas: []
         }
       }
     };
@@ -945,16 +1170,31 @@ function _B1_ejecutarSelectorOCR(palabrasDudosas, sensitivityMode, maxSlots) {
 
   const decisiones = palabrasDudosas.map(p => _B1_clasificarPalabraDudosa(p, sensitivityMode));
 
-  const candidatasBrutas = decisiones
-    .map((decision, idx) => ({ idx, decision, palabra: palabrasDudosas[idx] }))
-    .filter(x =>
-      x.decision.decision === 'candidato_agente_familia' ||
-      x.decision.decision === 'candidato_agente_peso_formato' ||
-      x.decision.decision === 'candidato_agente_nombre'
-    );
+  const items = decisiones.map((decision, idx) => ({
+    idx,
+    decision,
+    palabra: palabrasDudosas[idx]
+  }));
+
+  const candidatasBrutas = items.filter(x =>
+    x.decision.decision === 'candidato_agente_familia' ||
+    x.decision.decision === 'candidato_agente_peso_formato' ||
+    x.decision.decision === 'candidato_agente_nombre'
+  );
 
   const filtroValidacionFinal = _B1_aplicarFiltroValidacionFinal(candidatasBrutas);
-  const candidatas = filtroValidacionFinal.aprobadas;
+
+  const poolSospecha = items.filter(x =>
+    x.decision.decision === 'descartado_validacion_final' ||
+    x.decision.decision === 'descartado_no_prioritario'
+  );
+
+  const filtroSospechaContextual = _B1_aplicarFiltroSospechaContextualAcumulada(poolSospecha);
+
+  const candidatas = [
+    ...filtroValidacionFinal.aprobadas,
+    ...filtroSospechaContextual.rescatadas
+  ];
 
   candidatas.sort((a, b) => {
     if (b.decision.prioridad !== a.decision.prioridad) return b.decision.prioridad - a.decision.prioridad;
@@ -970,7 +1210,8 @@ function _B1_ejecutarSelectorOCR(palabrasDudosas, sensitivityMode, maxSlots) {
   enviadas.forEach(x => {
     if (x.decision.decision === 'candidato_agente_familia') x.decision.decision = 'enviado_agente_familia';
     else if (x.decision.decision === 'candidato_agente_peso_formato') x.decision.decision = 'enviado_agente_peso_formato';
-    else x.decision.decision = 'enviado_agente_nombre';
+    else if (x.decision.decision === 'candidato_agente_nombre') x.decision.decision = 'enviado_agente_nombre';
+    else if (x.decision.decision === 'candidato_agente_contexto_critico') x.decision.decision = 'enviado_agente_contexto_critico';
   });
 
   porCupo.forEach(x => {
@@ -982,11 +1223,16 @@ function _B1_ejecutarSelectorOCR(palabrasDudosas, sensitivityMode, maxSlots) {
   const enviadoAgente = decisiones.filter(d =>
     d.decision === 'enviado_agente_familia' ||
     d.decision === 'enviado_agente_peso_formato' ||
-    d.decision === 'enviado_agente_nombre'
+    d.decision === 'enviado_agente_nombre' ||
+    d.decision === 'enviado_agente_contexto_critico'
   );
   const descartadoNoPrioritario = decisiones.filter(d => d.decision === 'descartado_no_prioritario');
   const descartadoPorCupo = decisiones.filter(d => d.decision === 'descartado_por_cupo');
   const descartadoValidacionFinal = decisiones.filter(d => d.decision === 'descartado_validacion_final');
+  const rescatadoContextoCritico = decisiones.filter(d =>
+    d.decision === 'candidato_agente_contexto_critico' ||
+    d.decision === 'enviado_agente_contexto_critico'
+  );
 
   return {
     seleccionadas: enviadas.map(x => x.palabra),
@@ -997,13 +1243,16 @@ function _B1_ejecutarSelectorOCR(palabrasDudosas, sensitivityMode, maxSlots) {
       totalNoPrioritario: descartadoNoPrioritario.length,
       totalDescartadoPorCupo: descartadoPorCupo.length,
       totalDescartadoValidacionFinal: descartadoValidacionFinal.length,
+      totalRescatadoContextoCritico: rescatadoContextoCritico.length,
       descartadoBasura,
       enviadoAgente,
       descartadoNoPrioritario,
       descartadoPorCupo,
       descartadoValidacionFinal,
+      rescatadoContextoCritico,
       decisiones,
-      validacionFinal: filtroValidacionFinal.auditoria
+      validacionFinal: filtroValidacionFinal.auditoria,
+      sospechaContextualAcumulada: filtroSospechaContextual.auditoria
     }
   };
 }
