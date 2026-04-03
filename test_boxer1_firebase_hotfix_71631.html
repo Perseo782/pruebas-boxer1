@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Banco de pruebas Boxer 1 - Firebase (hotfix 716-31)</title>
+</head>
+<body style="background:#0b0d12;color:#f2f4f7;font-family:Inter,Arial,sans-serif;padding:20px;">
+  <div id="boot">Cargando banco corregido…</div>
+  <script>
+    (async function () {
+      try {
+        const resp = await fetch('test_boxer1_firebase.html?v=' + Date.now(), { cache: 'no-store' });
+        const html = await resp.text();
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+
+        const style = doc.head.querySelector('style');
+        if (style) document.head.appendChild(style.cloneNode(true));
+
+        const wrap = doc.body.querySelector('.wrap');
+        document.body.innerHTML = wrap ? wrap.outerHTML : '<div class="wrap">No se pudo cargar el banco.</div>';
+
+        const scriptsOrdenados = [
+          'B1_enums.js',
+          'B1_contratos_unificado_patch.js',
+          'B1_diagnostico_unificado_patch.js',
+          'B1_prechequeo_unificado_patch.js',
+          'B1_ocr_base_unificado_patch.js?v=3',
+          'B1_slots.js',
+          'B1_hotfix_71631.js',
+          'B1_fiabilidad.js',
+          'B1_rescate.js?v=3',
+          'B1_merge.js',
+          'B1_core_unificado_patch.js'
+        ];
+
+        for (const src of scriptsOrdenados) {
+          await new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = src;
+            s.onload = resolve;
+            s.onerror = () => reject(new Error('No cargó ' + src));
+            document.body.appendChild(s);
+          });
+        }
+
+        const inlineScripts = Array.from(doc.querySelectorAll('script:not([src])'));
+        const ultimoInline = inlineScripts.length ? inlineScripts[inlineScripts.length - 1].textContent : '';
+        if (ultimoInline) {
+          const runner = document.createElement('script');
+          runner.textContent = ultimoInline;
+          document.body.appendChild(runner);
+        }
+      } catch (err) {
+        document.body.innerHTML = '<pre style="white-space:pre-wrap;background:#0c1016;border:1px solid #2a313d;border-radius:10px;padding:12px;">' +
+          'Fallo cargando banco corregido:\n' + String(err && err.message ? err.message : err) +
+          '</pre>';
+      }
+    })();
+  </script>
+</body>
+</html>
