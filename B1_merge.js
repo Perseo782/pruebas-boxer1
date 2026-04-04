@@ -96,7 +96,8 @@ function B1_ejecutarMerge(textoBase, slotsEnviados, resultadoRescate) {
       roiRefsRevision:    [],
       mergeCancelado:     false,
       noResueltasCriticas: false,
-      resultadosGemini:   []
+      resultadosGemini:   [],
+      detalleSlots:       []
     };
   }
 
@@ -113,6 +114,13 @@ function B1_ejecutarMerge(textoBase, slotsEnviados, resultadoRescate) {
       solucion: '',
       motivo:   'asimetria_slots'
     }));
+    const detalleSlots = slotsEnviados.map(s => ({
+      slotId: s.slotId,
+      estadoFinal: 'no_resuelta',
+      original: s.textoOriginal,
+      solucion: '',
+      motivo: 'asimetria_slots'
+    }));
 
     return {
       mergeStatus:        B1_MERGE_STATUS.CANCELADO_POR_ASIMETRIA,
@@ -123,7 +131,8 @@ function B1_ejecutarMerge(textoBase, slotsEnviados, resultadoRescate) {
       mergeCancelado:     true,
       motivoCancelacion:  simetria.detalle,
       noResueltasCriticas,
-      resultadosGemini
+      resultadosGemini,
+      detalleSlots
     };
   }
 
@@ -138,6 +147,7 @@ function B1_ejecutarMerge(textoBase, slotsEnviados, resultadoRescate) {
   const noResueltas           = [];
   const roiRefsRevision       = [];
   const resultadosGemini      = [];
+  const detalleSlots          = [];
 
   slotsEnviados.forEach(slot => {
     const correccion = mapCorrecciones[slot.slotId];
@@ -159,10 +169,12 @@ function B1_ejecutarMerge(textoBase, slotsEnviados, resultadoRescate) {
           estado:   B1_SLOT_STATUS.APLICADA
         });
         resultadosGemini.push({ slotId: slot.slotId, estado: 'corregida',  original: slot.textoOriginal, solucion, motivo: '' });
+        detalleSlots.push({ slotId: slot.slotId, estadoFinal: 'corregida', original: slot.textoOriginal, solucion, motivo: '' });
         return;
       }
       // solucion === original → ya_valida
       resultadosGemini.push({ slotId: slot.slotId, estado: 'ya_valida',  original: slot.textoOriginal, solucion: original, motivo: '' });
+      detalleSlots.push({ slotId: slot.slotId, estadoFinal: 'ya_valida', original: slot.textoOriginal, solucion: original, motivo: '' });
       return;
     }
 
@@ -171,6 +183,7 @@ function B1_ejecutarMerge(textoBase, slotsEnviados, resultadoRescate) {
                         'sin_cambio', 'sincambio', 'confirmado'].includes(estado);
     if (esYaValida) {
       resultadosGemini.push({ slotId: slot.slotId, estado: 'ya_valida',  original: slot.textoOriginal, solucion: solucion || original, motivo: '' });
+      detalleSlots.push({ slotId: slot.slotId, estadoFinal: 'ya_valida', original: slot.textoOriginal, solucion: solucion || original, motivo: '' });
       return;
     }
 
@@ -183,6 +196,13 @@ function B1_ejecutarMerge(textoBase, slotsEnviados, resultadoRescate) {
       original: slot.textoOriginal,
       solucion: '',
       motivo:   String(correccion.motivo || '').slice(0, 64)
+    });
+    detalleSlots.push({
+      slotId: slot.slotId,
+      estadoFinal: 'no_resuelta',
+      original: slot.textoOriginal,
+      solucion: '',
+      motivo: String(correccion.motivo || '').slice(0, 64)
     });
   });
 
@@ -200,7 +220,8 @@ function B1_ejecutarMerge(textoBase, slotsEnviados, resultadoRescate) {
     roiRefsRevision,
     mergeCancelado:     false,
     noResueltasCriticas,
-    resultadosGemini
+    resultadosGemini,
+    detalleSlots
   };
 }
 
