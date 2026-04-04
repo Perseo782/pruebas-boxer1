@@ -91,6 +91,8 @@ function B1_crearRespuestaOk(params) {
     correcciones = [],
     noResueltas = [],
     roiRefsRevision = [],
+    resultadosGemini = [],
+    detalleSlots = [],
     metricas,
     selectorOCR = null,
     traceId,
@@ -106,6 +108,8 @@ function B1_crearRespuestaOk(params) {
     correcciones,
     noResueltas,
     roiRefsRevision,
+    resultadosGemini,
+    detalleSlots,
     metricas
   };
 
@@ -144,7 +148,9 @@ function B1_crearRespuestaError(params) {
     errorOriginal = null,
     diagnostico = null,
     metricas = null,
-    selectorOCR = null
+    selectorOCR = null,
+    resultadosGemini = [],
+    detalleSlots = []
   } = params;
 
   const errorObj = {
@@ -166,7 +172,10 @@ function B1_crearRespuestaError(params) {
   if (detail) errorObj.detail = detail;
   if (errorOriginal) errorObj.errorOriginal = errorOriginal;
 
-  const datos = {};
+  const datos = {
+    resultadosGemini: Array.isArray(resultadosGemini) ? resultadosGemini : [],
+    detalleSlots: Array.isArray(detalleSlots) ? detalleSlots : []
+  };
   if (textoBaseVision !== null && textoBaseVision !== undefined) datos.textoBaseVision = textoBaseVision;
   if (metricas) datos.metricas = metricas;
   if (selectorOCR) datos.selectorOCR = selectorOCR;
