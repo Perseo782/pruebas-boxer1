@@ -344,6 +344,8 @@ async function B1_analizar(input, config) {
         correcciones: merge.correcciones,
         noResueltas: merge.noResueltas,
         roiRefsRevision: merge.roiRefsRevision,
+        resultadosGemini: merge.resultadosGemini || [],
+        detalleSlots: merge.detalleSlots || [],
         metricas,
         selectorOCR,
         traceId,
@@ -366,6 +368,8 @@ async function B1_analizar(input, config) {
       accionSugeridaParaCerebro: pasaporte.accionSugeridaParaCerebro,
       textoBaseVision: textoBase,
       motivo: 'Rescate y merge no dejaron salida fiable y no existe cadena real de autoreparación en Boxer 1.',
+      resultadosGemini: merge.resultadosGemini || [],
+      detalleSlots: merge.detalleSlots || [],
       metricas: B1_crearMetricas({
         pageConfidence: fiabilidad.pageConfidence,
         criticalZoneScore: fiabilidad.criticalZoneScore,
