@@ -82,7 +82,6 @@ function B1_crearRespuestaOk(params) {
     textoAuditado:        params.textoAuditado,
     correcciones:         params.correcciones         || [],
     noResueltas:          params.noResueltas          || [],
-    roiRefsRevision:      params.roiRefsRevision      || [],
     validas:              params.validas              || [],
     tablaBReconocida:     params.tablaBReconocida     || [],
     pesoVolumenProducto:  params.pesoVolumenProducto  || null,

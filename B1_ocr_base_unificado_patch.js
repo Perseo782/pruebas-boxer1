@@ -15,9 +15,30 @@ async function B1_llamarVisionOCR(canvas, sendMode, sessionToken, urlTrastienda)
   };
   const t_build_payload_vision_ms = Date.now() - tPayload;
   const tFetch = Date.now();
-  const response = await fetch(urlTrastienda, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
-  });
+  const timeoutMs = (typeof B1_CONFIG !== 'undefined' && B1_CONFIG && B1_CONFIG.VISION_FETCH_TIMEOUT_MS) || 15000;
+  const controller = (typeof AbortController === 'function') ? new AbortController() : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  let response;
+  try {
+    response = await fetch(urlTrastienda, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller ? controller.signal : undefined
+    });
+  } catch (fetchErr) {
+    if (controller && fetchErr && fetchErr.name === 'AbortError') {
+      throw B1_crearErrorUpstream({
+        message: 'Vision OCR timeout tras ' + timeoutMs + 'ms',
+        upstreamCode: 'HTTP_TIMEOUT',
+        upstreamModule: B1_CONFIG.TRASTIENDA_MODULO_DESTINO,
+        raw: null
+      });
+    }
+    throw fetchErr;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
   const t_fetch_vision_total_ms = Date.now() - tFetch;
 
   const tParse = Date.now();

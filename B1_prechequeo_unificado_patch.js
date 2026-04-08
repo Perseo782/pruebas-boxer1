@@ -6,37 +6,47 @@
 
 async function B1_redimensionarImagen(imageSrc) {
   let bitmap;
+  let cerrarBitmap = false;
 
-  if (typeof ImageBitmap !== 'undefined' && imageSrc instanceof ImageBitmap) {
-    bitmap = imageSrc;
-  } else if (typeof HTMLImageElement !== 'undefined' && imageSrc instanceof HTMLImageElement) {
-    bitmap = await createImageBitmap(imageSrc);
-  } else if (imageSrc instanceof Blob) {
-    bitmap = await createImageBitmap(imageSrc);
-  } else if (typeof imageSrc === 'string' && imageSrc.trim()) {
-    const blob = await (await fetch(imageSrc)).blob();
-    bitmap = await createImageBitmap(blob);
-  } else {
-    throw new Error('Tipo de imageRef no soportado. Usa Blob, HTMLImageElement, ImageBitmap o string URL/dataURL.');
+  try {
+    if (typeof ImageBitmap !== 'undefined' && imageSrc instanceof ImageBitmap) {
+      bitmap = imageSrc;
+    } else if (typeof HTMLImageElement !== 'undefined' && imageSrc instanceof HTMLImageElement) {
+      bitmap = await createImageBitmap(imageSrc);
+      cerrarBitmap = true;
+    } else if (imageSrc instanceof Blob) {
+      bitmap = await createImageBitmap(imageSrc);
+      cerrarBitmap = true;
+    } else if (typeof imageSrc === 'string' && imageSrc.trim()) {
+      const blob = await (await fetch(imageSrc)).blob();
+      bitmap = await createImageBitmap(blob);
+      cerrarBitmap = true;
+    } else {
+      throw new Error('Tipo de imageRef no soportado. Usa Blob, HTMLImageElement, ImageBitmap o string URL/dataURL.');
+    }
+
+    const maxSide = B1_CONFIG.MAX_IMAGE_SIDE_PX;
+    let w = bitmap.width;
+    let h = bitmap.height;
+
+    if (Math.max(w, h) > maxSide) {
+      const ratio = maxSide / Math.max(w, h);
+      w = Math.round(w * ratio);
+      h = Math.round(h * ratio);
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0, w, h);
+
+    return { canvas, width: w, height: h };
+  } finally {
+    if (cerrarBitmap && bitmap && typeof bitmap.close === 'function') {
+      bitmap.close();
+    }
   }
-
-  const maxSide = B1_CONFIG.MAX_IMAGE_SIDE_PX;
-  let w = bitmap.width;
-  let h = bitmap.height;
-
-  if (Math.max(w, h) > maxSide) {
-    const ratio = maxSide / Math.max(w, h);
-    w = Math.round(w * ratio);
-    h = Math.round(h * ratio);
-  }
-
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(bitmap, 0, 0, w, h);
-
-  return { canvas, width: w, height: h };
 }
 
 function B1_chequeoRapido(canvas) {

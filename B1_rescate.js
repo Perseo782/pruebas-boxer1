@@ -280,12 +280,32 @@ async function B1_enviarRescateGemini(textoBase, slots, sessionToken, urlTrastie
   const tBuildPayload = _B1_roundMs(_B1_nowMs() - tPayloadInicio);
 
   const tFetchInicio = _B1_nowMs();
-  const response = await fetch(urlTrastienda, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: bodyString
-  });
-  const rawText = await response.text();
+  const timeoutMs = (typeof B1_CONFIG !== 'undefined' && B1_CONFIG && B1_CONFIG.GEMINI_FETCH_TIMEOUT_MS) || 30000;
+  const controller = (typeof AbortController === 'function') ? new AbortController() : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  let response;
+  let rawText = '';
+  try {
+    response = await fetch(urlTrastienda, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: bodyString,
+      signal: controller ? controller.signal : undefined
+    });
+    rawText = await response.text();
+  } catch (fetchErr) {
+    if (controller && fetchErr && fetchErr.name === 'AbortError') {
+      throw B1_crearErrorUpstream({
+        message: 'Rescate Gemini timeout tras ' + timeoutMs + 'ms',
+        upstreamCode: 'HTTP_TIMEOUT',
+        upstreamModule: B1_CONFIG.TRASTIENDA_MODULO_DESTINO,
+        raw: null
+      });
+    }
+    throw fetchErr;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
   const tFetchTotal = _B1_roundMs(_B1_nowMs() - tFetchInicio);
 
   const tParseInicio = _B1_nowMs();

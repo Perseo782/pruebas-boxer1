@@ -65,6 +65,84 @@ function _B1_core_extraerPesoVolumenProducto(resultadoMotor) {
   return null;
 }
 
+function _B1_core_esTimeoutTecnico(err) {
+  return !!(err && err.upstreamCode === 'HTTP_TIMEOUT');
+}
+
+function _B1_core_esErrorTecnicoReparable(err) {
+  if (!err) return false;
+
+  var code = typeof err.upstreamCode === 'string' ? err.upstreamCode : '';
+  var message = err && err.message ? String(err.message) : '';
+
+  if (code === 'HTTP_TIMEOUT') return true;
+  if (/^HTTP_5\d\d$/.test(code)) return true;
+  if (code === 'HTTP_UNKNOWN') return true;
+  if (err.name === 'TypeError') return true;
+  if (/failed to fetch|networkerror|network request failed|load failed/i.test(message)) return true;
+
+  return false;
+}
+
+function _B1_core_crearIntentoAutoreparacion(intento, accion, err) {
+  return {
+    intento: intento,
+    accion: accion,
+    code: (err && (err.upstreamCode || err.code)) || B1_ERRORES.ERROR_INTERNO,
+    modulo: (err && (err.upstreamModule || err.origin)) || B1_CONFIG.TRASTIENDA_MODULO_DESTINO,
+    message: err && err.message ? String(err.message) : 'Error tecnico sin detalle.'
+  };
+}
+
+async function _B1_core_ejecutarConAutoreparacionTecnica(nombreOperacion, ejecutar, diagnosticoBuffer, cronometro) {
+  var maxIntentos = Math.max(1, Math.min((B1_CONFIG && B1_CONFIG.AUTOREPAIR_MAX_ATTEMPTS) || 2, 2));
+  var intentos = [];
+  var inicio = Date.now();
+  var ultimoError = null;
+
+  for (var intento = 1; intento <= maxIntentos; intento++) {
+    try {
+      var resultado = await ejecutar(intento);
+      if (intento > 1) {
+        B1_diagReparacion(
+          diagnosticoBuffer,
+          nombreOperacion + ': recuperado tras reintento tecnico.',
+          cronometro.elapsed(),
+          null
+        );
+      }
+      return {
+        resultado: resultado,
+        intentos: intentos,
+        tiempoTotalReintentoMs: Date.now() - inicio
+      };
+    } catch (err) {
+      ultimoError = err;
+      intentos.push(_B1_core_crearIntentoAutoreparacion(
+        intento,
+        intento === 1 ? 'intento_inicial' : 'reintento_tecnico',
+        err
+      ));
+
+      if (_B1_core_esTimeoutTecnico(err)) {
+        B1_diagTimeout(diagnosticoBuffer, nombreOperacion, cronometro.elapsed(), null);
+      }
+
+      if (!_B1_core_esErrorTecnicoReparable(err) || intento >= maxIntentos) {
+        break;
+      }
+    }
+  }
+
+  if (ultimoError) {
+    ultimoError.reparacionAgotada = intentos.length > 1 && _B1_core_esErrorTecnicoReparable(ultimoError);
+    ultimoError.intentos = intentos;
+    ultimoError.tiempoTotalReintentoMs = Date.now() - inicio;
+  }
+
+  throw ultimoError || new Error(nombreOperacion + ' fallo.');
+}
+
 function _B1_core_errorEntrada(traceId, elapsedMs, diagnostico, message, detail) {
   return B1_crearRespuestaError({
     code: 'B1_INPUT_INVALIDA',
@@ -84,9 +162,11 @@ async function B1_analizar(input, config) {
   var diagnosticoBuffer = B1_crearBufferDiagnostico(traceId);
   var cronometro = B1_crearCronometro();
   var visionRespuesta = null;
+  var prechequeo = null;
   var textoBase = '';
   var fiabilidad = null;
   var resultadoMotor = null;
+  var loteRescate = null;
   var tiempos = _B1_core_crearTiempos();
 
   try {
@@ -116,7 +196,7 @@ async function B1_analizar(input, config) {
       });
     }
 
-    var prechequeo = await B1_prechequeo(input.datos.imageRef, cronometro);
+    prechequeo = await B1_prechequeo(input.datos.imageRef, cronometro);
     tiempos.prechequeo = prechequeo.tiempos || null;
     B1_diagPrechequeo(
       diagnosticoBuffer,
@@ -145,12 +225,19 @@ async function B1_analizar(input, config) {
     }
 
     try {
-      visionRespuesta = await B1_llamarVisionOCR(
-        prechequeo.canvas,
-        input.datos.sendMode,
-        input.sessionToken,
-        configValida.config.urlTrastienda
-      );
+      visionRespuesta = (await _B1_core_ejecutarConAutoreparacionTecnica(
+        'vision_ocr',
+        function() {
+          return B1_llamarVisionOCR(
+            prechequeo.canvas,
+            input.datos.sendMode,
+            input.sessionToken,
+            configValida.config.urlTrastienda
+          );
+        },
+        diagnosticoBuffer,
+        cronometro
+      )).resultado;
     } catch (err) {
       B1_diagEncadenado(
         diagnosticoBuffer,
@@ -160,13 +247,20 @@ async function B1_analizar(input, config) {
       );
       return B1_crearRespuestaError({
         code: err.upstreamCode || B1_ERRORES.OCR_FAILED,
-        message: err.message || 'Vision OCR fallo.',
-        tipoFallo: B1_TIPO_FALLO.DESCONOCIDO,
+        message: err.reparacionAgotada
+          ? 'Autoreparacion tecnica agotada en Vision OCR. El fallo persiste.'
+          : (err.message || 'Vision OCR fallo.'),
+        tipoFallo: err.reparacionAgotada ? B1_TIPO_FALLO.REPARACION_AGOTADA : B1_TIPO_FALLO.DESCONOCIDO,
         retryable: true,
         traceId: traceId,
         elapsedMs: cronometro.elapsed(),
         chainedFrom: err.upstreamModule || B1_CONFIG.TRASTIENDA_MODULO_DESTINO,
         errorOriginal: err.raw || null,
+        detail: err.reparacionAgotada
+          ? 'Boxer 1 intento autorepararse con un reintento tecnico en Vision OCR, pero el fallo persiste: ' + (err.message || 'sin detalle')
+          : undefined,
+        tiempoTotalReintentoMs: err.tiempoTotalReintentoMs || 0,
+        intentos: err.intentos || undefined,
         metricas: B1_crearMetricas({
           elapsedMs: cronometro.elapsed(),
           abortReason: 'ocr_failed',
@@ -254,7 +348,6 @@ async function B1_analizar(input, config) {
         textoAuditado: textoBase,
         correcciones: [],
         noResueltas: [],
-        roiRefsRevision: [],
         validas: [],
         tablaBReconocida: [],
         pesoVolumenProducto: null,
@@ -300,7 +393,7 @@ async function B1_analizar(input, config) {
       catalogos: globalThis.B1_CATALOGOS
     });
 
-    var loteRescate = B1_empaquetarParaRescate({
+    loteRescate = B1_empaquetarParaRescate({
       rotasReconocidas: resultadoMotor.rotasReconocidas,
       canvas: prechequeo.canvas
     });
@@ -329,7 +422,6 @@ async function B1_analizar(input, config) {
         textoAuditado: textoBase,
         correcciones: [],
         noResueltas: [],
-        roiRefsRevision: [],
         validas: resultadoMotor.validas || [],
         tablaBReconocida: resultadoMotor.tablaBReconocida || [],
         pesoVolumenProducto: _B1_core_extraerPesoVolumenProducto(resultadoMotor),
@@ -354,13 +446,20 @@ async function B1_analizar(input, config) {
 
     var resultadoRescate;
     try {
-      resultadoRescate = await B1_ejecutarRescate(
-        loteRescate,
-        textoBase,
-        cronometro,
-        input.sessionToken,
-        configValida.config.urlTrastienda
-      );
+      resultadoRescate = (await _B1_core_ejecutarConAutoreparacionTecnica(
+        'rescate_gemini',
+        function() {
+          return B1_ejecutarRescate(
+            loteRescate,
+            textoBase,
+            cronometro,
+            input.sessionToken,
+            configValida.config.urlTrastienda
+          );
+        },
+        diagnosticoBuffer,
+        cronometro
+      )).resultado;
       tiempos.rescate = resultadoRescate.tiempos || null;
     } catch (errRescate) {
       B1_diagEncadenado(
@@ -371,13 +470,20 @@ async function B1_analizar(input, config) {
       );
       return B1_crearRespuestaError({
         code: errRescate.upstreamCode || B1_ERRORES.RESCATE_FALLIDO,
-        message: errRescate.message || 'Rescate Gemini fallido.',
-        tipoFallo: B1_TIPO_FALLO.DESCONOCIDO,
+        message: errRescate.reparacionAgotada
+          ? 'Autoreparacion tecnica agotada en rescate Gemini. El fallo persiste.'
+          : (errRescate.message || 'Rescate Gemini fallido.'),
+        tipoFallo: errRescate.reparacionAgotada ? B1_TIPO_FALLO.REPARACION_AGOTADA : B1_TIPO_FALLO.DESCONOCIDO,
         retryable: true,
         traceId: traceId,
         elapsedMs: cronometro.elapsed(),
         chainedFrom: errRescate.upstreamModule || B1_CONFIG.TRASTIENDA_MODULO_DESTINO,
         errorOriginal: errRescate.raw || null,
+        detail: errRescate.reparacionAgotada
+          ? 'Boxer 1 intento autorepararse con un reintento tecnico en rescate Gemini, pero el fallo persiste: ' + (errRescate.message || 'sin detalle')
+          : undefined,
+        tiempoTotalReintentoMs: errRescate.tiempoTotalReintentoMs || 0,
+        intentos: errRescate.intentos || undefined,
         textoBaseVision: textoBase,
         metricas: B1_crearMetricas({
           pageConfidence: fiabilidad.pageConfidence,
@@ -427,7 +533,6 @@ async function B1_analizar(input, config) {
       textoAuditado: merge.textoAuditado || textoBase,
       correcciones: merge.correcciones || [],
       noResueltas: merge.noResueltas || [],
-      roiRefsRevision: merge.roiRefsRevision || [],
       validas: resultadoMotor.validas || [],
       tablaBReconocida: resultadoMotor.tablaBReconocida || [],
       pesoVolumenProducto: _B1_core_extraerPesoVolumenProducto(resultadoMotor),
@@ -474,5 +579,14 @@ async function B1_analizar(input, config) {
       errorOriginal: err && err.stack ? err.stack : String(err),
       accionSugeridaParaCerebro: B1_ACCIONES_CEREBRO.REINTENTAR
     });
+  } finally {
+    if (typeof B1_programarLimpiezaTemporales === 'function') {
+      B1_programarLimpiezaTemporales({
+        traceId: traceId,
+        slots: loteRescate && loteRescate.slots ? loteRescate.slots : [],
+        canvas: prechequeo && prechequeo.canvas ? prechequeo.canvas : null,
+        delayMs: B1_CONFIG.POST_ANALYSIS_CLEANUP_DELAY_MS
+      });
+    }
   }
 }

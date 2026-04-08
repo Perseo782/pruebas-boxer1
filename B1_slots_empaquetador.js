@@ -10,11 +10,75 @@
  * =====================================================================
  */
 
-var _B1_EMP_SLOT_COUNTER = 0;
+var _B1_EMP_CLEANUP_SEQ = 0;
+var _B1_EMP_CLEANUP_TIMEOUTS = Object.create(null);
 
-function _B1_emp_generarSlotId() {
-  _B1_EMP_SLOT_COUNTER += 1;
-  return 'B' + _B1_EMP_SLOT_COUNTER;
+function _B1_emp_generarCleanupId(traceId) {
+  _B1_EMP_CLEANUP_SEQ += 1;
+  return String(traceId || 'b1_cleanup') + '_' + _B1_EMP_CLEANUP_SEQ;
+}
+
+function _B1_emp_liberarCanvasTemporal(canvas) {
+  if (!canvas) return;
+
+  try {
+    if (typeof canvas.getContext === 'function') {
+      var ctx = canvas.getContext('2d');
+      if (ctx && typeof ctx.clearRect === 'function') {
+        ctx.clearRect(0, 0, canvas.width || 0, canvas.height || 0);
+      }
+    }
+  } catch (_) {}
+
+  try {
+    if (typeof canvas.width === 'number') canvas.width = 1;
+    if (typeof canvas.height === 'number') canvas.height = 1;
+  } catch (_) {}
+}
+
+function _B1_emp_liberarSlotsTemporales(slots) {
+  if (!Array.isArray(slots)) return;
+
+  for (var i = 0; i < slots.length; i++) {
+    var slot = slots[i];
+    if (!slot || typeof slot !== 'object') continue;
+    slot.roiBase64 = null;
+    slot.boundingPoly = null;
+    slot.contexto = '';
+    slot.candidatoMotor = null;
+    slot.candidatoMotor2 = null;
+    slot.familiasCandidatas = [];
+  }
+}
+
+function B1_programarLimpiezaTemporales(params) {
+  params = params || {};
+
+  var slots = Array.isArray(params.slots) ? params.slots : [];
+  var canvas = params.canvas || null;
+  var tieneSlotsConROI = slots.some(function(slot) {
+    return !!(slot && slot.roiBase64);
+  });
+
+  if (!canvas && !tieneSlotsConROI) {
+    return null;
+  }
+
+  var delayMs = typeof params.delayMs === 'number' && params.delayMs >= 0
+    ? Math.round(params.delayMs)
+    : ((typeof B1_CONFIG !== 'undefined' && B1_CONFIG && B1_CONFIG.POST_ANALYSIS_CLEANUP_DELAY_MS) || 3000);
+
+  var cleanupId = _B1_emp_generarCleanupId(params.traceId);
+  _B1_EMP_CLEANUP_TIMEOUTS[cleanupId] = setTimeout(function() {
+    try {
+      _B1_emp_liberarSlotsTemporales(slots);
+      _B1_emp_liberarCanvasTemporal(canvas);
+    } finally {
+      delete _B1_EMP_CLEANUP_TIMEOUTS[cleanupId];
+    }
+  }, delayMs);
+
+  return cleanupId;
 }
 
 function _B1_emp_extraerTextoPalabra(palabra) {
@@ -118,54 +182,6 @@ function _B1_emp_crearCanvasTemporal(width, height) {
   }
 
   return null;
-}
-
-function _B1_emp_recortarROI(canvas, boundingPoly) {
-  try {
-    if (!canvas || typeof canvas.width !== 'number' || typeof canvas.height !== 'number') return null;
-    if (!boundingPoly) return null;
-
-    var vertices = _B1_emp_extraerVertices(canvas, boundingPoly);
-    if (!vertices.length) return null;
-
-    var minX = Number.POSITIVE_INFINITY;
-    var minY = Number.POSITIVE_INFINITY;
-    var maxX = Number.NEGATIVE_INFINITY;
-    var maxY = Number.NEGATIVE_INFINITY;
-
-    for (var i = 0; i < vertices.length; i++) {
-      minX = Math.min(minX, vertices[i].x);
-      minY = Math.min(minY, vertices[i].y);
-      maxX = Math.max(maxX, vertices[i].x);
-      maxY = Math.max(maxY, vertices[i].y);
-    }
-
-    if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) return null;
-
-    var margin = (typeof B1_CONFIG !== 'undefined' && B1_CONFIG && B1_CONFIG.ROI_MARGIN_PX) || 15;
-    var x = Math.max(0, Math.floor(minX - margin));
-    var y = Math.max(0, Math.floor(minY - margin));
-    var w = Math.min(canvas.width - x, Math.ceil((maxX - minX) + (margin * 2)));
-    var h = Math.min(canvas.height - y, Math.ceil((maxY - minY) + (margin * 2)));
-
-    if (w < 5 || h < 5) return null;
-
-    var cropCanvas = _B1_emp_crearCanvasTemporal(w, h);
-    if (!cropCanvas || typeof cropCanvas.getContext !== 'function') return null;
-
-    var ctx = cropCanvas.getContext('2d');
-    if (!ctx || typeof ctx.drawImage !== 'function') return null;
-
-    ctx.drawImage(canvas, x, y, w, h, 0, 0, w, h);
-
-    if (typeof cropCanvas.toDataURL === 'function') {
-      return cropCanvas.toDataURL('image/jpeg', 0.92);
-    }
-
-    return null;
-  } catch (_) {
-    return null;
-  }
 }
 
 function _B1_emp_calcularEscalaZoomROI(w, h) {
@@ -282,14 +298,14 @@ function B1_empaquetarParaRescate(params) {
   var rotasReconocidas = Array.isArray(params.rotasReconocidas) ? params.rotasReconocidas : [];
   var canvas = params.canvas || null;
   var slots = [];
-
-  _B1_EMP_SLOT_COUNTER = 0;
+  var slotCounter = 0;
 
   for (var i = 0; i < rotasReconocidas.length; i++) {
     var rota = rotasReconocidas[i];
     if (!rota || typeof rota !== 'object') continue;
 
-    var slotId = _B1_emp_generarSlotId();
+    slotCounter += 1;
+    var slotId = 'B' + slotCounter;
     var textoOriginal = String(rota.tokenOriginal || '').trim();
 
     slots.push({
