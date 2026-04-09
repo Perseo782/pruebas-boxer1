@@ -3,7 +3,7 @@
  * BOXER 1 v2 · CORE
  * =====================================================================
  * Director de orquesta del flujo Boxer 1.
- * Conecta validacion, prechequeo, OCR, motor y pasaporte.
+ * Conecta validacion, prechequeo, OCR, motor, rescate opcional y pasaporte.
  * =====================================================================
  */
 
@@ -189,6 +189,7 @@ async function B1_analizar(input, config) {
   var textoBase = '';
   var fiabilidad = null;
   var resultadoMotor = null;
+  var loteRescate = null;
   var tiempos = _B1_core_crearTiempos();
 
   try {
@@ -202,6 +203,9 @@ async function B1_analizar(input, config) {
         entradaValida.reason
       );
     }
+
+    var datosEntrada = entradaValida.datos || input.datos || {};
+    var agentEnabled = datosEntrada.agentEnabled !== false;
 
     var configValida = B1_validarConfig(config);
     if (!configValida.valid) {
@@ -218,7 +222,7 @@ async function B1_analizar(input, config) {
       });
     }
 
-    prechequeo = await B1_prechequeo(input.datos.imageRef, cronometro);
+    prechequeo = await B1_prechequeo(datosEntrada.imageRef, cronometro);
     tiempos.prechequeo = prechequeo.tiempos || null;
     B1_diagPrechequeo(
       diagnosticoBuffer,
@@ -252,7 +256,7 @@ async function B1_analizar(input, config) {
         function() {
           return B1_llamarVisionOCR(
             prechequeo.canvas,
-            input.datos.sendMode,
+            datosEntrada.sendMode,
             input.sessionToken,
             configValida.config.urlTrastienda
           );
@@ -374,19 +378,131 @@ async function B1_analizar(input, config) {
       catalogos: globalThis.B1_CATALOGOS
     });
 
-    var pendientesSinRescate = _B1_core_construirPendientesSinRescate(resultadoMotor.rotasReconocidas);
-    var merge = {
-      mergeStatus: B1_MERGE_STATUS.NO_INTENTADO,
-      textoAuditado: textoBase,
-      correcciones: [],
-      noResueltas: pendientesSinRescate.noResueltas,
-      mergeCancelado: false,
-      detalleSlots: pendientesSinRescate.detalleSlots
-    };
+    var rotasReconocidas = Array.isArray(resultadoMotor.rotasReconocidas)
+      ? resultadoMotor.rotasReconocidas
+      : [];
+    var merge = null;
+    var slotsEnviados = 0;
+    var slotsDevueltos = 0;
+    var rescatesIntentados = 0;
+    var rescatesAplicados = 0;
+
+    if (!agentEnabled) {
+      B1_diagBypass(diagnosticoBuffer, cronometro.elapsed(), null);
+    }
+
+    if (rotasReconocidas.length === 0) {
+      merge = {
+        mergeStatus: B1_MERGE_STATUS.NO_INTENTADO,
+        textoAuditado: textoBase,
+        correcciones: [],
+        noResueltas: [],
+        mergeCancelado: false,
+        detalleSlots: []
+      };
+    } else if (!agentEnabled) {
+      var pendientesSinRescate = _B1_core_construirPendientesSinRescate(rotasReconocidas);
+      merge = {
+        mergeStatus: B1_MERGE_STATUS.NO_INTENTADO,
+        textoAuditado: textoBase,
+        correcciones: [],
+        noResueltas: pendientesSinRescate.noResueltas,
+        mergeCancelado: false,
+        detalleSlots: pendientesSinRescate.detalleSlots
+      };
+    } else {
+      loteRescate = B1_empaquetarParaRescate({
+        rotasReconocidas: rotasReconocidas,
+        canvas: prechequeo.canvas
+      });
+
+      slotsEnviados = loteRescate.totalSlots || 0;
+
+      if (slotsEnviados === 0) {
+        merge = {
+          mergeStatus: B1_MERGE_STATUS.NO_INTENTADO,
+          textoAuditado: textoBase,
+          correcciones: [],
+          noResueltas: [],
+          mergeCancelado: false,
+          detalleSlots: []
+        };
+      } else {
+        var resultadoRescate;
+        try {
+          resultadoRescate = (await _B1_core_ejecutarConAutoreparacionTecnica(
+            'rescate_gemini',
+            function() {
+              return B1_ejecutarRescate(
+                loteRescate,
+                textoBase,
+                cronometro,
+                input.sessionToken,
+                configValida.config.urlTrastienda
+              );
+            },
+            diagnosticoBuffer,
+            cronometro
+          )).resultado;
+          tiempos.rescate = resultadoRescate.tiempos || null;
+        } catch (errRescate) {
+          B1_diagEncadenado(
+            diagnosticoBuffer,
+            errRescate.upstreamCode || B1_ERRORES.RESCATE_FALLIDO,
+            errRescate.upstreamModule || B1_CONFIG.TRASTIENDA_MODULO_DESTINO,
+            cronometro.elapsed()
+          );
+          return B1_crearRespuestaError({
+            code: errRescate.upstreamCode || B1_ERRORES.RESCATE_FALLIDO,
+            message: errRescate.reparacionAgotada
+              ? 'Autoreparacion tecnica agotada en rescate Gemini. El fallo persiste.'
+              : (errRescate.message || 'Rescate Gemini fallido.'),
+            tipoFallo: errRescate.reparacionAgotada ? B1_TIPO_FALLO.REPARACION_AGOTADA : B1_TIPO_FALLO.DESCONOCIDO,
+            retryable: true,
+            traceId: traceId,
+            elapsedMs: cronometro.elapsed(),
+            chainedFrom: errRescate.upstreamModule || B1_CONFIG.TRASTIENDA_MODULO_DESTINO,
+            errorOriginal: errRescate.raw || null,
+            detail: errRescate.reparacionAgotada
+              ? 'Boxer 1 intento autorepararse con un reintento tecnico en rescate Gemini, pero el fallo persiste: ' + (errRescate.message || 'sin detalle')
+              : undefined,
+            tiempoTotalReintentoMs: errRescate.tiempoTotalReintentoMs || 0,
+            intentos: errRescate.intentos || undefined,
+            textoBaseVision: textoBase,
+            metricas: B1_crearMetricas({
+              pageConfidence: fiabilidad.pageConfidence,
+              criticalZoneScore: fiabilidad.criticalZoneScore,
+              totalPalabrasAnalizadas: palabrasOCR.length,
+              totalValidas: (resultadoMotor.validas || []).length,
+              totalRotasReconocidas: rotasReconocidas.length,
+              totalRechazadasDefinitivas: (resultadoMotor.rechazadasDefinitivas || []).length,
+              totalTablaBReconocida: (resultadoMotor.tablaBReconocida || []).length,
+              slotsEnviados: slotsEnviados,
+              slotsDevueltos: 0,
+              mergeStatus: B1_MERGE_STATUS.NO_INTENTADO,
+              elapsedMs: cronometro.elapsed(),
+              abortReason: 'rescate_fallido',
+              tiempos: tiempos
+            }),
+            diagnostico: B1_exportarDiagnostico(diagnosticoBuffer),
+            accionSugeridaParaCerebro: B1_ACCIONES_CEREBRO.REINTENTAR
+          });
+        }
+
+        rescatesIntentados = resultadoRescate.intentado ? 1 : 0;
+        slotsEnviados = resultadoRescate.slotsEnviados || slotsEnviados;
+        slotsDevueltos = resultadoRescate.slotsDevueltos || 0;
+
+        B1_diagRescate(diagnosticoBuffer, resultadoRescate, cronometro.elapsed(), null);
+        merge = B1_ejecutarMerge(textoBase, loteRescate.slots, resultadoRescate, palabrasOCR);
+        rescatesAplicados = (merge.correcciones || []).length;
+      }
+    }
+
     B1_diagMerge(diagnosticoBuffer, merge, cronometro.elapsed(), null);
 
-    var pasaporte = B1_emitirPasaporte(merge, fiabilidad, cronometro, null);
-    if (merge.noResueltas && merge.noResueltas.length > 0) {
+    var pasaporte = B1_emitirPasaporte(merge, fiabilidad, agentEnabled, cronometro, null);
+    if (agentEnabled && merge.noResueltas && merge.noResueltas.length > 0) {
       pasaporte.estado = B1_PASSPORT.ROJO;
       pasaporte.explicacion = merge.noResueltas.length + ' alergenos no resueltos.';
       pasaporte.accionSugeridaParaCerebro = B1_ACCIONES_CEREBRO.BLOQUEAR_GUARDADO;
@@ -417,14 +533,14 @@ async function B1_analizar(input, config) {
         criticalZoneScore: fiabilidad.criticalZoneScore,
         totalPalabrasAnalizadas: palabrasOCR.length,
         totalValidas: (resultadoMotor.validas || []).length,
-        totalRotasReconocidas: (resultadoMotor.rotasReconocidas || []).length,
+        totalRotasReconocidas: rotasReconocidas.length,
         totalRechazadasDefinitivas: (resultadoMotor.rechazadasDefinitivas || []).length,
         totalTablaBReconocida: (resultadoMotor.tablaBReconocida || []).length,
-        slotsEnviados: 0,
-        slotsDevueltos: 0,
+        slotsEnviados: slotsEnviados,
+        slotsDevueltos: slotsDevueltos,
         mergeStatus: merge.mergeStatus || B1_MERGE_STATUS.NO_INTENTADO,
-        rescatesIntentados: 0,
-        rescatesAplicados: 0,
+        rescatesIntentados: rescatesIntentados,
+        rescatesAplicados: rescatesAplicados,
         elapsedMs: cronometro.elapsed(),
         tiempos: tiempos
       }),
@@ -458,7 +574,7 @@ async function B1_analizar(input, config) {
     if (typeof B1_programarLimpiezaTemporales === 'function') {
       B1_programarLimpiezaTemporales({
         traceId: traceId,
-        slots: [],
+        slots: loteRescate && loteRescate.slots ? loteRescate.slots : [],
         canvas: prechequeo && prechequeo.canvas ? prechequeo.canvas : null,
         delayMs: B1_CONFIG.POST_ANALYSIS_CLEANUP_DELAY_MS
       });

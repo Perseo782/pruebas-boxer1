@@ -37,11 +37,15 @@ function B1_validarEntrada(input) {
   if (Object.values(B1_SEND_MODE).indexOf(d.sendMode) === -1) {
     return { valid: false, reason: 'sendMode invalido: "' + d.sendMode + '".' };
   }
+  if (d.agentEnabled != null && typeof d.agentEnabled !== 'boolean') {
+    return { valid: false, reason: 'agentEnabled debe ser true o false cuando se envie.' };
+  }
   return {
     valid: true,
     datos: {
       imageRef: d.imageRef,
-      sendMode: d.sendMode
+      sendMode: d.sendMode,
+      agentEnabled: d.agentEnabled !== false
     }
   };
 }

@@ -221,7 +221,7 @@ function B1_ejecutarMerge(textoBase, slotsEnviados, resultadoRescate, palabrasOC
  * REGLA 3:  Fiabilidad no decide cortes. No se consulta fotoViable.
  */
 
-function B1_emitirPasaporte(merge, fiabilidad, cronometro, abortReason) {
+function B1_emitirPasaporte(merge, fiabilidad, agentEnabled, cronometro, abortReason) {
 
   // Aborto externo
   if (abortReason) {
@@ -229,6 +229,14 @@ function B1_emitirPasaporte(merge, fiabilidad, cronometro, abortReason) {
       estado: B1_PASSPORT.ROJO,
       explicacion: abortReason,
       accionSugeridaParaCerebro: B1_ACCIONES_CEREBRO.CORTE_TEMPRANO
+    };
+  }
+
+  if (!agentEnabled) {
+    return {
+      estado: B1_PASSPORT.NARANJA,
+      explicacion: 'Agente desactivado. Solo OCR + motor local.',
+      accionSugeridaParaCerebro: B1_ACCIONES_CEREBRO.CONTINUAR_Y_MARCAR
     };
   }
 

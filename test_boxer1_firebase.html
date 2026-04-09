@@ -224,6 +224,7 @@
 <script src="B1_catalogos.js"></script>
 <script src="B1_motor_coste_ocr.js"></script>
 <script src="B1_slots_empaquetador.js"></script>
+<script src="B1_rescate.js"></script>
 <script src="B1_merge.js"></script>
 <script src="B1_core.js"></script>
 <script>
@@ -389,7 +390,8 @@
         sessionToken: $('token').value.trim(),
         datos: {
           imageRef: file,
-          sendMode: $('sendMode').value
+          sendMode: $('sendMode').value,
+          agentEnabled: true
         }
       };
       
@@ -441,7 +443,8 @@
         sessionToken: 'tok',
         datos: { 
           imageRef: new Blob(['x'], { type:'image/png' }), 
-          sendMode:'base64'
+          sendMode:'base64',
+          agentEnabled: true
         }
       });
       add(entradaValida.valid 
@@ -599,7 +602,8 @@
             sessionToken: 'tok',
             datos: {
               imageRef: new Blob(['x'], { type:'image/png' }),
-              sendMode: 'base64'
+              sendMode: 'base64',
+              agentEnabled: false
             }
           }, {
             urlTrastienda: 'https://example.test'
@@ -611,7 +615,8 @@
             && coreSimulado.resultado.datos
             && coreSimulado.resultado.datos.metricas
             && coreSimulado.resultado.datos.metricas.totalRotasReconocidas >= 1
-            && coreSimulado.resultado.datos.metricas.rescatesIntentados === 0;
+            && coreSimulado.resultado.datos.metricas.rescatesIntentados === 0
+            && coreSimulado.resultado.estadoPasaporteModulo === 'NARANJA';
 
           add(coreOk
             ? makePass('Core v2 simulado', json({
