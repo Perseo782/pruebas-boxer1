@@ -269,10 +269,13 @@ async function B1_enviarRescateGemini(textoBase, slots, sessionToken, urlTrastie
   const body = {
     moduloDestino: 'TRASTIENDA',
     accion: 'procesarGemini',
+    sessionToken: sessionToken || '',
     payload: {
       ocrTexto: String(textoBase || '').trim(),
       contexto: prompt,
-      fragmentosImagen
+      fragmentosImagen,
+      sessionToken: sessionToken || '',
+      token: sessionToken || ''
     }
   };
 

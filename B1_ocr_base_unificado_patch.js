@@ -11,7 +11,13 @@ async function B1_llamarVisionOCR(canvas, sendMode, sessionToken, urlTrastienda)
   const body = {
     moduloDestino: B1_CONFIG.TRASTIENDA_MODULO_DESTINO,
     accion: B1_CONFIG.TRASTIENDA_ACCION_VISION,
-    payload: { imageBase64: base64, mimeType: 'image/jpeg' }
+    sessionToken: sessionToken || '',
+    payload: {
+      imageBase64: base64,
+      mimeType: 'image/jpeg',
+      sessionToken: sessionToken || '',
+      token: sessionToken || ''
+    }
   };
   const t_build_payload_vision_ms = Date.now() - tPayload;
   const tFetch = Date.now();

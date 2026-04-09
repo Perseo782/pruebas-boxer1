@@ -144,10 +144,6 @@
             <label for="sendMode">sendMode</label>
             <select id="sendMode"><option value="base64" selected>base64</option><option value="normal">normal</option></select>
           </div>
-          <div>
-            <label for="agent">agentEnabled</label>
-            <select id="agent"><option value="true" selected>true</option><option value="false">false</option></select>
-          </div>
         </div>
         <div class="actions">
           <button id="runManual">Probar Boxer 1</button>
@@ -228,7 +224,6 @@
 <script src="B1_catalogos.js"></script>
 <script src="B1_motor_coste_ocr.js"></script>
 <script src="B1_slots_empaquetador.js"></script>
-<script src="B1_rescate.js"></script>
 <script src="B1_merge.js"></script>
 <script src="B1_core.js"></script>
 <script>
@@ -394,8 +389,7 @@
         sessionToken: $('token').value.trim(),
         datos: {
           imageRef: file,
-          sendMode: $('sendMode').value,
-          agentEnabled: $('agent').value === 'true'
+          sendMode: $('sendMode').value
         }
       };
       
@@ -447,8 +441,7 @@
         sessionToken: 'tok',
         datos: { 
           imageRef: new Blob(['x'], { type:'image/png' }), 
-          sendMode:'base64', 
-          agentEnabled:true
+          sendMode:'base64'
         }
       });
       add(entradaValida.valid 
@@ -580,7 +573,6 @@
       } else {
         const originalPrechequeo = B1_prechequeo;
         const originalVision = B1_llamarVisionOCR;
-        const originalRescate = B1_ejecutarRescate;
 
         try {
           B1_prechequeo = async () => ({
@@ -600,20 +592,6 @@
             __b1Upstream: null
           });
 
-          B1_ejecutarRescate = async (loteRescate) => ({
-            intentado: true,
-            correcciones: (loteRescate.slots || []).map((slot) => ({
-              slotId: slot.slotId,
-              estado: 'corregida',
-              solucion: 'soja'
-            })),
-            slotsEnviados: loteRescate.totalSlots || 0,
-            slotsDevueltos: loteRescate.totalSlots || 0,
-            razon: null,
-            erroresLote: 0,
-            tiempos: { cliente: { t_rescate_total_ms: 12 } }
-          });
-
           const coreSimulado = await B1_analizar({
             moduloOrigen: 'Cerebro_Orquestador',
             moduloDestino: 'Boxer1_Core',
@@ -621,8 +599,7 @@
             sessionToken: 'tok',
             datos: {
               imageRef: new Blob(['x'], { type:'image/png' }),
-              sendMode: 'base64',
-              agentEnabled: true
+              sendMode: 'base64'
             }
           }, {
             urlTrastienda: 'https://example.test'
@@ -633,20 +610,21 @@
             && coreSimulado.resultado.modulo === B1_CONFIG.MODULE_NAME
             && coreSimulado.resultado.datos
             && coreSimulado.resultado.datos.metricas
-            && coreSimulado.resultado.datos.metricas.totalRotasReconocidas >= 1;
+            && coreSimulado.resultado.datos.metricas.totalRotasReconocidas >= 1
+            && coreSimulado.resultado.datos.metricas.rescatesIntentados === 0;
 
           add(coreOk
             ? makePass('Core v2 simulado', json({
                 modulo: coreSimulado.resultado.modulo,
                 pasaporte: coreSimulado.resultado.estadoPasaporteModulo,
                 totalRotasReconocidas: coreSimulado.resultado.datos.metricas.totalRotasReconocidas,
-                mergeStatus: coreSimulado.resultado.datos.metricas.mergeStatus
+                mergeStatus: coreSimulado.resultado.datos.metricas.mergeStatus,
+                rescatesIntentados: coreSimulado.resultado.datos.metricas.rescatesIntentados
               }))
             : makeFail('Core v2 simulado', json(coreSimulado)));
         } finally {
           B1_prechequeo = originalPrechequeo;
           B1_llamarVisionOCR = originalVision;
-          B1_ejecutarRescate = originalRescate;
         }
       }
 

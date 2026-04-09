@@ -37,16 +37,11 @@ function B1_validarEntrada(input) {
   if (Object.values(B1_SEND_MODE).indexOf(d.sendMode) === -1) {
     return { valid: false, reason: 'sendMode invalido: "' + d.sendMode + '".' };
   }
-  if (typeof d.agentEnabled !== 'boolean') {
-    return { valid: false, reason: 'agentEnabled debe ser true o false.' };
-  }
-
   return {
     valid: true,
     datos: {
       imageRef: d.imageRef,
-      sendMode: d.sendMode,
-      agentEnabled: d.agentEnabled
+      sendMode: d.sendMode
     }
   };
 }
@@ -184,10 +179,8 @@ function B1_crearRoiRef(slotId, refUri) {
 
 /* ── CRONOMETRO ──────────────────────────────────────────── */
 /*
- * Sin limite de tiempo. El cronometro existe porque B1_rescate.js
- * (conservado del viejo) llama a cronometro.canAfford() y
- * cronometro.expired(). Si se elimina el objeto, rescate se rompe.
- * Solucion: el cronometro siempre dice "hay tiempo".
+ * Sin limite de tiempo. El cronometro queda para mantener trazas
+ * consistentes y no romper contratos internos.
  */
 
 function B1_crearCronometro() {

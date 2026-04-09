@@ -3,8 +3,7 @@
  * BOXER 1 v2 · CORE
  * =====================================================================
  * Director de orquesta del flujo Boxer 1.
- * Conecta validacion, prechequeo, OCR, motor, empaquetador, rescate,
- * merge y pasaporte.
+ * Conecta validacion, prechequeo, OCR, motor y pasaporte.
  * =====================================================================
  */
 
@@ -63,6 +62,30 @@ function _B1_core_extraerPesoVolumenProducto(resultadoMotor) {
   }
 
   return null;
+}
+
+function _B1_core_construirPendientesSinRescate(rotasReconocidas) {
+  var rotas = Array.isArray(rotasReconocidas) ? rotasReconocidas : [];
+  var noResueltas = [];
+  var detalleSlots = [];
+
+  for (var i = 0; i < rotas.length; i++) {
+    var rota = rotas[i] || {};
+    var slotId = 'R' + (i + 1);
+    noResueltas.push(slotId);
+    detalleSlots.push({
+      slotId: slotId,
+      estadoFinal: 'no_resuelta',
+      original: String(rota.tokenOriginal || ''),
+      solucion: '',
+      motivo: 'sin_rescate_configurado'
+    });
+  }
+
+  return {
+    noResueltas: noResueltas,
+    detalleSlots: detalleSlots
+  };
 }
 
 function _B1_core_esTimeoutTecnico(err) {
@@ -166,7 +189,6 @@ async function B1_analizar(input, config) {
   var textoBase = '';
   var fiabilidad = null;
   var resultadoMotor = null;
-  var loteRescate = null;
   var tiempos = _B1_core_crearTiempos();
 
   try {
@@ -323,47 +345,6 @@ async function B1_analizar(input, config) {
       null
     );
 
-    if (!input.datos.agentEnabled) {
-      B1_diagBypass(diagnosticoBuffer, cronometro.elapsed(), null);
-      var pasaporteBypass = B1_emitirPasaporte(
-        { mergeCancelado: false, noResueltas: [], correcciones: [] },
-        fiabilidad,
-        false,
-        cronometro,
-        null
-      );
-      B1_diagPasaporte(
-        diagnosticoBuffer,
-        pasaporteBypass.estado,
-        pasaporteBypass.explicacion,
-        cronometro.elapsed(),
-        null
-      );
-      return B1_crearRespuestaOk({
-        estadoPasaporte: pasaporteBypass.estado,
-        accionSugeridaParaCerebro: pasaporteBypass.accionSugeridaParaCerebro,
-        elapsedMs: cronometro.elapsed(),
-        traceId: traceId,
-        textoBaseVision: textoBase,
-        textoAuditado: textoBase,
-        correcciones: [],
-        noResueltas: [],
-        validas: [],
-        tablaBReconocida: [],
-        pesoVolumenProducto: null,
-        detalleSlots: [],
-        metricas: B1_crearMetricas({
-          pageConfidence: fiabilidad.pageConfidence,
-          criticalZoneScore: fiabilidad.criticalZoneScore,
-          totalPalabrasAnalizadas: ocrNormalizado.totalPalabras || 0,
-          mergeStatus: B1_MERGE_STATUS.NO_INTENTADO,
-          elapsedMs: cronometro.elapsed(),
-          tiempos: tiempos
-        }),
-        diagnostico: B1_exportarDiagnostico(diagnosticoBuffer)
-      });
-    }
-
     if (!globalThis.B1_CATALOGOS_READY || !globalThis.B1_CATALOGOS) {
       return B1_crearRespuestaError({
         code: B1_ERRORES.CATALOGOS_NO_LISTO,
@@ -393,124 +374,18 @@ async function B1_analizar(input, config) {
       catalogos: globalThis.B1_CATALOGOS
     });
 
-    loteRescate = B1_empaquetarParaRescate({
-      rotasReconocidas: resultadoMotor.rotasReconocidas,
-      canvas: prechequeo.canvas
-    });
-
-    if (loteRescate.totalSlots === 0) {
-      var pasaporteSinRotas = B1_emitirPasaporte(
-        { mergeCancelado: false, noResueltas: [], correcciones: [] },
-        fiabilidad,
-        true,
-        cronometro,
-        null
-      );
-      B1_diagPasaporte(
-        diagnosticoBuffer,
-        pasaporteSinRotas.estado,
-        pasaporteSinRotas.explicacion,
-        cronometro.elapsed(),
-        null
-      );
-      return B1_crearRespuestaOk({
-        estadoPasaporte: pasaporteSinRotas.estado,
-        accionSugeridaParaCerebro: pasaporteSinRotas.accionSugeridaParaCerebro,
-        elapsedMs: cronometro.elapsed(),
-        traceId: traceId,
-        textoBaseVision: textoBase,
-        textoAuditado: textoBase,
-        correcciones: [],
-        noResueltas: [],
-        validas: resultadoMotor.validas || [],
-        tablaBReconocida: resultadoMotor.tablaBReconocida || [],
-        pesoVolumenProducto: _B1_core_extraerPesoVolumenProducto(resultadoMotor),
-        detalleSlots: [],
-        metricas: B1_crearMetricas({
-          pageConfidence: fiabilidad.pageConfidence,
-          criticalZoneScore: fiabilidad.criticalZoneScore,
-          totalPalabrasAnalizadas: palabrasOCR.length,
-          totalValidas: (resultadoMotor.validas || []).length,
-          totalRotasReconocidas: (resultadoMotor.rotasReconocidas || []).length,
-          totalRechazadasDefinitivas: (resultadoMotor.rechazadasDefinitivas || []).length,
-          totalTablaBReconocida: (resultadoMotor.tablaBReconocida || []).length,
-          slotsEnviados: 0,
-          slotsDevueltos: 0,
-          mergeStatus: B1_MERGE_STATUS.NO_INTENTADO,
-          elapsedMs: cronometro.elapsed(),
-          tiempos: tiempos
-        }),
-        diagnostico: B1_exportarDiagnostico(diagnosticoBuffer)
-      });
-    }
-
-    var resultadoRescate;
-    try {
-      resultadoRescate = (await _B1_core_ejecutarConAutoreparacionTecnica(
-        'rescate_gemini',
-        function() {
-          return B1_ejecutarRescate(
-            loteRescate,
-            textoBase,
-            cronometro,
-            input.sessionToken,
-            configValida.config.urlTrastienda
-          );
-        },
-        diagnosticoBuffer,
-        cronometro
-      )).resultado;
-      tiempos.rescate = resultadoRescate.tiempos || null;
-    } catch (errRescate) {
-      B1_diagEncadenado(
-        diagnosticoBuffer,
-        errRescate.upstreamCode || B1_ERRORES.RESCATE_FALLIDO,
-        errRescate.upstreamModule || B1_CONFIG.TRASTIENDA_MODULO_DESTINO,
-        cronometro.elapsed()
-      );
-      return B1_crearRespuestaError({
-        code: errRescate.upstreamCode || B1_ERRORES.RESCATE_FALLIDO,
-        message: errRescate.reparacionAgotada
-          ? 'Autoreparacion tecnica agotada en rescate Gemini. El fallo persiste.'
-          : (errRescate.message || 'Rescate Gemini fallido.'),
-        tipoFallo: errRescate.reparacionAgotada ? B1_TIPO_FALLO.REPARACION_AGOTADA : B1_TIPO_FALLO.DESCONOCIDO,
-        retryable: true,
-        traceId: traceId,
-        elapsedMs: cronometro.elapsed(),
-        chainedFrom: errRescate.upstreamModule || B1_CONFIG.TRASTIENDA_MODULO_DESTINO,
-        errorOriginal: errRescate.raw || null,
-        detail: errRescate.reparacionAgotada
-          ? 'Boxer 1 intento autorepararse con un reintento tecnico en rescate Gemini, pero el fallo persiste: ' + (errRescate.message || 'sin detalle')
-          : undefined,
-        tiempoTotalReintentoMs: errRescate.tiempoTotalReintentoMs || 0,
-        intentos: errRescate.intentos || undefined,
-        textoBaseVision: textoBase,
-        metricas: B1_crearMetricas({
-          pageConfidence: fiabilidad.pageConfidence,
-          criticalZoneScore: fiabilidad.criticalZoneScore,
-          totalPalabrasAnalizadas: palabrasOCR.length,
-          totalValidas: (resultadoMotor.validas || []).length,
-          totalRotasReconocidas: (resultadoMotor.rotasReconocidas || []).length,
-          totalRechazadasDefinitivas: (resultadoMotor.rechazadasDefinitivas || []).length,
-          totalTablaBReconocida: (resultadoMotor.tablaBReconocida || []).length,
-          slotsEnviados: loteRescate.totalSlots,
-          slotsDevueltos: 0,
-          mergeStatus: B1_MERGE_STATUS.NO_INTENTADO,
-          elapsedMs: cronometro.elapsed(),
-          abortReason: 'rescate_fallido',
-          tiempos: tiempos
-        }),
-        diagnostico: B1_exportarDiagnostico(diagnosticoBuffer),
-        accionSugeridaParaCerebro: B1_ACCIONES_CEREBRO.REINTENTAR
-      });
-    }
-
-    B1_diagRescate(diagnosticoBuffer, resultadoRescate, cronometro.elapsed(), null);
-
-    var merge = B1_ejecutarMerge(textoBase, loteRescate.slots, resultadoRescate, palabrasOCR);
+    var pendientesSinRescate = _B1_core_construirPendientesSinRescate(resultadoMotor.rotasReconocidas);
+    var merge = {
+      mergeStatus: B1_MERGE_STATUS.NO_INTENTADO,
+      textoAuditado: textoBase,
+      correcciones: [],
+      noResueltas: pendientesSinRescate.noResueltas,
+      mergeCancelado: false,
+      detalleSlots: pendientesSinRescate.detalleSlots
+    };
     B1_diagMerge(diagnosticoBuffer, merge, cronometro.elapsed(), null);
 
-    var pasaporte = B1_emitirPasaporte(merge, fiabilidad, true, cronometro, null);
+    var pasaporte = B1_emitirPasaporte(merge, fiabilidad, cronometro, null);
     if (merge.noResueltas && merge.noResueltas.length > 0) {
       pasaporte.estado = B1_PASSPORT.ROJO;
       pasaporte.explicacion = merge.noResueltas.length + ' alergenos no resueltos.';
@@ -545,11 +420,11 @@ async function B1_analizar(input, config) {
         totalRotasReconocidas: (resultadoMotor.rotasReconocidas || []).length,
         totalRechazadasDefinitivas: (resultadoMotor.rechazadasDefinitivas || []).length,
         totalTablaBReconocida: (resultadoMotor.tablaBReconocida || []).length,
-        slotsEnviados: resultadoRescate.slotsEnviados || 0,
-        slotsDevueltos: resultadoRescate.slotsDevueltos || 0,
+        slotsEnviados: 0,
+        slotsDevueltos: 0,
         mergeStatus: merge.mergeStatus || B1_MERGE_STATUS.NO_INTENTADO,
-        rescatesIntentados: resultadoRescate.intentado ? 1 : 0,
-        rescatesAplicados: (merge.correcciones || []).length,
+        rescatesIntentados: 0,
+        rescatesAplicados: 0,
         elapsedMs: cronometro.elapsed(),
         tiempos: tiempos
       }),
@@ -583,7 +458,7 @@ async function B1_analizar(input, config) {
     if (typeof B1_programarLimpiezaTemporales === 'function') {
       B1_programarLimpiezaTemporales({
         traceId: traceId,
-        slots: loteRescate && loteRescate.slots ? loteRescate.slots : [],
+        slots: [],
         canvas: prechequeo && prechequeo.canvas ? prechequeo.canvas : null,
         delayMs: B1_CONFIG.POST_ANALYSIS_CLEANUP_DELAY_MS
       });
