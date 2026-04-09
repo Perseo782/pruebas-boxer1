@@ -117,15 +117,52 @@ function _B1_core_crearIntentoAutoreparacion(intento, accion, err) {
   };
 }
 
+function _B1_core_sleep(ms) {
+  return new Promise(function(resolve) {
+    setTimeout(resolve, Math.max(0, ms | 0));
+  });
+}
+
 async function _B1_core_ejecutarConAutoreparacionTecnica(nombreOperacion, ejecutar, diagnosticoBuffer, cronometro) {
   var maxIntentos = Math.max(1, Math.min((B1_CONFIG && B1_CONFIG.AUTOREPAIR_MAX_ATTEMPTS) || 2, 2));
+  var esRescateGemini = nombreOperacion === 'rescate_gemini';
+  var maxTotalMs = esRescateGemini
+    ? ((B1_CONFIG && B1_CONFIG.RESCATE_MAX_TOTAL_MS) || 15000)
+    : null;
+  var retryDelayMs = esRescateGemini
+    ? ((B1_CONFIG && B1_CONFIG.AUTOREPAIR_RETRY_DELAY_MS) || 300)
+    : 0;
   var intentos = [];
   var inicio = Date.now();
   var ultimoError = null;
 
   for (var intento = 1; intento <= maxIntentos; intento++) {
+    var elapsedAntesIntento = Date.now() - inicio;
+    var remainingMs = (typeof maxTotalMs === 'number') ? (maxTotalMs - elapsedAntesIntento) : null;
+
+    if (typeof remainingMs === 'number' && remainingMs <= 0) {
+      if (!ultimoError) {
+        ultimoError = B1_crearErrorUpstream({
+          message: 'Tiempo maximo total agotado en ' + nombreOperacion + '.',
+          upstreamCode: 'HTTP_TIMEOUT',
+          upstreamModule: B1_CONFIG.TRASTIENDA_MODULO_DESTINO,
+          raw: null
+        });
+        intentos.push(_B1_core_crearIntentoAutoreparacion(
+          intento,
+          'limite_tiempo_total',
+          ultimoError
+        ));
+      }
+      break;
+    }
+
     try {
-      var resultado = await ejecutar(intento);
+      var resultado = await ejecutar(intento, {
+        elapsedMs: elapsedAntesIntento,
+        remainingMs: remainingMs,
+        maxTotalMs: maxTotalMs
+      });
       if (intento > 1) {
         B1_diagReparacion(
           diagnosticoBuffer,
@@ -153,6 +190,22 @@ async function _B1_core_ejecutarConAutoreparacionTecnica(nombreOperacion, ejecut
 
       if (!_B1_core_esErrorTecnicoReparable(err) || intento >= maxIntentos) {
         break;
+      }
+
+      if (retryDelayMs > 0) {
+        var elapsedTrasFallo = Date.now() - inicio;
+        if (typeof maxTotalMs === 'number' && elapsedTrasFallo >= maxTotalMs) {
+          break;
+        }
+
+        var delayAplicado = retryDelayMs;
+        if (typeof maxTotalMs === 'number') {
+          delayAplicado = Math.min(delayAplicado, Math.max(0, maxTotalMs - elapsedTrasFallo));
+        }
+
+        if (delayAplicado > 0) {
+          await _B1_core_sleep(delayAplicado);
+        }
       }
     }
   }
@@ -432,13 +485,26 @@ async function B1_analizar(input, config) {
         try {
           resultadoRescate = (await _B1_core_ejecutarConAutoreparacionTecnica(
             'rescate_gemini',
-            function() {
+            function(intento, contextoIntento) {
+              var timeoutBase = (intento === 1)
+                ? ((B1_CONFIG && B1_CONFIG.GEMINI_FETCH_TIMEOUT_MS) || 8000)
+                : ((B1_CONFIG && B1_CONFIG.GEMINI_FETCH_TIMEOUT_MS_RETRY) || 6000);
+              var remainingMs = contextoIntento && typeof contextoIntento.remainingMs === 'number'
+                ? contextoIntento.remainingMs
+                : null;
+              var timeoutFinal = timeoutBase;
+
+              if (typeof remainingMs === 'number') {
+                timeoutFinal = Math.max(1, Math.min(timeoutBase, Math.floor(remainingMs)));
+              }
+
               return B1_ejecutarRescate(
                 loteRescate,
                 textoBase,
                 cronometro,
                 input.sessionToken,
-                configValida.config.urlTrastienda
+                configValida.config.urlTrastienda,
+                { geminiTimeoutMs: timeoutFinal }
               );
             },
             diagnosticoBuffer,

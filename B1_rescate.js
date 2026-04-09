@@ -258,7 +258,7 @@ function B1_construirPromptRescate(slots) {
   return instrucciones.join('\n');
 }
 
-async function B1_enviarRescateGemini(textoBase, slots, sessionToken, urlTrastienda) {
+async function B1_enviarRescateGemini(textoBase, slots, sessionToken, urlTrastienda, timeoutOverrideMs) {
   const tInicio = _B1_nowMs();
   const tPayloadInicio = _B1_nowMs();
   const prompt = B1_construirPromptRescate(slots);
@@ -283,7 +283,9 @@ async function B1_enviarRescateGemini(textoBase, slots, sessionToken, urlTrastie
   const tBuildPayload = _B1_roundMs(_B1_nowMs() - tPayloadInicio);
 
   const tFetchInicio = _B1_nowMs();
-  const timeoutMs = (typeof B1_CONFIG !== 'undefined' && B1_CONFIG && B1_CONFIG.GEMINI_FETCH_TIMEOUT_MS) || 30000;
+  const timeoutMs = (typeof timeoutOverrideMs === 'number' && timeoutOverrideMs > 0)
+    ? Math.round(timeoutOverrideMs)
+    : (((typeof B1_CONFIG !== 'undefined' && B1_CONFIG && B1_CONFIG.GEMINI_FETCH_TIMEOUT_MS) || 8000));
   const controller = (typeof AbortController === 'function') ? new AbortController() : null;
   const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   let response;
@@ -409,7 +411,8 @@ function B1_decidirTroceo(slots, cronometro) {
   return { necesitaTroceo: true, lotes };
 }
 
-async function B1_ejecutarRescate(loteRescate, textoBase, cronometro, sessionToken, urlTrastienda) {
+async function B1_ejecutarRescate(loteRescate, textoBase, cronometro, sessionToken, urlTrastienda, opciones) {
+  opciones = opciones || {};
   const tInicio = _B1_nowMs();
   const tiemposCliente = {
     t_decidir_troceo_rescate_ms: 0,
@@ -489,7 +492,13 @@ async function B1_ejecutarRescate(loteRescate, textoBase, cronometro, sessionTok
     if (!cronometro.canAfford(B1_RESCUE_ESTIMATED_MS)) break;
     try {
       totalEnviados += lote.length;
-      const envio = await B1_enviarRescateGemini(textoBase, lote, sessionToken, urlTrastienda);
+      const envio = await B1_enviarRescateGemini(
+        textoBase,
+        lote,
+        sessionToken,
+        urlTrastienda,
+        opciones.geminiTimeoutMs
+      );
       const resultado = envio.parseado;
 
       tiemposCliente.t_build_payload_gemini_ms         += envio.tiempos?.cliente?.t_build_payload_gemini_ms || 0;
