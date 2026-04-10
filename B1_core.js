@@ -92,6 +92,47 @@ function _B1_core_esTimeoutTecnico(err) {
   return !!(err && err.upstreamCode === 'HTTP_TIMEOUT');
 }
 
+function _B1_core_extraerCodigoHttpUpstream(err) {
+  var raw = err && err.raw ? err.raw : null;
+  var candidatos = [
+    raw && raw.error && raw.error.raw && raw.error.raw.error && raw.error.raw.error.code,
+    raw && raw.error && raw.error.code,
+    raw && raw.raw && raw.raw.error && raw.raw.error.code
+  ];
+
+  for (var i = 0; i < candidatos.length; i++) {
+    var valor = candidatos[i];
+    if (typeof valor === 'number' && Number.isFinite(valor)) return Math.floor(valor);
+    if (typeof valor === 'string' && /^\d+$/.test(valor)) return parseInt(valor, 10);
+  }
+
+  return null;
+}
+
+function _B1_core_esGeminiTemporalmenteSaturado(err) {
+  if (!err) return false;
+
+  var code = typeof err.upstreamCode === 'string' ? err.upstreamCode : '';
+  if (code !== 'GEMINI_API_ERROR') return false;
+
+  var httpCode = _B1_core_extraerCodigoHttpUpstream(err);
+  if (httpCode === 429 || httpCode === 500 || httpCode === 503 || httpCode === 504) return true;
+
+  var message = err && err.message ? String(err.message) : '';
+  var rawMessage = (
+    err &&
+    err.raw &&
+    err.raw.error &&
+    err.raw.error.raw &&
+    err.raw.error.raw.error &&
+    err.raw.error.raw.error.message
+  ) ? String(err.raw.error.raw.error.message) : '';
+
+  return /high demand|try again later|unavailable|temporar|overloaded|resource exhausted|too many requests/i.test(
+    message + ' ' + rawMessage
+  );
+}
+
 function _B1_core_esErrorTecnicoReparable(err) {
   if (!err) return false;
 
@@ -101,6 +142,7 @@ function _B1_core_esErrorTecnicoReparable(err) {
   if (code === 'HTTP_TIMEOUT') return true;
   if (/^HTTP_5\d\d$/.test(code)) return true;
   if (code === 'HTTP_UNKNOWN') return true;
+  if (_B1_core_esGeminiTemporalmenteSaturado(err)) return true;
   if (err.name === 'TypeError') return true;
   if (/failed to fetch|networkerror|network request failed|load failed/i.test(message)) return true;
 
@@ -124,13 +166,24 @@ function _B1_core_sleep(ms) {
 }
 
 async function _B1_core_ejecutarConAutoreparacionTecnica(nombreOperacion, ejecutar, diagnosticoBuffer, cronometro) {
-  var maxIntentos = Math.max(1, Math.min((B1_CONFIG && B1_CONFIG.AUTOREPAIR_MAX_ATTEMPTS) || 2, 2));
   var esRescateGemini = nombreOperacion === 'rescate_gemini';
+  var maxIntentosBase = Math.max(1, (B1_CONFIG && B1_CONFIG.AUTOREPAIR_MAX_ATTEMPTS) || 2);
+  var maxIntentosRescate = Math.max(
+    maxIntentosBase,
+    (B1_CONFIG && B1_CONFIG.AUTOREPAIR_MAX_ATTEMPTS_RESCATE) || 3
+  );
+  var maxIntentos = esRescateGemini
+    ? Math.max(1, Math.min(maxIntentosRescate, 4))
+    : Math.max(1, Math.min(maxIntentosBase, 2));
   var maxTotalMs = esRescateGemini
     ? ((B1_CONFIG && B1_CONFIG.RESCATE_MAX_TOTAL_MS) || 15000)
     : null;
   var retryDelayMs = esRescateGemini
-    ? ((B1_CONFIG && B1_CONFIG.AUTOREPAIR_RETRY_DELAY_MS) || 300)
+    ? (
+      (B1_CONFIG && B1_CONFIG.AUTOREPAIR_RETRY_DELAY_MS_RESCATE) ||
+      (B1_CONFIG && B1_CONFIG.AUTOREPAIR_RETRY_DELAY_MS) ||
+      300
+    )
     : 0;
   var intentos = [];
   var inicio = Date.now();
@@ -199,6 +252,12 @@ async function _B1_core_ejecutarConAutoreparacionTecnica(nombreOperacion, ejecut
         }
 
         var delayAplicado = retryDelayMs;
+        if (esRescateGemini) {
+          delayAplicado = retryDelayMs * Math.max(1, intento);
+          if (_B1_core_esGeminiTemporalmenteSaturado(err)) {
+            delayAplicado = Math.max(delayAplicado, retryDelayMs * Math.max(2, intento + 1));
+          }
+        }
         if (typeof maxTotalMs === 'number') {
           delayAplicado = Math.min(delayAplicado, Math.max(0, maxTotalMs - elapsedTrasFallo));
         }
