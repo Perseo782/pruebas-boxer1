@@ -130,7 +130,7 @@
         <div class="grid grid-2">
           <div>
             <label for="urlBackend">URL Backend Firebase</label>
-            <input id="urlBackend" type="text" value="https://api-fcqyat6nba-uc.a.run.app" placeholder="https://api-xxx.run.app">
+            <input id="urlBackend" type="text" value="https://europe-west1-project-a6f6b968-a591-4b1f-823.cloudfunctions.net/api" placeholder="https://europe-west1-<project>.cloudfunctions.net/api">
           </div>
           <div>
             <label for="token">Token de sesión</label>
@@ -451,7 +451,7 @@
         ? makePass('Validación de entrada', 'OK') 
         : makeFail('Validación de entrada', entradaValida.reason));
 
-      const cfgValida = B1_validarConfig({ urlTrastienda: 'https://api-fcqyat6nba-uc.a.run.app' });
+      const cfgValida = B1_validarConfig({ urlTrastienda: 'https://europe-west1-project-a6f6b968-a591-4b1f-823.cloudfunctions.net/api' });
       add(cfgValida.valid 
         ? makePass('Validación de config', 'OK') 
         : makeFail('Validación de config', cfgValida.reason));
