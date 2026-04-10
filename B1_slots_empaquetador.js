@@ -187,7 +187,7 @@ function _B1_emp_crearCanvasTemporal(width, height) {
 function _B1_emp_calcularEscalaZoomROI(w, h) {
   var factorBase = 2;
   var minLado = 120;
-  var maxLado = 512;
+  var maxLado = 448;
   var ladoMenor = Math.max(1, Math.min(w, h));
   var factor = Math.max(factorBase, minLado / ladoMenor);
   factor = Math.min(factor, maxLado / Math.max(1, w), maxLado / Math.max(1, h));
@@ -240,7 +240,7 @@ function _B1_emp_recortarROI(canvas, boundingPoly) {
     ctx.drawImage(canvas, x, y, w, h, 0, 0, outW, outH);
 
     if (typeof cropCanvas.toDataURL === 'function') {
-      return cropCanvas.toDataURL('image/jpeg', 0.92);
+      return cropCanvas.toDataURL('image/jpeg', 0.85);
     }
 
     return null;

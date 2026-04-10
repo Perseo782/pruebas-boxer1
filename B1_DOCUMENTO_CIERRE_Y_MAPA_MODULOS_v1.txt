@@ -1,0 +1,162 @@
+BOXER 1 v2 - DOCUMENTO DE CIERRE Y MAPA DE MODULOS
+Version: v1
+Fecha: 2026-04-09
+
+========================================================================
+1) ESTADO GENERAL (RESUMEN)
+========================================================================
+- Boxer 1 esta operativo de extremo a extremo.
+- Flujo activo:
+  1) prechequeo imagen
+  2) OCR Vision
+  3) motor local de deteccion
+  4) rescate Gemini solo si hay rotas
+  5) merge final
+  6) pasaporte final
+- Si hay demora tecnica, Boxer 1 intenta autoreparacion tecnica.
+- Limpieza automatica de temporales (ROI/canvas) al finalizar cada analisis.
+
+========================================================================
+2) MODULOS Y RESPONSABILIDAD
+========================================================================
+
+2.1) B1_enums.js
+- Define constantes globales y configuracion.
+- Incluye tiempos clave:
+  - VISION_FETCH_TIMEOUT_MS
+  - GEMINI_FETCH_TIMEOUT_MS
+  - GEMINI_FETCH_TIMEOUT_MS_RETRY
+  - RESCATE_MAX_TOTAL_MS
+  - AUTOREPAIR_RETRY_DELAY_MS
+  - POST_ANALYSIS_CLEANUP_DELAY_MS
+
+2.2) B1_contratos_unificado_patch.js
+- Valida entrada y config.
+- Construye respuestas OK y ERROR de Boxer 1.
+- Normaliza metricas y formato de salida.
+- agentEnabled se acepta como campo; si no se envia, por defecto se trata como true.
+
+2.3) B1_diagnostico_unificado_patch.js
+- Registra eventos tecnicos para trazabilidad.
+- Tipos: info, timeout, reparacion_silenciosa, encadenado, etc.
+- Exporta resumen y listado de eventos.
+
+2.4) B1_prechequeo_unificado_patch.js
+- Revisa estado minimo de imagen antes del OCR.
+- Entrega canvas procesado + tiempos de prechequeo.
+
+2.5) B1_ocr_base_unificado_patch.js
+- Llama OCR Vision (via Trastienda/Firebase).
+- Mide tiempos cliente/upstream.
+- Protege con timeout para no quedar colgado indefinidamente.
+
+2.6) B1_fiabilidad.js
+- Calcula indicadores de fiabilidad de lectura OCR.
+- Aporta señales de calidad para diagnostico/pasaporte.
+
+2.7) B1_catalogos.js
+- Construye catalogos cerrados de alergenos y patrones tabla B.
+- Incluye indices para busqueda (hash exacto y otros).
+- Carga una vez y deja B1_CATALOGOS_READY.
+
+2.8) B1_motor_coste_ocr.js
+- Motor local de reconocimiento (sin IA externa).
+- Clasifica en:
+  - validas
+  - rotasReconocidas
+  - rechazadasDefinitivas
+  - tablaBReconocida
+- Tambien determina pesoVolumenProducto por reglas de contexto.
+
+2.9) B1_slots_empaquetador.js
+- Convierte rotasReconocidas en slots para rescate.
+- Prepara contexto + ROI base64 por slot.
+- Implementa limpieza automatica de temporales al terminar.
+
+2.10) B1_rescate.js
+- Construye prompt de rescate para Gemini.
+- Llama a Trastienda con timeout configurable.
+- Parsea respuesta Gemini y devuelve correcciones por slot.
+
+2.11) B1_merge.js
+- Exige simetria estricta entre slots enviados/devueltos.
+- Aplica reemplazos en texto final.
+- Produce correcciones/noResueltas/detalleSlots.
+- Emite pasaporte segun resultado y estado agente.
+
+2.12) B1_core.js
+- Orquestador principal.
+- Controla:
+  - validacion
+  - prechequeo
+  - OCR
+  - motor
+  - rescate condicional
+  - merge
+  - pasaporte
+  - diagnostico
+  - autoreparacion tecnica
+  - limpieza final
+
+========================================================================
+3) LOGICA DE AUTOREPARACION TECNICA (ACTUAL)
+========================================================================
+- Intentos maximos: 2 (inicial + reintento tecnico).
+- En rescate Gemini:
+  - timeout intento 1: 8s
+  - timeout intento 2: 6s
+  - pausa entre intentos: 0.3s
+  - limite total fase rescate: 15s
+- Si no recupera, Boxer 1 devuelve error estructurado (sin colgarse indefinidamente).
+
+========================================================================
+4) LIMPIEZA AUTOMATICA DE TEMPORALES
+========================================================================
+- Al final de B1_analizar (bloque finally), se agenda limpieza.
+- Se limpia:
+  - ROI base64 por slot
+  - referencias pesadas en slots
+  - canvas temporal
+- Delay actual de limpieza: 3000 ms.
+
+========================================================================
+5) CONTRATO DE SALIDA (IDEA PRACTICA)
+========================================================================
+- Siempre devuelve:
+  - ok
+  - resultado
+  - error
+- Dentro de resultado:
+  - estadoPasaporteModulo
+  - elapsedMs
+  - traceId
+  - datos (textoBaseVision, textoAuditado, validas, correcciones, noResueltas, tablaB, metricas, diagnostico)
+- Esto permite que Cerebro tome decisiones sin depender de logs externos.
+
+========================================================================
+6) REGLAS CLAVE QUE NO SE DEBEN ROMPER
+========================================================================
+- Simetria de slots en merge.
+- Si hay no_resuelta critica, pasaporte no debe quedar en verde por error.
+- No bloquear indefinidamente por timeouts de red.
+- Mantener trazabilidad por traceId y diagnostico.
+- Mantener limpieza de temporales entre analisis.
+
+========================================================================
+7) GUIA PARA CLONAR A BOXER 2/3/.../100
+========================================================================
+- Reutilizar arquitectura y orden de modulos.
+- Cambiar solo:
+  - nombre de modulo/constantes
+  - catalogos/reglas especificas del nuevo dominio
+  - prompts o criterios de rescate si aplica
+- No romper el contrato de entrada/salida ni el formato de diagnostico.
+- Mantener bloque de autoreparacion y tiempos controlados.
+
+========================================================================
+8) CIERRE
+========================================================================
+Estado de Boxer 1: CERRADO FUNCIONALMENTE para uso operativo.
+Pendientes recomendados: solo ajustes de performance por medicion real,
+sin tocar logica principal mientras no haya regresion comprobada.
+

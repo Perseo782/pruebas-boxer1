@@ -80,6 +80,19 @@ function _B1_normalizarImagenBase64(roiBase64) {
   };
 }
 
+function _B1_debeAdjuntarOcrCompleto(slots) {
+  if (!Array.isArray(slots) || slots.length === 0) return false;
+
+  for (var i = 0; i < slots.length; i++) {
+    var slot = slots[i];
+    if (!slot) return true;
+    if (slot.tipoMatch === 'ambigua_para_gemini') return true;
+    if (!slot.roiBase64) return true;
+  }
+
+  return false;
+}
+
 /**
  * Construye el prompt para Gemini.
  * CAMBIADO v2: estados corregida / ya_valida / no_resuelta
@@ -262,6 +275,8 @@ async function B1_enviarRescateGemini(textoBase, slots, sessionToken, urlTrastie
   const tInicio = _B1_nowMs();
   const tPayloadInicio = _B1_nowMs();
   const prompt = B1_construirPromptRescate(slots);
+  const ocrTextoNormalizado = String(textoBase || '').trim();
+  const incluirOcrCompleto = _B1_debeAdjuntarOcrCompleto(slots);
   const fragmentosImagen = slots
     .map(slot => _B1_normalizarImagenBase64(slot.roiBase64))
     .filter(fragmento => fragmento && fragmento.imageBase64);
@@ -271,7 +286,7 @@ async function B1_enviarRescateGemini(textoBase, slots, sessionToken, urlTrastie
     accion: 'procesarGemini',
     sessionToken: sessionToken || '',
     payload: {
-      ocrTexto: String(textoBase || '').trim(),
+      ocrTexto: incluirOcrCompleto ? ocrTextoNormalizado : '',
       contexto: prompt,
       fragmentosImagen,
       sessionToken: sessionToken || '',
