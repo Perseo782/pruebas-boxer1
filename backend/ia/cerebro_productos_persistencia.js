@@ -512,7 +512,8 @@
 
     var deleted = await repository.deleteProductRecord({
       productId: productId,
-      historyEvent: historyEvent
+      historyEvent: historyEvent,
+      sessionToken: safePayload.sessionToken || null
     });
     if (!deleted || deleted.ok !== true) {
       return {

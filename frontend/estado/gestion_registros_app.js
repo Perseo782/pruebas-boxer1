@@ -819,7 +819,17 @@
 
   function syncStoreFromRemote(state, items) {
     var safeItems = Array.isArray(items) ? items : [];
-    state.store.replaceAllProducts(safeItems);
+    var filteredItems = safeItems.filter(function keepRemoteItem(item) {
+      var productId = String(item && item.id || "").trim();
+      var isActive = String(item && item.sistema && item.sistema.estadoRegistro || "").trim().toUpperCase() === "ACTIVO";
+      if (!productId || !isActive) return true;
+      return !(
+        globalScope.Fase8SyncTombstone &&
+        typeof globalScope.Fase8SyncTombstone.isDeleted === "function" &&
+        globalScope.Fase8SyncTombstone.isDeleted(productId)
+      );
+    });
+    state.store.replaceAllProducts(filteredItems);
     refreshVisibleList(state);
   }
 
