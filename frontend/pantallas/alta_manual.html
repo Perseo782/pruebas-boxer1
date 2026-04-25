@@ -1,0 +1,182 @@
+﻿<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Alta manual</title>
+  <link rel="stylesheet" href="../styles/app_brand_tokens.css">
+  <style>
+    @font-face {
+      font-family: "Graphik";
+      src: url("../../assets/fonts/Graphik-Regular.ttf") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Graphik";
+      src: url("../../assets/fonts/Graphik-Medium.ttf") format("truetype");
+      font-weight: 500;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Graphik";
+      src: url("../../assets/fonts/Graphik-Bold.ttf") format("truetype");
+      font-weight: 700;
+      font-style: normal;
+      font-display: swap;
+    }
+    :root {
+      --font-family-operativa: "Graphik", Arial, sans-serif;
+      --panel: var(--bg-surface);
+      --text: var(--text-primary);
+      --muted: var(--text-secondary);
+      --line: var(--border-soft);
+      --accent: var(--action-primary);
+      --accent-2: var(--action-primary-alt);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font-family-operativa);
+      color: var(--text);
+      background:
+        radial-gradient(circle at 20% -10%, rgba(79, 151, 142, 0.08), rgba(79, 151, 142, 0) 40%),
+        linear-gradient(180deg, var(--bg-app), var(--bg-surface-soft));
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .wrap {
+      max-width: 1080px;
+      margin: 0 auto;
+      display: grid;
+      gap: 16px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px;
+      box-shadow: var(--shadow-soft);
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      letter-spacing: 0.2px;
+      color: var(--text-brand-large);
+    }
+    p {
+      margin: 0;
+      color: var(--muted);
+    }
+    form {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    label {
+      font-weight: 700;
+      font-size: 14px;
+    }
+    input {
+      width: 100%;
+      padding: 11px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      font: inherit;
+      color: var(--text);
+      background: var(--bg-surface);
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 2px;
+    }
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .primary {
+      color: var(--text-on-dark);
+      background: var(--accent);
+    }
+    .ghost {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-medium);
+      color: var(--text);
+    }
+    pre {
+      margin: 0;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--bg-surface-soft);
+      padding: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      min-height: 120px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      padding: 9px 6px;
+      vertical-align: top;
+    }
+    th { font-size: 12px; color: var(--muted); letter-spacing: 0.4px; text-transform: uppercase; }
+    .empty { color: var(--muted); margin: 0; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="panel">
+        <h1>Alta manual</h1>
+      <p>Primer bloque funcional para guardar o fusionar productos por nombre normalizado.</p>
+      <form id="alta-manual-form">
+        <div>
+          <label for="nombre">Nombre del producto (obligatorio)</label>
+          <input id="nombre" type="text" placeholder="Ej: Mostaza antigua 210g" required>
+        </div>
+        <div>
+          <label for="alergenos">Alergenos (opcional, separados por coma)</label>
+          <input id="alergenos" type="text" placeholder="mostaza, sulfitos">
+        </div>
+        <div class="actions">
+          <button type="submit" class="primary">Guardar manual</button>
+          <button type="button" id="limpiar" class="ghost">Limpiar</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel">
+      <h1 style="font-size: 20px;">Respuesta operativa</h1>
+      <pre id="salida-json"></pre>
+    </section>
+
+    <section class="panel">
+      <h1 style="font-size: 20px;">Productos guardados (demo local)</h1>
+      <div id="productos-guardados"></div>
+    </section>
+  </div>
+
+  <script src="../../shared/alergenos_oficiales.js"></script>
+  <script src="../../backend/persistencia/data_store_local.js"></script>
+  <script src="../../backend/operativa/alta_manual.js"></script>
+  <script src="../estado/cerebro_visible_runtime.js"></script>
+  <script src="../estado/cerebro_warmup.js"></script>
+  <script src="../estado/alta_manual_app.js"></script>
+</body>
+</html>
+
+

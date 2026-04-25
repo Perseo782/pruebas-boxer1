@@ -1,0 +1,454 @@
+﻿<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ajustes</title>
+  <link rel="stylesheet" href="../styles/app_brand_tokens.css">
+  <style>
+    :root {
+      --font-family-operativa: "Graphik", Arial, sans-serif;
+      --panel: var(--bg-surface);
+      --text: var(--text-primary);
+      --muted: var(--text-secondary);
+      --line: var(--border-soft);
+      --primary: var(--action-primary);
+      --primary2: var(--action-primary-alt);
+      --soft: var(--accent-fill-soft);
+      --ok: var(--action-soft-2);
+      --ok2: var(--action-primary);
+    }
+    @font-face {
+      font-family: "Graphik";
+      src: url("../../assets/fonts/Graphik-Regular.ttf") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Graphik";
+      src: url("../../assets/fonts/Graphik-Medium.ttf") format("truetype");
+      font-weight: 500;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Graphik";
+      src: url("../../assets/fonts/Graphik-Bold.ttf") format("truetype");
+      font-weight: 700;
+      font-style: normal;
+      font-display: swap;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 16px 12px 24px;
+      color: var(--text);
+      font-family: var(--font-family-operativa);
+      background:
+        radial-gradient(circle at 90% -20%, rgba(79, 151, 142, 0.08), rgba(79, 151, 142, 0) 34%),
+        linear-gradient(180deg, var(--bg-app) 0%, var(--bg-surface-soft) 100%);
+      display: grid;
+      justify-content: center;
+    }
+    /* Vista movil estandar (mismo ancho que el resto de pantallas) */
+    .wrap {
+      width: min(100%, 395px);
+      max-width: 395px;
+      margin: 0;
+      display: grid;
+      gap: 14px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      padding: 16px;
+      box-shadow: var(--shadow-soft);
+    }
+    .hero {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+    }
+    .grid-2 {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: 1fr;
+    }
+    .grid-history {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: 1fr;
+    }
+    @media (max-width: 980px) {
+      .grid-2, .grid-history { grid-template-columns: 1fr; }
+    }
+    h1, h2, h3 { margin: 0 0 8px; }
+    h1 { font-size: 20px; line-height: 24px; font-weight: 500; color: var(--text-brand-large); }
+    h2 { font-size: 16px; line-height: 20px; font-weight: 500; }
+    h3 { font-size: 14px; line-height: 18px; font-weight: 500; }
+    p { margin: 0; color: var(--muted); font-size: 13px; line-height: 18px; }
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+      align-items: center;
+    }
+    .row { display: grid; gap: 8px; margin-top: 12px; }
+    .toggle-card {
+      display: grid;
+      gap: 12px;
+      margin-top: 12px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--bg-surface);
+    }
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .switch {
+      position: relative;
+      width: 54px;
+      height: 32px;
+      flex: 0 0 auto;
+    }
+    .switch input {
+      position: absolute;
+      opacity: 0;
+      inset: 0;
+    }
+    .switch-ui {
+      position: absolute;
+      inset: 0;
+      border-radius: 999px;
+      background: var(--border-medium);
+      transition: background 0.2s ease;
+    }
+    .switch-ui::after {
+      content: "";
+      position: absolute;
+      top: 4px;
+      left: 4px;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #fff;
+      transition: transform 0.2s ease;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.16);
+    }
+    .switch input:checked + .switch-ui {
+      background: var(--primary2);
+    }
+    .switch input:checked + .switch-ui::after {
+      transform: translateX(22px);
+    }
+    label { font-size: 13px; font-weight: 500; color: var(--text); }
+    select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      min-height: 40px;
+      padding: 0 12px;
+      font: inherit;
+      color: var(--text);
+      background: var(--bg-surface);
+    }
+    button {
+      border: 1px solid var(--primary);
+      border-radius: 999px;
+      min-height: 40px;
+      padding: 0 14px;
+      font-size: 13px;
+      line-height: 18px;
+      font-family: var(--font-family-operativa);
+      font-weight: 500;
+      cursor: pointer;
+      color: var(--text-on-dark);
+      background: var(--primary);
+    }
+    .ok {
+      color: var(--action-primary);
+      background: var(--ok);
+      border-color: var(--ok);
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 18px;
+    }
+    .list {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .event-card {
+      width: 100%;
+      display: grid;
+      gap: 6px;
+      text-align: left;
+      padding: 12px;
+      color: var(--text);
+      background: var(--bg-surface);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+    .event-type {
+      display: inline-block;
+      width: fit-content;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      background: var(--soft);
+    }
+    .event-date {
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .detail-box {
+      min-height: 220px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+      background: var(--bg-surface);
+    }
+    .detail-box ul {
+      margin: 12px 0 0;
+      padding-left: 20px;
+    }
+    .empty { color: var(--muted); }
+    .fase11-checks {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      overflow-wrap: anywhere;
+    }
+    .fase11-checks th,
+    .fase11-checks td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 8px;
+      text-align: left;
+      vertical-align: top;
+      color: var(--text);
+      font-size: 14px;
+      line-height: 20px;
+    }
+    .fase11-status {
+      display: inline-block;
+      min-width: 96px;
+      padding: 0;
+      border-radius: 0;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 16px;
+      color: var(--text);
+      background: transparent;
+    }
+    .fase11-events {
+      max-height: 260px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      background: var(--bg-surface);
+    }
+    .fase11-event {
+      margin: 0 0 8px;
+      color: var(--text);
+      font-size: 14px;
+      line-height: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="panel hero">
+      <div>
+        <h1>Ajustes</h1>
+        <p>Base de datos, fotografias e historial reciente.</p>
+      </div>
+      <button id="ajustes-back" type="button">Volver</button>
+    </section>
+
+    <section class="grid-2" aria-label="Control tecnico">
+      <section class="panel">
+        <h2>Estado del sistema</h2>
+        <p class="meta">Lectura corta de los componentes principales.</p>
+        <table class="fase11-checks" aria-label="Estado del sistema">
+          <thead>
+            <tr>
+              <th>Componente</th>
+              <th>Estado</th>
+              <th>Detalle</th>
+            </tr>
+          </thead>
+          <tbody id="fase11-estado-sistema"></tbody>
+        </table>
+        <div class="toolbar">
+          <button id="fase11-refresh" type="button">Refrescar estado</button>
+          <span id="fase11-estado-status" class="meta">Listo.</span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Diagn&oacute;stico t&eacute;cnico</h2>
+        <p class="meta">Caso actual, corto y limpio.</p>
+        <div id="fase11-diagnostico-eventos" class="fase11-events" aria-live="polite"></div>
+        <div class="toolbar">
+          <button id="fase11-copy" type="button">Copiar diagn&oacute;stico actual</button>
+          <button id="fase11-clear" type="button" class="ok">Limpiar registro</button>
+          <span id="fase11-copy-status" class="meta">Sin copia reciente.</span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Pruebas operativas</h2>
+        <p class="meta">Pruebas cortas, sin datos falsos persistentes.</p>
+        <div class="toolbar">
+          <button id="fase11-test-backend" type="button">Probar backend</button>
+          <button id="fase11-test-ia" type="button">Probar IA</button>
+          <button id="fase11-test-vision" type="button">Probar Vision</button>
+          <button id="fase11-test-sync" type="button">Probar sync</button>
+        </div>
+        <p id="fase11-test-status" class="meta" style="margin-top:10px;">Sin pruebas recientes.</p>
+      </section>
+    </section>
+
+    <section class="grid-2">
+      <section class="panel">
+        <h2>Base de datos</h2>
+        <p id="db-count">Productos en nube: 0</p>
+        <div class="toolbar">
+          <button id="db-reload" type="button">Recargar base</button>
+          <span id="db-status" class="meta">Esperando Firebase...</span>
+        </div>
+        <div class="toolbar" style="margin-top:16px;">
+          <button id="db-import" type="button">&darr; Importar Excel</button>
+          <button id="db-export" type="button">&uarr; Exportar Excel</button>
+        </div>
+        <p class="meta" style="margin-top:8px;">Importar y exportar viven aqui dentro de la base de datos.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Detalles de fotografias</h2>
+        <p>Estos ajustes mandan sobre las fotos nuevas y sobre la recompresion forzada.</p>
+        <div class="row">
+          <label for="photo-profile">Formato</label>
+          <select id="photo-profile">
+            <option value="MAXIMA_COMPRESION_WEBP">Maxima compresion (WebP)</option>
+            <option value="EQUILIBRADO_WEBP">Equilibrado (WebP)</option>
+            <option value="ALTA_CALIDAD_JPEG">Alta calidad (JPEG)</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="photo-quality">Calidad</label>
+          <select id="photo-quality">
+            <option value="20">20%</option>
+            <option value="40">40%</option>
+            <option value="60">60%</option>
+            <option value="80">80%</option>
+            <option value="100">100%</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="photo-resolution">Resolucion maxima</label>
+          <select id="photo-resolution">
+            <option value="400">400 px</option>
+            <option value="600">600 px</option>
+            <option value="800">800 px</option>
+          </select>
+        </div>
+        <div class="toolbar">
+          <button id="photo-save" type="button">Guardar</button>
+          <button id="photo-recompress-all" type="button" class="ok">Recomprimir todas</button>
+        </div>
+        <p id="photo-current" class="meta" style="margin-top:10px;">Actual: -</p>
+        <p id="photo-meta" class="meta" style="margin-top:6px;">Sin cambios recientes.</p>
+        <p id="photo-status" class="meta" style="margin-top:6px;">Listo.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Tarjetas de productos</h2>
+        <p>Elige si dentro de la tarjeta quieres ver texto o pictogramas de alergenos.</p>
+        <div class="toggle-card">
+          <div class="toggle-row">
+            <div>
+              <strong>Mostrar pictogramas</strong>
+              <p class="meta" style="margin-top:6px;">Apagado: texto. Encendido: iconos.</p>
+            </div>
+            <label class="switch" for="allergen-display-toggle">
+              <input id="allergen-display-toggle" type="checkbox">
+              <span class="switch-ui" aria-hidden="true"></span>
+            </label>
+          </div>
+          <p id="allergen-display-status" class="meta">Modo actual: texto.</p>
+        </div>
+      </section>
+    </section>
+
+    <section class="panel">
+      <h2>Sync y copias</h2>
+      <p id="sync-resumen">Estado sync: esperando...</p>
+      <div class="toolbar">
+        <button id="sync-now" type="button">Sync ahora</button>
+        <button id="backup-reload" type="button">Ver copias</button>
+        <span id="sync-status" class="meta">Sin datos.</span>
+      </div>
+      <div id="backup-list" class="list"></div>
+    </section>
+
+    <section class="grid-history">
+      <section class="panel">
+        <h2>Historial de eventos</h2>
+        <div class="toolbar">
+          <button id="historial-reload" type="button">Recargar historial</button>
+          <span id="historial-count" class="meta">Registros: 0 / 30</span>
+          <span id="historial-status" class="meta">Esperando Firebase...</span>
+        </div>
+        <div id="historial-list" class="list"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Detalle</h2>
+        <div id="historial-detail" class="detail-box">
+          <p class="empty">Pulsa una tarjeta para ver el detalle.</p>
+        </div>
+      </section>
+    </section>
+  </div>
+
+  <script src="../../shared/alergenos_oficiales.js"></script>
+  <script src="../../backend/persistencia/data_store_local.js"></script>
+  <script src="../estado/shared_store_browser.js"></script>
+  <script src="../../backend/historial/historial_campos.js"></script>
+  <script src="../../backend/historial/historial_core.js"></script>
+  <script src="../../backend/adaptadores/firestore_productos_remote.js"></script>
+  <script src="../../backend/sync/sync_estado.js"></script>
+  <script src="../../backend/sync/sync_tombstone.js"></script>
+  <script src="../../backend/sync/sync_conflictos.js"></script>
+  <script src="../../backend/sync/sync_log.js"></script>
+  <script src="../../backend/sync/sync_backup.js"></script>
+  <script src="../../backend/sync/sync_manager.js"></script>
+  <script src="../../backend/ia/cerebro_broker_ia.js"></script>
+  <script src="../../backend/diagnostico/diagnostico_formatter.js"></script>
+  <script src="../../backend/diagnostico/diagnostico_cleanup.js"></script>
+  <script src="../../backend/diagnostico/diagnostico_store.js"></script>
+  <script src="../../backend/diagnostico/diagnostico_estado.js"></script>
+  <script src="../../backend/diagnostico/diagnostico_pruebas.js"></script>
+  <script src="../config/firebase_config_fase3.js"></script>
+  <script type="module" src="../estado/firebase_bootstrap_fase3.js"></script>
+  <script src="../estado/cerebro_visible_runtime.js"></script>
+  <script src="../estado/cerebro_warmup.js"></script>
+  <script src="../estado/ajustes_app.js"></script>
+</body>
+</html>
+
+

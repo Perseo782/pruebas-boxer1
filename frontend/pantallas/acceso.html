@@ -1,0 +1,342 @@
+﻿<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Acceso - Gestion de alergenos</title>
+  <link rel="stylesheet" href="../styles/app_brand_tokens.css">
+  <style>
+    @font-face {
+      font-family: "Graphik";
+      src: url("../../assets/fonts/Graphik-Regular.ttf") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Graphik";
+      src: url("../../assets/fonts/Graphik-Medium.ttf") format("truetype");
+      font-weight: 500;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Graphik";
+      src: url("../../assets/fonts/Graphik-Bold.ttf") format("truetype");
+      font-weight: 700;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    :root {
+      --font-family-operativa: "Graphik", Arial, sans-serif;
+      --panel: var(--bg-surface);
+      --surface: var(--bg-surface-soft);
+      --line: var(--border-soft);
+      --line-strong: var(--border-medium);
+      --text: var(--text-primary);
+      --text-strong-local: var(--text-strong);
+      --muted: var(--text-secondary);
+      --primary: var(--action-primary);
+      --accent: var(--accent-ui);
+      --danger-local: var(--danger-ui);
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      min-height: 100%;
+      margin: 0;
+    }
+
+    body {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px 16px;
+      color: var(--text);
+      font-family: var(--font-family-operativa);
+      font-size: 16px;
+      line-height: 24px;
+      background:
+        radial-gradient(circle at 90% -20%, rgba(79, 151, 142, 0.08), rgba(79, 151, 142, 0) 34%),
+        linear-gradient(180deg, var(--bg-app) 0%, var(--bg-surface-soft) 100%);
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    h1,
+    p {
+      margin: 0;
+    }
+
+    .access-shell {
+      width: min(100%, 390px);
+      display: grid;
+      gap: 14px;
+    }
+
+    .brand {
+      display: grid;
+      justify-items: center;
+      gap: 16px;
+      text-align: center;
+    }
+
+    .brand-logo {
+      width: min(320px, 82vw);
+      height: auto;
+      display: block;
+    }
+
+    .brand h1 {
+      color: var(--text-strong-local);
+      font-size: 22px;
+      line-height: 28px;
+      font-weight: 500;
+      letter-spacing: 0;
+    }
+
+    .brand p {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 20px;
+      font-weight: 400;
+    }
+
+    .access-panel {
+      display: grid;
+      gap: 12px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--panel);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .field label {
+      color: var(--text-strong-local);
+      font-size: 14px;
+      line-height: 20px;
+      font-weight: 500;
+    }
+
+    .input-wrap {
+      display: flex;
+      align-items: center;
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--bg-surface);
+      overflow: hidden;
+    }
+
+    .input-wrap:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(79, 151, 142, 0.12);
+    }
+
+    .input-wrap input {
+      width: 100%;
+      min-width: 0;
+      border: 0;
+      outline: 0;
+      padding: 10px 12px;
+      color: var(--text);
+      background: transparent;
+      font-size: 16px;
+      line-height: 24px;
+      font-weight: 400;
+    }
+
+    .input-wrap input::placeholder {
+      color: var(--muted);
+    }
+
+    .password-toggle {
+      flex: 0 0 auto;
+      min-height: 38px;
+      margin-right: 4px;
+      padding: 0 12px;
+      border: 0;
+      border-left: 1px solid var(--line);
+      color: var(--text);
+      background: transparent;
+      cursor: pointer;
+      font-size: 14px;
+      line-height: 20px;
+      font-weight: 500;
+    }
+
+    .field-help {
+      min-height: 20px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 20px;
+      font-weight: 400;
+    }
+
+    .field-help.is-error,
+    .form-message.is-error {
+      color: var(--danger-local);
+    }
+
+    .field-help.is-warning {
+      color: var(--text-strong-local);
+    }
+
+    .form-message {
+      min-height: 20px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 20px;
+      font-weight: 400;
+    }
+
+    .submit-button {
+      min-height: 44px;
+      border: 1px solid var(--primary);
+      border-radius: 999px;
+      color: var(--text-on-solid);
+      background: var(--primary);
+      cursor: pointer;
+      font-size: 14px;
+      line-height: 20px;
+      font-weight: 500;
+    }
+
+    .submit-button:disabled {
+      border-color: var(--border-medium);
+      color: var(--text-disabled);
+      background: var(--bg-disabled);
+      cursor: not-allowed;
+    }
+
+    .access-note {
+      color: var(--muted);
+      text-align: center;
+      font-size: 12px;
+      line-height: 16px;
+      font-weight: 400;
+    }
+
+    .access-toast {
+      position: fixed;
+      left: 16px;
+      right: 16px;
+      bottom: 18px;
+      z-index: 10;
+      max-width: 420px;
+      margin: 0 auto;
+      padding: 14px 16px;
+      border: 1px solid var(--border-medium);
+      border-radius: 12px;
+      color: var(--text);
+      background: var(--bg-surface);
+      box-shadow: var(--shadow-medium);
+      font-size: 14px;
+      line-height: 20px;
+      font-weight: 400;
+      opacity: 0;
+      transform: translateY(12px);
+      pointer-events: none;
+      transition: opacity 160ms ease, transform 160ms ease;
+    }
+
+    .access-toast.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .access-toast.is-error {
+      border-color: var(--danger-local);
+      color: var(--danger-local);
+    }
+
+    .access-toast.is-warning {
+      border-color: var(--accent);
+      color: var(--text-strong-local);
+    }
+
+    @media (max-width: 420px) {
+      body {
+        align-items: start;
+        padding-top: 28px;
+      }
+
+      .brand-logo {
+        width: min(300px, 82vw);
+      }
+
+      .access-panel {
+        padding: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="access-shell" aria-label="Acceso a Gestion de alergenos">
+    <header class="brand">
+      <img class="brand-logo" src="../../assets/logo/MHI-Brand-Logo-Stacked-Gray-rgb.svg" alt="MHI">
+      <div>
+        <h1>Gestion de alergenos</h1>
+        <p>Acceso privado</p>
+      </div>
+    </header>
+
+    <form class="access-panel" id="access-form" novalidate>
+      <div class="field">
+        <label for="access-user">Usuario</label>
+        <div class="input-wrap">
+          <input
+            id="access-user"
+            name="username"
+            type="text"
+            autocomplete="username"
+            autocapitalize="none"
+            spellcheck="false"
+            inputmode="email"
+            placeholder="Introduce tu usuario"
+            required>
+        </div>
+        <p class="field-help" id="user-help">Sin espacios al inicio ni al final.</p>
+      </div>
+
+      <div class="field">
+        <label for="access-password">ContraseÃ±a</label>
+        <div class="input-wrap">
+          <input
+            id="access-password"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            placeholder="Introduce tu contraseÃ±a"
+            required>
+          <button class="password-toggle" id="password-toggle" type="button" aria-controls="access-password" aria-pressed="false">Ver</button>
+        </div>
+        <p class="field-help" id="password-help">La contraseÃ±a queda oculta mientras escribes.</p>
+      </div>
+
+      <p class="form-message" id="form-message" role="status" aria-live="polite"></p>
+      <button class="submit-button" id="access-submit" type="submit" disabled>Entrar</button>
+    </form>
+
+    <p class="access-note">Si no puedes entrar, revisa usuario y contraseÃ±a antes de intentarlo de nuevo.</p>
+  </main>
+
+  <div class="access-toast" id="access-toast" role="alert" aria-live="assertive"></div>
+
+  <script src="../estado/acceso_app.js"></script>
+</body>
+</html>
+
+

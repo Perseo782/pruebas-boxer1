@@ -1,0 +1,56 @@
+:root {
+  --bg-app: #F3F2F2;
+  --bg-surface: #FFFFFF;
+  --bg-surface-soft: #E8E6E5;
+  --bg-disabled: #E8E6E5;
+
+  --border-soft: #D1CDCB;
+  --border-medium: #B9B4B1;
+  --border-strong: #A29B97;
+
+  --text-strong: #5F5852;
+  --text-brand-large: #5F5852;
+  --text-primary: #7C746D;
+  --text-secondary: #A29B97;
+  --text-disabled: #B9B4B1;
+  --text-on-solid: #FFFFFF;
+  --text-on-dark: #FFFFFF;
+
+  --brand-solid: #7C746D;
+  --brand-base: #928981;
+  --accent-ui: #4F978E;
+  --danger-ui: #A54863;
+
+  /* Alias de compatibilidad para no romper pantallas antiguas */
+  --action-primary: var(--brand-solid);
+  --action-primary-alt: var(--accent-ui);
+  --action-soft: var(--bg-surface-soft);
+  --action-soft-2: var(--bg-surface-soft);
+  --info: var(--accent-ui);
+  --danger: var(--danger-ui);
+  --danger-soft: var(--danger-ui);
+  --support-blue-soft: var(--bg-surface-soft);
+
+  --shadow-soft: 0 10px 24px rgba(146, 137, 129, 0.12);
+  --shadow-medium: 0 16px 28px rgba(146, 137, 129, 0.16);
+  --shadow-strong: 0 24px 48px rgba(146, 137, 129, 0.22);
+
+  --overlay-soft: rgba(146, 137, 129, 0.42);
+  --overlay-strong: rgba(124, 116, 109, 0.82);
+
+  --surface-glass: rgba(255, 255, 255, 0.72);
+  --surface-glass-strong: rgba(255, 255, 255, 0.9);
+  --surface-soft-strong: rgba(232, 230, 229, 0.9);
+
+  --accent-fill-soft: rgba(232, 230, 229, 0.9);
+  --accent-fill: rgba(232, 230, 229, 0.75);
+  --accent-fill-strong: rgba(232, 230, 229, 0.95);
+  --accent-line-soft: rgba(79, 151, 142, 0.35);
+  --accent-line-strong: rgba(79, 151, 142, 0.8);
+
+  --danger-fill: rgba(255, 255, 255, 1);
+  --danger-line: rgba(165, 72, 99, 0.75);
+
+  --neutral-dash: rgba(185, 180, 177, 0.7);
+  --neutral-dash-soft: rgba(185, 180, 177, 0.45);
+}

@@ -1,0 +1,1509 @@
+﻿<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AlÃ©rgenos</title>
+  <link rel="stylesheet" href="../styles/app_brand_tokens.css">
+  <style>
+    @font-face {
+      font-family: "Graphik";
+      src: url("../../assets/fonts/Graphik-Regular.ttf") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Graphik";
+      src: url("../../assets/fonts/Graphik-Medium.ttf") format("truetype");
+      font-weight: 500;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Graphik";
+      src: url("../../assets/fonts/Graphik-Bold.ttf") format("truetype");
+      font-weight: 700;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    :root {
+      --font-family-operativa: "Graphik", Arial, sans-serif;
+      --font-size-title: 24px;
+      --line-height-title: 30px;
+      --font-size-card-title: 18px;
+      --line-height-card-title: 24px;
+      --font-size-body: 16px;
+      --line-height-body: 24px;
+      --font-size-secondary: 14px;
+      --line-height-secondary: 20px;
+      --font-size-small: 12px;
+      --line-height-small: 16px;
+      --weight-regular: 400;
+      --weight-medium: 500;
+      --weight-bold: 700;
+      --bg: var(--bg-app);
+      --panel: var(--bg-surface);
+      --surface: var(--bg-surface-soft);
+      --line: var(--border-soft);
+      --line-strong: var(--border-medium);
+      --text: var(--text-primary);
+      --muted: var(--text-secondary);
+      --soft: var(--bg-surface-soft);
+      --accent: var(--action-primary-alt);
+      --accent-strong: var(--action-primary);
+      --danger: var(--danger);
+      --shadow: var(--shadow-soft);
+      --radius-xl: 24px;
+      --radius-lg: 18px;
+      --radius-md: 14px;
+      --radius-sm: 12px;
+    }
+
+    * { box-sizing: border-box; }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(circle at top right, rgba(79, 151, 142, 0.08), rgba(79, 151, 142, 0) 34%),
+        linear-gradient(180deg, var(--bg-app) 0%, var(--bg-surface-soft) 100%);
+      color: var(--text);
+      font-family: var(--font-family-operativa);
+      font-size: var(--font-size-body);
+      line-height: var(--line-height-body);
+    }
+
+    body {
+      display: grid;
+      justify-content: center;
+      padding: 16px 12px 92px;
+    }
+
+    button, input, a {
+      font-family: var(--font-family-operativa);
+      font-style: normal;
+    }
+
+    button {
+      border: 0;
+      background: none;
+      cursor: pointer;
+    }
+
+    h1, h2, h3, p {
+      margin: 0;
+    }
+
+    .page {
+      width: min(100%, 390px);
+      max-width: 390px;
+      margin: 0;
+      display: grid;
+      gap: 14px;
+    }
+
+    .hero {
+      display: grid;
+      gap: 12px;
+      width: 100%;
+      min-width: 0;
+    }
+
+    .hero-title {
+      display: flex;
+      justify-content: flex-start;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .hero-title h1 {
+      color: var(--text-brand-large);
+      font-size: var(--font-size-title);
+      line-height: var(--line-height-title);
+      font-weight: var(--weight-medium);
+      letter-spacing: -0.02em;
+    }
+
+    .hero-help {
+      color: var(--muted);
+      font-size: var(--font-size-secondary);
+      line-height: var(--line-height-secondary);
+    }
+
+    .top-chips,
+    .quick-links,
+    .top-actions,
+    .actions-row,
+    .filter-row,
+    .list-foot {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      width: 100%;
+      min-width: 0;
+    }
+
+    .top-chips {
+      flex-wrap: nowrap;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .chip,
+    .pill-button,
+    .filter-toggle,
+    .filter-button,
+    .link-button,
+    .primary-link {
+      min-height: 40px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.9);
+      box-shadow: var(--shadow);
+      color: var(--text);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 12px;
+      font-size: 13px;
+      line-height: 18px;
+      font-weight: var(--weight-medium);
+      white-space: nowrap;
+    }
+
+    .chip {
+      justify-content: flex-start;
+      width: fit-content;
+      min-width: 0;
+      max-width: 100%;
+      flex: 0 0 auto;
+      padding: 0 12px;
+    }
+
+    .chip-main {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .chip-main strong {
+      font-size: 13px;
+      line-height: 18px;
+      font-weight: var(--weight-medium);
+      color: var(--text);
+    }
+
+    .chip-main span {
+      font-size: 13px;
+      line-height: 18px;
+      font-weight: var(--weight-medium);
+      color: var(--text);
+    }
+
+    .chip-meta {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 18px;
+      font-weight: var(--weight-medium);
+    }
+
+    .pill-button,
+    .filter-toggle,
+    .filter-button,
+    .link-button,
+    .primary-link {
+      flex: 0 0 auto;
+    }
+
+    .primary-link {
+      background: var(--action-primary);
+      color: var(--text-on-dark);
+      border-color: var(--action-primary);
+      cursor: pointer;
+    }
+
+    .quick-links {
+      display: none;
+    }
+
+    .top-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: nowrap;
+      align-items: center;
+      justify-content: flex-end;
+      margin-left: auto;
+      width: auto;
+      min-width: 0;
+      flex: 0 0 auto;
+    }
+
+    .revision-slot {
+      min-width: 0;
+      min-height: 40px;
+      display: flex;
+      align-items: center;
+    }
+
+    .revision-slot-placeholder {
+      display: none;
+    }
+
+    .revision-pending-button {
+      width: 100%;
+      justify-content: flex-start;
+      padding-left: 18px;
+      padding-right: 18px;
+      border-color: var(--action-primary);
+      background: var(--accent-fill);
+      color: var(--accent-strong);
+    }
+
+    .link-button {
+      min-height: 40px;
+      padding: 0 14px;
+      background: var(--bg-surface);
+      box-shadow: none;
+      border-color: var(--border-medium);
+      color: var(--text-primary);
+      font-size: var(--font-size-secondary);
+      line-height: var(--line-height-secondary);
+    }
+
+    .helper-text {
+      color: var(--muted);
+      font-size: var(--font-size-secondary);
+      line-height: var(--line-height-secondary);
+    }
+
+    .search-panel > .helper-text {
+      display: none;
+    }
+
+    .search-panel,
+    .list-panel {
+      display: grid;
+      gap: 12px;
+      background: transparent;
+      border: 0;
+      border-radius: 0;
+      padding: 0;
+      backdrop-filter: none;
+      box-shadow: none;
+      width: 100%;
+      min-width: 0;
+    }
+
+    .search-panel {
+      margin-top: -18px;
+      gap: 10px;
+    }
+
+    .search-box {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      padding: 0 14px;
+      min-height: 40px;
+      box-shadow: var(--shadow);
+      width: 100%;
+      min-width: 0;
+    }
+
+    .search-box svg {
+      flex: 0 0 auto;
+      color: var(--muted);
+    }
+
+    .search-box input {
+      width: 100%;
+      min-height: 38px;
+      border: 0;
+      background: transparent;
+      color: var(--text);
+      font-size: var(--font-size-body);
+      line-height: var(--line-height-body);
+      font-weight: var(--weight-regular);
+      outline: none;
+    }
+
+    .search-box input::placeholder {
+      color: var(--text-secondary);
+      font-size: var(--font-size-secondary);
+      line-height: var(--line-height-secondary);
+    }
+
+    .filter-row {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: start;
+      gap: 6px;
+    }
+
+    .filter-strip {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+      scrollbar-width: thin;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+    }
+
+    .filter-strip::-webkit-scrollbar {
+      height: 8px;
+    }
+
+    .filter-strip::-webkit-scrollbar-thumb {
+      background: var(--neutral-dash);
+      border-radius: 999px;
+    }
+
+    #pending-toggle {
+      margin-top: -8px;
+    }
+
+    .filter-toggle,
+    .filter-button {
+      min-width: 40px;
+      width: 40px;
+      min-height: 40px;
+      height: 40px;
+      border-radius: 12px;
+      padding: 0;
+      background: var(--panel);
+      box-shadow: none;
+    }
+
+    .filter-toggle {
+      min-width: 52px;
+      width: 52px;
+      font-size: var(--font-size-secondary);
+      line-height: var(--line-height-secondary);
+      font-weight: var(--weight-medium);
+    }
+
+    .filter-button img {
+      width: 39px;
+      height: 39px;
+      display: block;
+      opacity: 0.85;
+      filter: grayscale(100%);
+    }
+
+    .is-active {
+      background: var(--action-soft);
+      border-color: var(--action-primary);
+      border-width: 2px;
+      color: var(--action-primary);
+      box-shadow: inset 0 0 0 1px rgba(124, 116, 109, 0.08);
+    }
+
+    .is-active img {
+      filter: none;
+      opacity: 1;
+    }
+
+    .list-head {
+      display: none;
+    }
+
+    .list-head h2 {
+      font-size: var(--font-size-card-title);
+      line-height: var(--line-height-card-title);
+      font-weight: var(--weight-medium);
+      display: none;
+    }
+
+    .list-grid {
+      display: grid;
+      gap: 10px;
+      min-height: 0;
+      width: 100%;
+      min-width: 0;
+    }
+
+    .card {
+      display: grid;
+      gap: 14px;
+      min-height: 135px;
+      position: relative;
+      background: var(--panel);
+      border: 1px solid var(--border-soft);
+      border-left: 4px solid var(--action-primary-alt);
+      border-radius: var(--radius-lg);
+      padding: 14px;
+      box-shadow: var(--shadow);
+    }
+
+    .card-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 88px;
+      gap: 14px;
+      align-items: start;
+    }
+
+    .card-copy {
+      min-width: 0;
+      display: grid;
+      gap: 8px;
+    }
+
+    .card-copy h3 {
+      font-size: 15px;
+      line-height: 20px;
+      font-weight: var(--weight-medium);
+      word-break: break-word;
+    }
+
+    .card-allergens {
+      font-size: 11px;
+      line-height: 15px;
+    }
+
+    .card-allergens {
+      color: var(--text);
+    }
+
+    .card-allergen-icons {
+      display: grid;
+      grid-template-columns: repeat(7, 28px);
+      grid-auto-rows: 28px;
+      gap: 6px;
+      align-items: center;
+      width: fit-content;
+      max-width: 100%;
+    }
+
+    .card-allergen-icon {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+    }
+
+    .card-allergen-icon:nth-child(n + 8) {
+      margin-top: 0;
+    }
+
+    .card-allergen-icon img {
+      width: 34px;
+      height: 34px;
+      display: block;
+    }
+
+    .card-updated {
+      display: block;
+      position: absolute;
+      right: 14px;
+      bottom: 9px;
+      width: auto;
+      text-align: right;
+      font-size: 13px;
+      line-height: 18px;
+      color: var(--action-primary-alt);
+      font-weight: var(--weight-medium);
+    }
+
+    .thumb-shell {
+      width: 74px;
+      height: 74px;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background:
+        radial-gradient(circle at 20% 15%, rgba(79, 151, 142, 0.16), rgba(79, 151, 142, 0) 42%),
+        linear-gradient(160deg, var(--bg-surface) 0%, var(--bg-surface-soft) 100%);
+    }
+
+    .card--icon-mode {
+      height: 135px;
+    }
+
+    .card--text-mode {
+      min-height: 147px;
+      height: 147px;
+    }
+
+    .card--text-mode .card-copy {
+      min-height: 82px;
+      grid-template-rows: auto minmax(0, 1fr);
+      margin-top: -4px;
+    }
+
+    .card--text-mode .card-allergens {
+      min-height: 58px;
+      height: 58px;
+      max-height: 58px;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      align-self: stretch;
+      text-align: left;
+      overflow: hidden;
+    }
+
+    .card--text-mode .card-allergens-text {
+      display: -webkit-box;
+      width: 100%;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3;
+    }
+
+    .card--empty-allergens .card-allergens-text {
+      text-align: left;
+    }
+
+    /* Cuando un producto no tiene alÃ©rgenos: centrar el texto en altura tambiÃ©n en modo pictogramas */
+    .card--icon-mode.card--empty-allergens .card-allergens {
+      min-height: 58px;
+      height: 58px;
+      max-height: 58px;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      align-self: stretch;
+      overflow: hidden;
+      text-align: left;
+    }
+
+    .card--text-mode.card--empty-allergens .card-allergens {
+      /* Mantener hueco fijo para que "Sin alÃ©rgenos" no suba/baje segun el titulo */
+      min-height: 58px;
+      height: 58px;
+      max-height: 58px;
+      align-items: center;
+    }
+
+    .card--text-mode.card--empty-allergens .card-copy {
+      height: 82px;
+      max-height: 82px;
+      grid-template-rows: 20px minmax(0, 1fr);
+    }
+
+    .card--text-mode .card-updated {
+      font-size: 13px;
+      line-height: 18px;
+    }
+
+    .card--text-mode .thumb-shell {
+      margin-top: 14px;
+    }
+
+    .card--icon-mode .card-copy {
+      margin-top: -5px;
+    }
+
+    .card--icon-mode .card-copy h3 {
+      margin-top: -1px;
+    }
+
+    .card--icon-mode .card-allergen-icons {
+      margin-top: -5px;
+    }
+
+    .card--icon-mode .card-allergen-icon:nth-child(n + 8) {
+      margin-top: -19px;
+    }
+
+    .card--icon-mode .card-updated {
+      font-size: 13px;
+      line-height: 18px;
+    }
+
+    .card--icon-mode .thumb-shell {
+      margin-top: 13px;
+    }
+
+    .thumb-button {
+      width: 100%;
+      height: 100%;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      display: grid;
+      place-items: center;
+    }
+
+    .thumb-button img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .thumb-fallback {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      place-items: center;
+      padding: 10px;
+      color: var(--muted);
+      font-size: var(--font-size-small);
+      line-height: var(--line-height-small);
+      font-weight: var(--weight-medium);
+      text-align: center;
+    }
+
+    .card-actions {
+      display: none;
+    }
+
+    .card-edit,
+    .sheet-secondary,
+    .sheet-tab {
+      min-height: 40px;
+      border-radius: 999px;
+      border: 1px solid var(--action-primary);
+      padding: 0 14px;
+      color: var(--action-primary);
+      background: var(--bg-surface);
+      font-size: var(--font-size-secondary);
+      line-height: var(--line-height-secondary);
+      font-weight: var(--weight-medium);
+    }
+
+    .card-delete {
+      min-height: 40px;
+      border-radius: 999px;
+      border: 1px solid var(--danger);
+      padding: 0 14px;
+      color: var(--danger);
+      background: var(--bg-surface);
+      font-size: var(--font-size-secondary);
+      line-height: var(--line-height-secondary);
+      font-weight: var(--weight-medium);
+    }
+
+    .feedback-toast[hidden],
+    .sheet-modal[hidden] {
+      display: none;
+    }
+
+    .feedback-toast {
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 140;
+      min-width: min(92vw, 360px);
+      max-width: min(92vw, 420px);
+      border-radius: 18px;
+      border: 1px solid var(--action-primary);
+      background: var(--action-primary-alt);
+      color: var(--text-on-dark);
+      box-shadow: var(--shadow-medium);
+      padding: 14px 18px;
+      font-size: var(--font-size-secondary);
+      line-height: var(--line-height-secondary);
+      font-weight: var(--weight-medium);
+    }
+
+    .feedback-toast.is-error {
+      background: var(--danger-soft);
+      border-color: var(--danger);
+    }
+
+    .sheet-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 130;
+      display: grid;
+      align-items: end;
+      justify-items: center;
+      padding: 16px;
+      background: var(--overlay-soft);
+      backdrop-filter: blur(4px);
+    }
+
+    .sheet-panel {
+      width: min(100%, 395px);
+      max-width: 395px;
+      max-height: calc(100vh - 32px);
+      overflow: auto;
+      background: var(--bg-surface-soft);
+      border: 1px solid var(--border-soft);
+      border-radius: 30px;
+      box-shadow: var(--shadow-strong);
+      padding: 14px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .sheet-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .sheet-copy {
+      display: grid;
+      gap: 4px;
+    }
+
+    .sheet-copy h2 {
+      font-size: 20px;
+      line-height: 24px;
+      font-weight: var(--weight-medium);
+    }
+
+    .sheet-copy p {
+      display: none;
+    }
+
+    .sheet-close {
+      width: 36px;
+      height: 36px;
+      border-radius: 999px;
+      border: 1px solid var(--border-soft);
+      background: var(--bg-surface-soft);
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1;
+      font-weight: var(--weight-medium);
+    }
+
+    .sheet-tabs {
+      display: none;
+    }
+
+    .sheet-tab.is-active {
+      background: var(--action-soft);
+      border-color: var(--action-primary);
+      color: var(--action-primary);
+    }
+
+    .sheet-body {
+      display: grid;
+      gap: 20px;
+    }
+
+    /* Ventana "AÃ±adir producto": subir un poco las 2 tarjetas internas */
+    #add-product-modal .sheet-body {
+      margin-top: -5px;
+    }
+
+    /* Ventana "Editar producto": subir un poco el contenido (mismo ritmo visual) */
+    #edit-product-modal .sheet-body {
+      margin-top: -5px;
+    }
+
+    /* Ventana "AÃ±adir producto" (manual): subir textos 5px */
+    #add-product-modal #add-manual-pane .sheet-section-title,
+    #add-product-modal label[for="add-product-name"] {
+      position: relative;
+      top: -5px;
+    }
+
+    /* "Nombre del producto": un poco mas arriba (8px) */
+    #add-product-modal label[for="add-product-name"] {
+      top: -8px;
+    }
+
+    /* Ventana "Editar producto" (manual): mismo ajuste de textos */
+    #edit-product-modal .sheet-section-title,
+    #edit-product-modal label[for="edit-product-name"] {
+      position: relative;
+      top: -5px;
+    }
+
+    #edit-product-modal label[for="edit-product-name"] {
+      top: -8px;
+    }
+
+    .sheet-section {
+      display: grid;
+      gap: 16px;
+      padding: 20px;
+      border: 2px solid var(--border-medium);
+      border-radius: 24px;
+      background: var(--bg-surface);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .sheet-section-title {
+      color: var(--muted);
+      font-size: var(--font-size-secondary);
+      line-height: var(--line-height-secondary);
+      font-weight: var(--weight-medium);
+      letter-spacing: 0.02em;
+    }
+
+    .field-group {
+      display: grid;
+      gap: 8px;
+    }
+
+    .field-group label {
+      font-size: var(--font-size-secondary);
+      line-height: var(--line-height-secondary);
+      font-weight: var(--weight-medium);
+      color: var(--text);
+    }
+
+    .text-input,
+    .file-input {
+      width: 100%;
+      min-height: 56px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--text);
+      padding: 0 16px;
+      font-size: var(--font-size-body);
+      line-height: var(--line-height-body);
+      font-weight: var(--weight-regular);
+      outline: none;
+    }
+
+    .file-input {
+      padding-top: 13px;
+      padding-bottom: 13px;
+    }
+
+    .allergen-picker {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+      scrollbar-width: thin;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+    }
+
+    /* En "AÃ±adir producto" (manual): 2 filas fijas de 7 alÃ©rgenos (7 + 7) */
+    #add-product-modal #add-allergen-grid.allergen-picker {
+      display: grid;
+      grid-template-columns: repeat(7, 35px);
+      grid-auto-rows: 35px;
+      gap: 8px;
+      overflow: visible;
+      padding-bottom: 0;
+      width: fit-content;
+      max-width: 100%;
+      justify-content: start;
+      align-content: start;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* En "Editar producto": 2 filas fijas de 7 alÃ©rgenos (7 + 7) */
+    #edit-product-modal #edit-allergen-grid.allergen-picker {
+      display: grid;
+      grid-template-columns: repeat(7, 35px);
+      grid-auto-rows: 35px;
+      gap: 8px;
+      overflow: visible;
+      padding-bottom: 0;
+      width: fit-content;
+      max-width: 100%;
+      justify-content: start;
+      align-content: start;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .picker-button {
+      min-width: 35px;
+      width: 35px;
+      min-height: 35px;
+      height: 35px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      padding: 0;
+      background: var(--panel);
+      box-shadow: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .picker-button img {
+      width: 33px;
+      height: 33px;
+      display: block;
+      opacity: 0.85;
+      filter: grayscale(100%);
+      pointer-events: none;
+    }
+
+    /* Estado seleccionado (para que se note al marcar) */
+    .picker-button.is-active {
+      background: var(--action-soft);
+      border-color: var(--action-primary);
+      border-width: 2px;
+      box-shadow: inset 0 0 0 1px rgba(124, 116, 109, 0.08);
+    }
+
+    .picker-button.is-active img {
+      filter: none;
+      opacity: 1;
+    }
+
+    .sheet-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .sheet-primary {
+      min-height: 48px;
+      border-radius: 999px;
+      border: 1px solid var(--action-primary);
+      background: var(--action-primary);
+      color: var(--text-on-dark);
+      padding: 0 20px;
+      font-size: var(--font-size-secondary);
+      line-height: var(--line-height-secondary);
+      font-weight: var(--weight-medium);
+    }
+
+    .sheet-primary:disabled,
+    .sheet-secondary:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+
+    .photo-summary,
+    .photo-status {
+      min-height: 24px;
+      color: var(--muted);
+      font-size: var(--font-size-secondary);
+      line-height: var(--line-height-secondary);
+    }
+
+    .origin-button {
+      min-height: 56px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--text);
+      padding: 0 16px;
+      justify-content: center;
+      display: inline-flex;
+      align-items: center;
+      font-size: var(--font-size-card-title);
+      line-height: var(--line-height-card-title);
+      font-weight: var(--weight-medium);
+    }
+
+    .photo-slots {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .photo-slot {
+      min-height: 138px;
+      border-radius: 18px;
+      border: 2px dashed var(--border-medium);
+      background: var(--bg-surface-soft);
+      color: var(--text-secondary);
+      display: grid;
+      place-items: center;
+      text-align: center;
+      overflow: hidden;
+      padding: 10px;
+      font-size: var(--font-size-secondary);
+      line-height: var(--line-height-secondary);
+      font-weight: var(--weight-medium);
+    }
+
+    .photo-slot img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 12px;
+      display: block;
+    }
+
+    .photo-slot strong {
+      display: block;
+    }
+
+    .photo-slot small {
+      display: block;
+      font-size: var(--font-size-small);
+      line-height: var(--line-height-small);
+    }
+
+    .sheet-danger {
+      min-height: 56px;
+      border-radius: 18px;
+      border: 1px solid var(--danger);
+      color: var(--danger);
+      background: var(--bg-surface);
+      font-size: var(--font-size-card-title);
+      line-height: var(--line-height-card-title);
+      font-weight: var(--weight-medium);
+    }
+
+    .bottom-add-bar {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(calc(100vw - 24px), 390px);
+      bottom: 16px;
+      z-index: 110;
+    }
+
+    .bottom-add-button {
+      width: 100%;
+      min-height: 40px;
+      border-radius: 18px;
+      border: 1px solid var(--action-primary);
+      background: var(--action-primary);
+      color: var(--text-on-dark);
+      font-size: 14px;
+      line-height: 16px;
+      font-weight: var(--weight-medium);
+      box-shadow: var(--shadow-medium);
+    }
+
+    /* Misma forma que el boton inferior "+ AÃ±adir producto" */
+    #save-add-product {
+      width: 100%;
+      min-height: 40px;
+      border-radius: 18px;
+      padding: 0;
+      font-size: 14px;
+      line-height: 16px;
+      box-shadow: var(--shadow-medium);
+    }
+
+    /* Misma forma para "Guardar cambios" en Editar */
+    #save-edit-product {
+      width: 100%;
+      min-height: 40px;
+      border-radius: 18px;
+      padding: 0;
+      font-size: 14px;
+      line-height: 16px;
+      box-shadow: var(--shadow-medium);
+    }
+
+    /* Misma forma para "Eliminar producto" (pero en rojo) */
+    #delete-edit-product.sheet-danger {
+      width: 100%;
+      min-height: 40px;
+      border-radius: 18px;
+      font-size: 14px;
+      line-height: 16px;
+      box-shadow: var(--shadow-medium);
+    }
+
+    /* Campo de nombre: altura compacta como el resto de controles (40px) */
+    #add-product-name,
+    #edit-product-name {
+      min-height: 40px;
+      height: 40px;
+    }
+
+    .origin-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 150;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: var(--overlay-soft);
+      backdrop-filter: blur(4px);
+    }
+
+    .origin-modal[hidden] {
+      display: none;
+    }
+
+    .origin-panel {
+      width: min(100%, 520px);
+      display: grid;
+      gap: 16px;
+      background: var(--panel);
+      border: 1px solid var(--border-soft);
+      border-radius: 26px;
+      padding: 22px;
+      box-shadow: var(--shadow-strong);
+    }
+
+    .origin-panel h3 {
+      font-size: var(--font-size-title);
+      line-height: var(--line-height-title);
+      font-weight: var(--weight-medium);
+      text-align: center;
+    }
+
+    .origin-panel p {
+      color: var(--muted);
+      font-size: var(--font-size-secondary);
+      line-height: var(--line-height-secondary);
+    }
+
+    .origin-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .screen-only-mobile {
+      display: none;
+    }
+
+    .photo-status.is-error {
+      color: var(--danger);
+    }
+
+    .photo-status.is-ok {
+      color: var(--accent-strong);
+    }
+
+    .empty {
+      padding: 18px;
+      border-radius: var(--radius-lg);
+      border: 1px dashed var(--line-strong);
+      background: var(--surface-glass-strong);
+      color: var(--muted);
+      font-size: var(--font-size-secondary);
+      line-height: var(--line-height-secondary);
+    }
+
+    .viewer-modal[hidden] {
+      display: none;
+    }
+
+    .viewer-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 120;
+      background: var(--overlay-strong);
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      gap: 14px;
+      padding: 16px;
+    }
+
+    .viewer-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .viewer-copy {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .viewer-copy h2 {
+      color: var(--text-on-dark);
+      font-size: var(--font-size-card-title);
+      line-height: var(--line-height-card-title);
+      font-weight: var(--weight-medium);
+    }
+
+    .viewer-copy p {
+      color: rgba(255, 255, 255, 0.72);
+      font-size: var(--font-size-secondary);
+      line-height: var(--line-height-secondary);
+    }
+
+    .viewer-close {
+      width: 44px;
+      height: 44px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+      color: var(--text-on-dark);
+      font-size: 24px;
+      line-height: 1;
+      font-weight: var(--weight-medium);
+    }
+
+    .viewer-controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .viewer-controls button {
+      min-height: 42px;
+      border-radius: 999px;
+      padding: 0 14px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-on-dark);
+      font-size: var(--font-size-secondary);
+      line-height: var(--line-height-secondary);
+      font-weight: var(--weight-medium);
+    }
+
+    .viewer-stage {
+      min-height: 0;
+      border-radius: 24px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background:
+        radial-gradient(circle at top, rgba(79, 151, 142, 0.22), rgba(79, 151, 142, 0) 30%),
+        rgba(124, 116, 109, 0.82);
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      touch-action: none;
+    }
+
+    .viewer-stage.dragging {
+      cursor: grabbing;
+    }
+
+    .viewer-stage img {
+      max-width: min(92vw, 980px);
+      max-height: calc(100vh - 190px);
+      object-fit: contain;
+      transform-origin: center center;
+      will-change: transform;
+      user-select: none;
+      pointer-events: none;
+    }
+
+    @media (min-width: 721px) {
+      body {
+        padding: 24px 16px 96px;
+      }
+
+      .page {
+        max-width: 390px;
+      }
+
+      .bottom-add-bar {
+        width: min(calc(100vw - 32px), 390px);
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="hero-title">
+        <div>
+          <h1>AlÃ©rgenos</h1>
+          <p class="hero-help screen-only-mobile">Pantalla principal</p>
+        </div>
+      </div>
+
+      <div class="top-chips">
+        <div class="chip" aria-live="polite">
+          <div class="chip-main">
+            <strong id="cloud-count">0</strong>
+            <span id="cloud-count-label">En la nube</span>
+          </div>
+          <span id="cloud-time" class="chip-meta">Sin hora</span>
+        </div>
+        <div class="top-actions">
+          <div id="revision-slot" class="revision-slot" aria-live="polite">
+            <button id="revision-pending-button" class="pill-button revision-pending-button" type="button" hidden></button>
+            <div id="revision-slot-placeholder" class="revision-slot-placeholder" aria-hidden="true"></div>
+          </div>
+          <button id="recargar" class="pill-button" type="button">Sync</button>
+          <button id="abrir-ajustes" class="pill-button" type="button">Ajustes</button>
+        </div>
+      </div>
+
+      <div class="actions-row">
+        <button id="pending-toggle" class="pill-button" type="button" aria-pressed="false" hidden>0 Pendientes de subida</button>
+      </div>
+
+      <p id="pending-caption" class="helper-text"></p>
+    </section>
+
+    <section class="search-panel">
+      <label class="helper-text" for="buscar">Buscar producto</label>
+      <div class="search-box">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16Zm9 2-4.35-4.35" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <input id="buscar" type="text" placeholder="Buscar producto...">
+      </div>
+
+      <div class="filter-row">
+        <button id="sin-toggle" class="filter-toggle" type="button" aria-pressed="false">SIN</button>
+        <div id="allergen-filter-bar" class="filter-strip" aria-label="Filtros por alergeno"></div>
+      </div>
+    </section>
+
+    <section class="list-panel">
+      <div class="list-head">
+        <h2>Listado</h2>
+        <p id="listado-stats" class="helper-text">Cargando productos...</p>
+        <p id="cloud-status" class="helper-text">Esperando Firebase...</p>
+      </div>
+      <div id="productos-list" class="list-grid"></div>
+      <div class="list-foot">
+        <button id="cargar-mas" class="pill-button" type="button" style="display:none;">Cargar mas</button>
+      </div>
+    </section>
+  </main>
+
+  <div class="bottom-add-bar">
+    <button id="open-add-product" class="bottom-add-button" type="button">+ AÃ±adir producto</button>
+  </div>
+
+  <div id="feedback-toast" class="feedback-toast" hidden aria-live="polite"></div>
+
+  <div id="add-product-modal" class="sheet-modal" hidden aria-hidden="true">
+    <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="add-modal-title">
+      <div class="sheet-head">
+        <div class="sheet-copy">
+          <h2 id="add-modal-title">AÃ±adir producto</h2>
+          <p>Trabajas dentro de la pantalla principal. Puedes guardar manual o arrancar por foto.</p>
+        </div>
+        <button id="close-add-product" class="sheet-close" type="button" aria-label="Cerrar">x</button>
+      </div>
+
+      <div class="sheet-body">
+        <div id="add-manual-pane" class="sheet-section">
+          <p class="sheet-section-title">Agregado manual</p>
+          <div class="field-group">
+            <label for="add-product-name">Nombre del producto</label>
+            <input id="add-product-name" class="text-input" type="text" maxlength="63" placeholder="Ej: Galletas integrales">
+          </div>
+          <div class="field-group">
+            <label>AlÃ©rgenos</label>
+            <div id="add-allergen-grid" class="allergen-picker"></div>
+          </div>
+          <div class="sheet-actions">
+            <button id="save-add-product" class="sheet-primary" type="button">Guardar producto</button>
+          </div>
+        </div>
+
+        <div id="add-photo-pane" class="sheet-section">
+          <p class="sheet-section-title">Agregado por foto</p>
+          <button id="open-photo-origin" class="origin-button" type="button">CÃ¡mara o galerÃ­a</button>
+          <input id="add-photo-file-1" class="file-input" type="file" accept="image/*" hidden>
+          <input id="add-photo-file-2" class="file-input" type="file" accept="image/*" hidden>
+          <div class="photo-slots">
+            <button id="photo-slot-envase" class="photo-slot" type="button">
+              <span><strong>Envase</strong><small>Toca para elegir</small></span>
+            </button>
+            <button id="photo-slot-etiqueta" class="photo-slot" type="button">
+              <span><strong>Etiquetado</strong><small>Toca para elegir</small></span>
+            </button>
+          </div>
+          <p id="add-photo-summary" class="photo-summary">TodavÃ­a no has elegido fotos.</p>
+          <p id="add-photo-status" class="photo-status"></p>
+          <div class="sheet-actions">
+            <button id="analyze-photo-product" class="sheet-primary" type="button">Analizar etiquetado</button>
+          </div>
+        </div>
+
+        <div class="sheet-actions">
+          <button id="cancel-add-product" class="sheet-secondary" type="button">Cancelar</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="edit-product-modal" class="sheet-modal" hidden aria-hidden="true">
+    <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title">
+      <div class="sheet-head">
+        <div class="sheet-copy">
+          <h2 id="edit-modal-title">Editar producto</h2>
+          <p>Corrige nombre y alÃ©rgenos sin salir de la lista principal.</p>
+        </div>
+        <button id="close-edit-product" class="sheet-close" type="button" aria-label="Cerrar">x</button>
+      </div>
+
+      <div class="sheet-body">
+        <div class="sheet-section">
+          <p class="sheet-section-title">Agregado manual</p>
+          <div class="field-group">
+            <label for="edit-product-name">Nombre del producto</label>
+            <input id="edit-product-name" class="text-input" type="text" maxlength="63" placeholder="Nombre del producto">
+          </div>
+          <div class="field-group">
+            <label>AlÃ©rgenos</label>
+            <div id="edit-allergen-grid" class="allergen-picker"></div>
+          </div>
+          <div class="sheet-actions">
+            <button id="save-edit-product" class="sheet-primary" type="button">Guardar cambios</button>
+          </div>
+        </div>
+        <div class="sheet-actions">
+          <button id="cancel-edit-product" class="sheet-secondary" type="button">Cancelar</button>
+        </div>
+        <button id="delete-edit-product" class="sheet-danger" type="button">Eliminar producto</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="photo-origin-modal" class="origin-modal" hidden aria-hidden="true">
+    <section class="origin-panel" role="dialog" aria-modal="true" aria-labelledby="photo-origin-title">
+      <h3 id="photo-origin-title">Seleccionar origen</h3>
+      <p id="photo-origin-copy">Envase: elige CÃ¡mara o GalerÃ­a</p>
+      <div class="origin-actions">
+        <button id="origin-camera" class="sheet-secondary" type="button">CÃ¡mara</button>
+        <button id="origin-gallery" class="sheet-secondary" type="button">GalerÃ­a</button>
+      </div>
+      <button id="origin-cancel" class="sheet-primary" type="button">Cancelar</button>
+    </section>
+  </div>
+
+  <div id="viewer-modal" class="viewer-modal" hidden aria-hidden="true">
+    <div class="viewer-head">
+      <div class="viewer-copy">
+        <h2 id="viewer-title">Foto ampliada</h2>
+        <p id="viewer-meta">Zoom x1.00</p>
+      </div>
+      <button id="viewer-close" class="viewer-close" type="button" aria-label="Cerrar foto">&#10005;</button>
+    </div>
+    <div class="viewer-controls">
+      <button id="viewer-zoom-out" type="button">Zoom -</button>
+      <button id="viewer-zoom-in" type="button">Zoom +</button>
+      <button id="viewer-zoom-reset" type="button">Centrar</button>
+    </div>
+    <div id="viewer-stage" class="viewer-stage">
+      <img id="viewer-image" alt="Foto ampliada">
+    </div>
+  </div>
+
+  <script src="../../shared/alergenos_oficiales.js"></script>
+  <script src="../../backend/persistencia/data_store_local.js"></script>
+  <script src="../config/firebase_config_fase3.js"></script>
+  <script src="../../backend/adaptadores/firestore_productos_remote.js"></script>
+  <script src="../../backend/adaptadores/firestore_activos_index_remote.js"></script>
+  <script type="module" src="../estado/firebase_bootstrap_fase3.js"></script>
+  <script src="../../backend/historial/historial_campos.js"></script>
+  <script src="../../backend/historial/historial_core.js"></script>
+  <script src="../../backend/ia/cerebro_productos_persistencia.js"></script>
+  <script src="../../backend/sync/sync_estado.js"></script>
+  <script src="../../backend/sync/sync_tombstone.js"></script>
+  <script src="../../backend/sync/sync_conflictos.js"></script>
+  <script src="../../backend/sync/sync_log.js"></script>
+  <script src="../../backend/sync/sync_backup.js"></script>
+  <script src="../../backend/sync/sync_manager.js"></script>
+  <script src="../../backend/operativa/alta_manual.js"></script>
+  <script src="../../backend/operativa/gestion_registros.js"></script>
+  <script src="../estado/shared_store_browser.js"></script>
+  <script src="../estado/alta_foto_app.js"></script>
+  <script src="../estado/cerebro_visible_runtime.js"></script>
+  <script src="../estado/cerebro_warmup.js"></script>
+  <script src="../estado/gestion_registros_app.js"></script>
+</body>
+</html>
+
+

@@ -1,0 +1,216 @@
+﻿<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Modo lote</title>
+  <link rel="stylesheet" href="../styles/app_brand_tokens.css">
+  <style>
+    @font-face {
+      font-family: "Graphik";
+      src: url("../../assets/fonts/Graphik-Regular.ttf") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Graphik";
+      src: url("../../assets/fonts/Graphik-Medium.ttf") format("truetype");
+      font-weight: 500;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Graphik";
+      src: url("../../assets/fonts/Graphik-Bold.ttf") format("truetype");
+      font-weight: 700;
+      font-style: normal;
+      font-display: swap;
+    }
+    :root {
+      --font-family-operativa: "Graphik", Arial, sans-serif;
+      --panel: var(--bg-surface);
+      --text: var(--text-primary);
+      --muted: var(--text-secondary);
+      --line: var(--border-soft);
+      --accent: var(--action-primary);
+      --accent2: var(--action-primary-alt);
+      --soft: var(--info);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 24px;
+      font-family: var(--font-family-operativa);
+      color: var(--text);
+      background:
+        radial-gradient(circle at 84% -18%, rgba(79, 151, 142, 0.12), rgba(79, 151, 142, 0) 38%),
+        linear-gradient(180deg, var(--bg-app), var(--bg-surface-soft));
+    }
+    .wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 16px; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px;
+      box-shadow: var(--shadow-soft);
+    }
+    h1 { margin: 0 0 8px; font-size: 28px; color: var(--text-brand-large); }
+    p { margin: 0; color: var(--muted); }
+    label { display: block; margin-top: 12px; font-size: 13px; font-weight: 700; }
+    input, textarea {
+      width: 100%;
+      margin-top: 6px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+      font: inherit;
+      background: var(--bg-surface);
+      color: var(--text);
+    }
+    textarea { min-height: 170px; resize: vertical; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .primary { color: var(--text-on-dark); background: var(--accent); }
+    .secondary {
+      color: var(--text-primary);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-medium);
+    }
+    .badge {
+      display: inline-block;
+      margin-right: 8px;
+      margin-top: 10px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: var(--support-blue-soft);
+      color: var(--info);
+      font-weight: 700;
+      font-size: 13px;
+    }
+    pre {
+      margin: 0;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--bg-surface-soft);
+      padding: 12px;
+      min-height: 120px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      padding: 9px 6px;
+      vertical-align: top;
+    }
+    th { font-size: 12px; color: var(--muted); text-transform: uppercase; }
+    .empty { margin: 0; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="panel">
+        <h1>Lote (hasta 10)</h1>
+      <p>En lote: los VERDES se guardan solos. NARANJA/ROJO pasan a pendientes de revisiÃ³n.</p>
+
+      <label for="lote-session-token">Token de sesiÃ³n</label>
+      <input id="lote-session-token" type="text" placeholder="Pega aquÃ­ tu token de sesiÃ³n" />
+
+      <label for="lote-backend-url">URL backend</label>
+      <input id="lote-backend-url" type="text" placeholder="https://europe-west1-project-a6f6b968-a591-4b1f-823.cloudfunctions.net/api" />
+
+      <label for="lote-input">LÃ­neas de lote (una por item, opcional segunda foto con |)</label>
+      <textarea id="lote-input" placeholder="C:\fotos\producto_1.jpg
+C:\fotos\producto_2_frontal.jpg|C:\fotos\producto_2_trasera.jpg"></textarea>
+
+      <div class="actions">
+        <button id="procesar" class="primary">Procesar lote</button>
+        <button id="demo" class="secondary">Cargar ejemplo</button>
+        <button id="limpiar" class="secondary">Limpiar</button>
+        <button id="abrir-pendientes-lote" class="secondary" style="display:none;">Pendientes de revisiÃ³n 0</button>
+      </div>
+      <div id="resumen-badges"></div>
+    </section>
+
+    <section class="panel">
+      <h1 style="font-size: 20px;">Respuesta operativa</h1>
+      <pre id="salida-json"></pre>
+    </section>
+
+    <section class="panel">
+      <h1 style="font-size: 20px;">Detalle del lote</h1>
+      <div id="detalle-lote"></div>
+    </section>
+  </div>
+
+  <script src="../../shared/alergenos_oficiales.js"></script>
+  <script src="../../backend/persistencia/data_store_local.js"></script>
+  <script src="../estado/shared_store_browser.js"></script>
+  <script src="../../backend/sync/sync_backup.js"></script>
+  <script src="../config/firebase_config_fase3.js"></script>
+  <script src="../../backend/adaptadores/firestore_productos_remote.js"></script>
+  <script type="module" src="../estado/firebase_bootstrap_fase3.js"></script>
+
+  <script src="../../backend/boxer1/backend/operativa/B1_enums.js"></script>
+  <script src="../../backend/boxer1/backend/operativa/B1_contratos_unificado_patch.js"></script>
+  <script src="../../backend/boxer1/backend/operativa/B1_diagnostico_unificado_patch.js"></script>
+  <script src="../../backend/boxer1/backend/operativa/B1_prechequeo_unificado_patch.js"></script>
+  <script src="../../backend/boxer1/backend/operativa/B1_ocr_base_unificado_patch.js"></script>
+  <script src="../../backend/boxer1/backend/operativa/B1_fiabilidad.js"></script>
+  <script src="../../backend/boxer1/backend/operativa/B1_catalogos.js"></script>
+  <script src="../../backend/boxer1/backend/operativa/B1_motor_coste_ocr.js"></script>
+  <script src="../../backend/boxer1/backend/operativa/B1_slots_empaquetador.js"></script>
+  <script src="../../backend/boxer1/backend/operativa/B1_rescate.js"></script>
+  <script src="../../backend/boxer1/backend/operativa/B1_merge.js"></script>
+  <script src="../../backend/boxer1/backend/adaptadores/B1_fase5_adapter.js"></script>
+  <script src="../../backend/boxer1/backend/operativa/B1_core.js"></script>
+
+  <script src="../ia/boxer3_motor.js"></script>
+  <script src="../ia/Boxer4_Motor.js"></script>
+
+  <script src="../ia/boxer2_contratos.js"></script>
+  <script src="../ia/boxer2_errores.js"></script>
+  <script src="../ia/boxer2_identidad.js"></script>
+
+  <script src="../ia/boxer3_contratos.js"></script>
+  <script src="../ia/boxer3_errores.js"></script>
+  <script src="../ia/boxer3_peso_formato.js"></script>
+
+  <script src="../ia/boxer4_contratos.js"></script>
+  <script src="../ia/boxer4_errores.js"></script>
+  <script src="../ia/boxer4_alergenos.js"></script>
+
+  <script src="../../backend/ia/boxer_family_gateway.js"></script>
+  <script src="../../backend/ia/cerebro_broker_ia.js"></script>
+  <script src="../../backend/ia/cerebro_productos_persistencia.js"></script>
+  <script src="../../backend/ia/cerebro_productos_repository_resolver.js"></script>
+
+  <script src="../ia/cerebro_contratos.js"></script>
+  <script src="../ia/cerebro_errores.js"></script>
+  <script src="../ia/cerebro_metricas.js"></script>
+  <script src="../ia/cerebro_arbitraje.js"></script>
+  <script src="../ia/cerebro_orquestador.js"></script>
+  <script src="../estado/cerebro_visible_runtime.js"></script>
+  <script src="../estado/cerebro_warmup.js"></script>
+
+  <script src="../estado/alta_foto_app.js"></script>
+  <script src="../estado/lote_app.js"></script>
+</body>
+</html>
+
+
+
+
+

@@ -1,0 +1,229 @@
+﻿<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Alta por foto</title>
+  <link rel="stylesheet" href="../styles/app_brand_tokens.css">
+  <style>
+    @font-face {
+      font-family: "Graphik";
+      src: url("../../assets/fonts/Graphik-Regular.ttf") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Graphik";
+      src: url("../../assets/fonts/Graphik-Medium.ttf") format("truetype");
+      font-weight: 500;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Graphik";
+      src: url("../../assets/fonts/Graphik-Bold.ttf") format("truetype");
+      font-weight: 700;
+      font-style: normal;
+      font-display: swap;
+    }
+    :root {
+      --font-family-operativa: "Graphik", Arial, sans-serif;
+      --panel: var(--bg-surface);
+      --text: var(--text-primary);
+      --muted: var(--text-secondary);
+      --line: var(--border-soft);
+      --accent: var(--action-primary);
+      --accent2: var(--action-primary-alt);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font-family-operativa);
+      color: var(--text);
+      background:
+        radial-gradient(circle at 90% -20%, rgba(79, 151, 142, 0.12), rgba(79, 151, 142, 0) 40%),
+        linear-gradient(180deg, var(--bg-app), var(--bg-surface-soft));
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .wrap {
+      max-width: 1080px;
+      margin: 0 auto;
+      display: grid;
+      gap: 16px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px;
+      box-shadow: var(--shadow-soft);
+    }
+    h1 { margin: 0 0 8px; font-size: 28px; color: var(--text-brand-large); }
+    p { margin: 0; color: var(--muted); }
+    form { margin-top: 14px; display: grid; gap: 10px; }
+    label { font-weight: 700; font-size: 14px; }
+    input {
+      width: 100%;
+      padding: 11px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      font: inherit;
+      color: var(--text);
+      background: var(--bg-surface);
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 2px;
+    }
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .primary {
+      color: var(--text-on-dark);
+      background: var(--accent);
+    }
+    .ghost {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-medium);
+      color: var(--text);
+    }
+    .status {
+      margin-top: 14px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--bg-surface-soft);
+      min-height: 48px;
+      font-weight: 700;
+    }
+    pre {
+      margin: 0;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--bg-surface-soft);
+      padding: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      min-height: 120px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      padding: 9px 6px;
+      vertical-align: top;
+    }
+    th { font-size: 12px; color: var(--muted); text-transform: uppercase; }
+    .empty { color: var(--muted); margin: 0; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="panel">
+        <h1>Alta por foto</h1>
+      <p>Esta pantalla analiza con Cerebro y siempre abre la ediciÃ³n final. TÃº decides guardar o cancelar.</p>
+      <form id="alta-foto-form">
+        <div>
+          <label for="session-token">Token de sesiÃ³n</label>
+          <input id="session-token" type="text" placeholder="Pega aquÃ­ tu token de sesiÃ³n" required>
+        </div>
+        <div>
+          <label for="backend-url">URL backend IA</label>
+          <input id="backend-url" type="text" placeholder="https://europe-west1-project-a6f6b968-a591-4b1f-823.cloudfunctions.net/api">
+        </div>
+        <div>
+          <label for="foto-ref-1">Foto 1 (obligatoria)</label>
+          <input id="foto-ref-1" type="text" placeholder="Ej: C:\fotos\mostaza_antigua.jpg" required>
+        </div>
+        <div>
+          <label for="foto-ref-2">Foto 2 (opcional)</label>
+          <input id="foto-ref-2" type="text" placeholder="Ej: C:\fotos\etiqueta_trasera.jpg">
+        </div>
+        <div class="actions">
+          <button type="submit" class="primary">Analizar</button>
+          <button type="button" id="limpiar" class="ghost">Limpiar</button>
+        </div>
+      </form>
+      <div id="estado-operativo" class="status"></div>
+    </section>
+
+    <section class="panel">
+      <h1 style="font-size: 20px;">Respuesta operativa</h1>
+      <pre id="salida-json"></pre>
+    </section>
+
+    <section class="panel">
+      <h1 style="font-size: 20px;">Borradores pendientes de revisiÃ³n</h1>
+      <div id="drafts-list"></div>
+    </section>
+  </div>
+
+  <script src="../../shared/alergenos_oficiales.js"></script>
+  <script src="../../backend/persistencia/data_store_local.js"></script>
+  <script src="../estado/shared_store_browser.js"></script>
+  <script src="../../backend/sync/sync_backup.js"></script>
+  <script src="../config/firebase_config_fase3.js"></script>
+  <script src="../../backend/adaptadores/firestore_productos_remote.js"></script>
+  <script type="module" src="../estado/firebase_bootstrap_fase3.js"></script>
+
+  <script src="../../backend/boxer1/backend/operativa/B1_enums.js"></script>
+  <script src="../../backend/boxer1/backend/operativa/B1_contratos_unificado_patch.js"></script>
+  <script src="../../backend/boxer1/backend/operativa/B1_diagnostico_unificado_patch.js"></script>
+  <script src="../../backend/boxer1/backend/operativa/B1_prechequeo_unificado_patch.js"></script>
+  <script src="../../backend/boxer1/backend/operativa/B1_ocr_base_unificado_patch.js"></script>
+  <script src="../../backend/boxer1/backend/operativa/B1_fiabilidad.js"></script>
+  <script src="../../backend/boxer1/backend/operativa/B1_catalogos.js"></script>
+  <script src="../../backend/boxer1/backend/operativa/B1_motor_coste_ocr.js"></script>
+  <script src="../../backend/boxer1/backend/operativa/B1_slots_empaquetador.js"></script>
+  <script src="../../backend/boxer1/backend/operativa/B1_rescate.js"></script>
+  <script src="../../backend/boxer1/backend/operativa/B1_merge.js"></script>
+  <script src="../../backend/boxer1/backend/adaptadores/B1_fase5_adapter.js"></script>
+  <script src="../../backend/boxer1/backend/operativa/B1_core.js"></script>
+
+  <script src="../ia/boxer3_motor.js"></script>
+  <script src="../ia/Boxer4_Motor.js"></script>
+
+  <script src="../ia/boxer2_contratos.js"></script>
+  <script src="../ia/boxer2_errores.js"></script>
+  <script src="../ia/boxer2_identidad.js"></script>
+
+  <script src="../ia/boxer3_contratos.js"></script>
+  <script src="../ia/boxer3_errores.js"></script>
+  <script src="../ia/boxer3_peso_formato.js"></script>
+
+  <script src="../ia/boxer4_contratos.js"></script>
+  <script src="../ia/boxer4_errores.js"></script>
+  <script src="../ia/boxer4_alergenos.js"></script>
+
+  <script src="../../backend/ia/boxer_family_gateway.js"></script>
+  <script src="../../backend/ia/cerebro_broker_ia.js"></script>
+  <script src="../../backend/ia/cerebro_productos_persistencia.js"></script>
+  <script src="../../backend/ia/cerebro_productos_repository_resolver.js"></script>
+
+  <script src="../ia/cerebro_contratos.js"></script>
+  <script src="../ia/cerebro_errores.js"></script>
+  <script src="../ia/cerebro_metricas.js"></script>
+  <script src="../ia/cerebro_arbitraje.js"></script>
+  <script src="../ia/cerebro_orquestador.js"></script>
+  <script src="../estado/cerebro_visible_runtime.js"></script>
+  <script src="../estado/cerebro_warmup.js"></script>
+
+  <script src="../estado/alta_foto_app.js"></script>
+</body>
+</html>
+
+
+
+
+

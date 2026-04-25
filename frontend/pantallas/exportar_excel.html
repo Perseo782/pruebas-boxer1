@@ -1,0 +1,181 @@
+﻿<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Exportar Excel</title>
+  <link rel="stylesheet" href="../styles/app_brand_tokens.css">
+  <style>
+    @font-face {
+      font-family: "Graphik";
+      src: url("../../assets/fonts/Graphik-Regular.ttf") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Graphik";
+      src: url("../../assets/fonts/Graphik-Medium.ttf") format("truetype");
+      font-weight: 500;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Graphik";
+      src: url("../../assets/fonts/Graphik-Bold.ttf") format("truetype");
+      font-weight: 700;
+      font-style: normal;
+      font-display: swap;
+    }
+    :root {
+      --font-family-operativa: "Graphik", Arial, sans-serif;
+      --font-size-title: 24px;
+      --line-height-title: 30px;
+      --font-size-body: 16px;
+      --line-height-body: 24px;
+      --font-size-secondary: 14px;
+      --line-height-secondary: 20px;
+      --font-size-small: 12px;
+      --line-height-small: 16px;
+      --weight-regular: 400;
+      --weight-medium: 500;
+      --weight-bold: 700;
+      --bg: var(--bg-app);
+      --panel: var(--bg-surface);
+      --text: var(--text-primary);
+      --muted: var(--text-secondary);
+      --line: var(--border-soft);
+      --line-strong: var(--border-medium);
+      --primary: var(--action-primary);
+      --primary2: var(--action-primary-alt);
+      --soft: var(--bg-surface-soft);
+      --shadow: var(--shadow-soft);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 24px;
+      color: var(--text);
+      font-family: var(--font-family-operativa);
+      font-size: var(--font-size-body);
+      line-height: var(--line-height-body);
+      background:
+        radial-gradient(circle at top right, rgba(79, 151, 142, 0.08), rgba(79, 151, 142, 0) 34%),
+        linear-gradient(180deg, var(--bg-app) 0%, var(--bg-surface-soft) 100%);
+    }
+    .wrap { max-width: 1040px; margin: 0 auto; display: grid; gap: 16px; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+    }
+    .hero {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-top: 12px;
+    }
+    button {
+      border: 1px solid var(--primary);
+      border-radius: 999px;
+      padding: 11px 16px;
+      font: inherit;
+      font-weight: var(--weight-medium);
+      cursor: pointer;
+      color: var(--text-on-dark);
+      background: var(--primary);
+    }
+    button.secondary {
+      color: var(--text);
+      background: var(--bg-surface);
+      border-color: var(--line-strong);
+    }
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .meta { color: var(--muted); }
+    .list {
+      display: grid;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .item {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--bg-surface);
+    }
+    .item input { width: 18px; height: 18px; }
+    .item strong { display: block; }
+    .item span { color: var(--muted); font-size: 13px; }
+    .empty {
+      padding: 18px;
+      border: 1px dashed var(--line-strong);
+      border-radius: 14px;
+      color: var(--muted);
+      background: var(--bg-surface);
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: var(--bg-surface-soft);
+      color: var(--text-primary);
+      border: 1px solid var(--accent-line-soft);
+      font-weight: var(--weight-bold);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="panel hero">
+      <div>
+        <div class="badge">SELECCIONAR ELEMENTOS</div>
+        <h1 style="margin:10px 0 8px;">Exportar productos a Excel</h1>
+        <p class="meta">Todos salen marcados al abrir. Puedes quitar los que no quieras sacar.</p>
+      </div>
+      <div class="toolbar" style="margin-top:0;">
+        <button id="export-cancel" type="button" class="secondary">Cancelar</button>
+        <button id="export-run" type="button">EXPORTAR</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <p id="export-count">Cargando productos...</p>
+      <div class="toolbar">
+        <span id="export-status" class="meta">Preparando lista...</span>
+      </div>
+      <div id="export-list" class="list"></div>
+    </section>
+  </div>
+
+  <script src="../../shared/alergenos_oficiales.js"></script>
+  <script src="../../backend/persistencia/data_store_local.js"></script>
+  <script src="../estado/shared_store_browser.js"></script>
+  <script src="../../backend/adaptadores/firestore_productos_remote.js"></script>
+  <script src="../config/firebase_config_fase3.js"></script>
+  <script type="module" src="../estado/firebase_bootstrap_fase3.js"></script>
+  <script src="../../backend/excel/exportacion_excel.js"></script>
+  <script src="../estado/exportar_excel_app.js"></script>
+</body>
+</html>
+
+
+
