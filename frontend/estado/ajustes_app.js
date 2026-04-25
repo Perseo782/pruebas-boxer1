@@ -363,6 +363,8 @@
 
   function renderHistoryList(state) {
     var items = Array.isArray(state.items) ? state.items : [];
+    if (!Number.isFinite(state.selectedIndex) || state.selectedIndex < 0) state.selectedIndex = 0;
+    if (state.selectedIndex >= items.length) state.selectedIndex = 0;
     state.el.count.textContent = "Registros: " + items.length + " / 30";
 
     if (!items.length) {
@@ -372,11 +374,12 @@
     }
 
     state.el.list.innerHTML = items.map(function toCard(item, index) {
+      var isActive = index === state.selectedIndex;
       return (
-        "<button type=\"button\" class=\"event-card\" data-idx=\"" + index + "\">" +
+        "<button type=\"button\" class=\"event-card" + (isActive ? " is-active" : "") + "\" data-idx=\"" + index + "\" aria-pressed=\"" + (isActive ? "true" : "false") + "\" title=\"" + escapeHtml(item.productLabel || "(sin nombre)") + "\">" +
           "<span class=\"event-type\">" + toVisibleType(item.eventType) + "</span>" +
-          "<strong>" + (item.productLabel || "(sin nombre)") + "</strong>" +
-          "<span class=\"event-date\">" + formatDate(item.occurredAt) + "</span>" +
+          "<span class=\"event-name\">" + escapeHtml(item.productLabel || "(sin nombre)") + "</span>" +
+          "<span class=\"event-date\">" + formatDateTime(item.occurredAt) + "</span>" +
         "</button>"
       );
     }).join("");

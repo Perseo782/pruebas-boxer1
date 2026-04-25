@@ -191,6 +191,19 @@
       gap: 10px;
       margin-top: 12px;
     }
+    #historial-list {
+      max-height: 344px;
+      overflow-y: auto;
+      padding-right: 4px;
+      align-content: start;
+    }
+    #historial-list::-webkit-scrollbar {
+      width: 8px;
+    }
+    #historial-list::-webkit-scrollbar-thumb {
+      background: var(--border-medium);
+      border-radius: 999px;
+    }
     .event-card {
       width: 100%;
       display: grid;
@@ -202,6 +215,18 @@
       border: 1px solid var(--line);
       border-radius: 12px;
     }
+    #historial-list .event-card {
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+      min-height: 48px;
+      padding: 8px 10px;
+      border-radius: 10px;
+    }
+    #historial-list .event-card.is-active {
+      border-color: var(--primary2);
+      background: var(--bg-surface-soft);
+    }
     .event-type {
       display: inline-block;
       width: fit-content;
@@ -211,9 +236,30 @@
       font-weight: 700;
       background: var(--soft);
     }
+    #historial-list .event-type {
+      min-width: 78px;
+      padding: 3px 8px;
+      font-size: 11px;
+      line-height: 14px;
+      text-align: center;
+    }
+    .event-name {
+      min-width: 0;
+      font-size: 13px;
+      line-height: 16px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
     .event-date {
       font-size: 13px;
       color: var(--muted);
+    }
+    #historial-list .event-date {
+      font-size: 12px;
+      line-height: 14px;
+      white-space: nowrap;
     }
     .detail-box {
       min-height: 220px;
