@@ -871,7 +871,7 @@
   }
 
   function renderSyncStatus(state, prefixMessage) {
-    setText("cloud-status", "");
+    setText("cloud-status", String(prefixMessage || ""));
   }
 
   function deriveVisibleRows(state) {
@@ -1082,10 +1082,19 @@
   }
 
   async function deleteProduct(state, productId, productName) {
-    if (!productId) return false;
+    if (!productId) {
+      return {
+        ok: false,
+        message: "No se encontro el producto."
+      };
+    }
     var question = "Se eliminara de verdad";
     if (!globalScope.confirm(question + ": " + String(productName || productId) + ". Continuar?")) {
-      return false;
+      return {
+        ok: false,
+        cancelled: true,
+        message: ""
+      };
     }
 
     var localRecord = state && state.store && typeof state.store.getProductById === "function"
@@ -1100,8 +1109,12 @@
     );
     var resolved = localOnlyPending ? { ok: true, remoteIndex: null } : resolveRemoteIndex(state);
     if (!resolved.ok) {
-      renderSyncStatus(state, resolved.message);
-      return false;
+      var blockedMessage = resolved && resolved.message ? resolved.message : "No se pudo preparar el borrado.";
+      renderSyncStatus(state, blockedMessage);
+      return {
+        ok: false,
+        message: blockedMessage
+      };
     }
 
     renderSyncStatus(state, "Eliminando");
@@ -1122,8 +1135,12 @@
     );
 
     if (!out || out.ok !== true) {
-      renderSyncStatus(state, out && out.error && out.error.message ? out.error.message : "No se pudo eliminar.");
-      return false;
+      var failedMessage = out && out.error && out.error.message ? out.error.message : "No se pudo eliminar.";
+      renderSyncStatus(state, failedMessage);
+      return {
+        ok: false,
+        message: failedMessage
+      };
     }
 
     recordVisibleHistory(
@@ -1138,9 +1155,31 @@
       globalScope.Fase8SyncTombstone.markDeleted(productId);
     }
 
-    await loadProducts(state, { force: true });
+    if (out && out.resultado && out.resultado.datos && out.resultado.datos.localOnly === true) {
+      refreshVisibleList(state, { skipAssetReload: true });
+      renderSyncStatus(state, "Producto eliminado");
+      return {
+        ok: true,
+        message: "Producto eliminado."
+      };
+    }
+
+    var reloadOut = await loadProducts(state, { force: true });
+    if (!reloadOut || reloadOut.ok !== true) {
+      refreshVisibleList(state, { skipAssetReload: true });
+      renderSyncStatus(state, "Producto eliminado");
+      return {
+        ok: true,
+        message: "Producto eliminado."
+      };
+    }
+
     await triggerSync(state, "post_delete");
-    return true;
+    renderSyncStatus(state, "Producto eliminado");
+    return {
+      ok: true,
+      message: "Producto eliminado."
+    };
   }
 
   function openAjustes() {
@@ -1971,12 +2010,17 @@
     renderEditModal(state);
     var productId = state.ui.edit.productId;
     var productName = state.ui.edit.nombre;
-    var ok = await deleteProduct(state, productId, productName);
+    var deleteOut = await deleteProduct(state, productId, productName);
     state.ui.edit.busy = false;
-    if (ok) {
+    if (deleteOut && deleteOut.ok === true) {
       closeEditModal(state);
-      showFeedback(state, "", { message: "Producto eliminado." });
+      showFeedback(state, "", { message: deleteOut.message || "Producto eliminado." });
       return;
+    }
+    if (!(deleteOut && deleteOut.cancelled === true)) {
+      showFeedback(state, "error", {
+        message: deleteOut && deleteOut.message ? deleteOut.message : "No se pudo eliminar el producto."
+      });
     }
     renderEditModal(state);
   }
