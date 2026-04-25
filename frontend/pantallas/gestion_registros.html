@@ -1382,14 +1382,15 @@
       <div class="sheet-head">
         <div class="sheet-copy">
           <h2 id="add-modal-title">Añadir producto</h2>
-          <p>Trabajas dentro de la pantalla principal. Puedes guardar manual o arrancar por foto.</p>
+          <p id="add-modal-help">Trabajas dentro de la pantalla principal. Puedes guardar manual o arrancar por foto.</p>
         </div>
         <button id="close-add-product" class="sheet-close" type="button" aria-label="Cerrar">x</button>
       </div>
 
       <div class="sheet-body">
         <div id="add-manual-pane" class="sheet-section">
-          <p class="sheet-section-title">Agregado manual</p>
+          <p id="add-manual-title" class="sheet-section-title">Agregado manual</p>
+          <p id="add-photo-status" class="photo-status" hidden></p>
           <div class="field-group">
             <label for="add-product-name">Nombre del producto</label>
             <input id="add-product-name" class="text-input" type="text" maxlength="63" placeholder="Ej: Galletas integrales">
@@ -1417,7 +1418,6 @@
             </button>
           </div>
           <p id="add-photo-summary" class="photo-summary">Todavía no has elegido fotos.</p>
-          <p id="add-photo-status" class="photo-status"></p>
           <div class="sheet-actions">
             <button id="analyze-photo-product" class="sheet-primary" type="button">Analizar etiquetado</button>
           </div>

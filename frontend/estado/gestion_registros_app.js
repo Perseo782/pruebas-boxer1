@@ -888,6 +888,7 @@
       busy: false,
       nombre: "",
       selectedAllergenIds: [],
+      photoResultReady: false,
       photoStatus: "",
       photoStatusKind: "",
       photoSummary: "Todavía no has elegido fotos.",
@@ -927,10 +928,25 @@
     var ui = state.ui.add;
     setSheetVisibility(state.el.addModal, !!ui.open);
     if (!ui.open) return;
+    setElementText(state.el.addModalTitle, ui.photoResultReady ? "Confirmar producto analizado" : "Añadir producto");
+    setElementText(
+      state.el.addModalHelp,
+      ui.photoResultReady
+        ? "Estos datos los ha rellenado la app al analizar la foto. Revisa y guarda si son correctos."
+        : "Trabajas dentro de la pantalla principal. Puedes guardar manual o arrancar por foto."
+    );
+    setElementText(state.el.addManualTitle, ui.photoResultReady ? "Resultado del análisis de foto" : "Agregado manual");
+    if (state.el.addManualPane) {
+      state.el.addManualPane.classList.toggle("is-photo-result", !!ui.photoResultReady);
+    }
+    if (state.el.addPhotoPane) {
+      state.el.addPhotoPane.hidden = !!ui.photoResultReady;
+    }
     state.el.addProductName.value = ui.nombre;
     renderPickerButtons(state.el.addAllergenGrid, ui.selectedAllergenIds, "add");
     setElementText(state.el.addPhotoSummary, ui.photoSummary || "Todavía no has elegido fotos.");
     setElementText(state.el.addPhotoStatus, ui.photoStatus || "");
+    state.el.addPhotoStatus.hidden = !ui.photoStatus;
     state.el.addPhotoStatus.classList.toggle("is-error", ui.photoStatusKind === "error");
     state.el.addPhotoStatus.classList.toggle("is-ok", ui.photoStatusKind === "ok");
     state.el.addPhotoStatus.classList.toggle("is-passport-green", ui.photoStatusKind === "passport-green");
@@ -1154,6 +1170,7 @@
     var passport = resolvePhotoPassport(finalData, outcome);
     state.ui.add.nombre = String(propuesta.nombre || "").trim();
     state.ui.add.selectedAllergenIds = normalizeAllergenList(propuesta.alergenos || []);
+    state.ui.add.photoResultReady = true;
     state.ui.add.photoStatus = buildPhotoAnalysisStatus(response, outcome);
     state.ui.add.photoStatusKind = getPhotoPassportStatusKind(passport);
   }
@@ -1198,6 +1215,7 @@
     }
     try {
       state.ui.add.busy = true;
+      state.ui.add.photoResultReady = false;
       state.ui.add.photoStatus = "Preparando analisis...";
       state.ui.add.photoStatusKind = "";
       renderAddModal(state);
@@ -1237,6 +1255,7 @@
         state.ui.add.photoStatus = response && response.error && response.error.message
           ? response.error.message
           : "No se pudo completar el analisis.";
+        state.ui.add.photoResultReady = false;
         state.ui.add.photoStatusKind = "error";
         renderAddModal(state);
         showFeedback(state, "error", { message: state.ui.add.photoStatus });
@@ -1247,6 +1266,7 @@
       showFeedback(state, "photo_ready");
     } catch (errPhoto) {
       state.ui.add.busy = false;
+      state.ui.add.photoResultReady = false;
       state.ui.add.photoStatus = errPhoto && errPhoto.message ? errPhoto.message : "No se pudo leer la foto.";
       state.ui.add.photoStatusKind = "error";
       renderAddModal(state);
@@ -1805,7 +1825,10 @@
         viewerZoomReset: byId("viewer-zoom-reset"),
         feedbackToast: byId("feedback-toast"),
         addModal: byId("add-product-modal"),
+        addModalTitle: byId("add-modal-title"),
+        addModalHelp: byId("add-modal-help"),
         addManualPane: byId("add-manual-pane"),
+        addManualTitle: byId("add-manual-title"),
         addPhotoPane: byId("add-photo-pane"),
         addProductName: byId("add-product-name"),
         addAllergenGrid: byId("add-allergen-grid"),
