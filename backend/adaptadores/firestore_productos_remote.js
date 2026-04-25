@@ -13,6 +13,21 @@
     historialCore = globalScope.Fase7HistorialCore;
   }
 
+  function resolveHistorialCore() {
+    if (historialCore) return historialCore;
+    if (typeof module !== "undefined" && module.exports) {
+      try {
+        historialCore = require("../../backend/historial/historial_core.js");
+      } catch (errRequireLate) {
+        historialCore = null;
+      }
+    }
+    if (!historialCore && globalScope && globalScope.Fase7HistorialCore) {
+      historialCore = globalScope.Fase7HistorialCore;
+    }
+    return historialCore;
+  }
+
   function sanitizeId(value) {
     return String(value || "")
       .trim()
@@ -237,7 +252,8 @@
       try {
         var docRef = docFn(db, collectionName, productId);
         if (historyEvent && typeof writeBatchFn === "function") {
-          if (!historialCore) {
+          var activeHistorialCore = resolveHistorialCore();
+          if (!activeHistorialCore) {
             return {
               ok: false,
               errorCode: "FIRESTORE_HISTORIAL_NO_CONFIGURADO",
@@ -246,7 +262,7 @@
           }
           var batch = writeBatchFn(db);
           batch.set(docRef, payload, { merge: true });
-          await historialCore.escribirEvento(batch, historyEvent, {
+          await activeHistorialCore.escribirEvento(batch, historyEvent, {
             db: db,
             firestoreModule: firestoreModule
           });
@@ -288,7 +304,8 @@
       try {
         var docRef = docFn(db, collectionName, productId);
         if (historyEvent && typeof writeBatchFn === "function") {
-          if (!historialCore) {
+          var activeHistorialCore = resolveHistorialCore();
+          if (!activeHistorialCore) {
             return {
               ok: false,
               errorCode: "FIRESTORE_HISTORIAL_NO_CONFIGURADO",
@@ -297,7 +314,7 @@
           }
           var batch = writeBatchFn(db);
           batch.delete(docRef);
-          await historialCore.escribirEvento(batch, historyEvent, {
+          await activeHistorialCore.escribirEvento(batch, historyEvent, {
             db: db,
             firestoreModule: firestoreModule
           });
@@ -567,7 +584,8 @@
       var safeOptions = options || {};
       var readiness = await ensureRemoteReady(safeOptions.sessionToken);
       if (!readiness.ok) return readiness;
-      if (!historialCore) {
+      var activeHistorialCore = resolveHistorialCore();
+      if (!activeHistorialCore) {
         return {
           ok: false,
           errorCode: "FIRESTORE_HISTORIAL_NO_CONFIGURADO",
@@ -576,7 +594,7 @@
       }
 
       try {
-        var items = await historialCore.leerUltimos30({
+        var items = await activeHistorialCore.leerUltimos30({
           db: db,
           firestoreModule: firestoreModule
         });
