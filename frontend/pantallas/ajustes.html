@@ -192,7 +192,7 @@
       margin-top: 12px;
     }
     #historial-list {
-      max-height: 344px;
+      height: 320px;
       overflow-y: auto;
       padding-right: 4px;
       align-content: start;
@@ -218,10 +218,11 @@
     #historial-list .event-card {
       grid-template-columns: auto minmax(0, 1fr) auto;
       align-items: center;
-      gap: 8px;
-      min-height: 48px;
-      padding: 8px 10px;
-      border-radius: 10px;
+      gap: 6px;
+      min-height: 44px;
+      max-height: 44px;
+      padding: 6px 8px;
+      border-radius: 9px;
     }
     #historial-list .event-card.is-active {
       border-color: var(--primary2);
@@ -237,16 +238,16 @@
       background: var(--soft);
     }
     #historial-list .event-type {
-      min-width: 78px;
-      padding: 3px 8px;
-      font-size: 11px;
-      line-height: 14px;
+      min-width: 70px;
+      padding: 2px 7px;
+      font-size: 10px;
+      line-height: 12px;
       text-align: center;
     }
     .event-name {
       min-width: 0;
-      font-size: 13px;
-      line-height: 16px;
+      font-size: 12px;
+      line-height: 14px;
       font-weight: 600;
       white-space: nowrap;
       overflow: hidden;
@@ -257,8 +258,8 @@
       color: var(--muted);
     }
     #historial-list .event-date {
-      font-size: 12px;
-      line-height: 14px;
+      font-size: 11px;
+      line-height: 12px;
       white-space: nowrap;
     }
     .detail-box {
