@@ -16,6 +16,9 @@
   var LOCK_MS = 5 * 60 * 1000;
   var FAILS_KEY = "alergenos_access_failed_attempts";
   var LOCK_KEY = "alergenos_access_lock_until";
+  var SESSION_TOKEN_KEY = "alergenos_session_token";
+  var RUNTIME_TOKEN_KEY = "fase5_visible_session_token";
+  var RUNTIME_BACKEND_KEY = "fase5_visible_backend_url";
   var lockTimer = 0;
 
   if (!form || !userInput || !passwordInput || !submitButton || !toggleButton) {
@@ -68,6 +71,18 @@
     try {
       window.localStorage.removeItem(FAILS_KEY);
       window.localStorage.removeItem(LOCK_KEY);
+    } catch (error) {
+      return false;
+    }
+    return true;
+  }
+
+  function persistSessionToken(token) {
+    var safeToken = String(token || "").trim();
+    try {
+      window.sessionStorage.setItem(SESSION_TOKEN_KEY, safeToken);
+      window.localStorage.setItem(RUNTIME_TOKEN_KEY, safeToken);
+      window.localStorage.setItem(RUNTIME_BACKEND_KEY, BACKEND_URL);
     } catch (error) {
       return false;
     }
@@ -272,7 +287,7 @@
       clearAccessGuard();
       window.sessionStorage.setItem("alergenos_access_ok", "1");
       window.sessionStorage.setItem("alergenos_access_user", getUserValue());
-      window.sessionStorage.setItem("alergenos_session_token", String(payload.token || ""));
+      persistSessionToken(payload.token || "");
     } catch (error) {
       setMessage("No se pudo comprobar el acceso con Firebase: " + (error && error.message ? error.message : "error desconocido"), "error");
       showToast("No se pudo comprobar el acceso con Firebase.", "error");

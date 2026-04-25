@@ -194,7 +194,15 @@
     var lastActivityWriteMs = 0;
 
     function getSessionToken() {
-      return safeRead(storage, TOKEN_STORAGE_KEY).trim();
+      var token = safeRead(storage, TOKEN_STORAGE_KEY).trim();
+      if (token) return token;
+      try {
+        return scope && scope.sessionStorage
+          ? String(scope.sessionStorage.getItem("alergenos_session_token") || "").trim()
+          : "";
+      } catch (errSession) {
+        return "";
+      }
     }
 
     function setSessionToken(token) {

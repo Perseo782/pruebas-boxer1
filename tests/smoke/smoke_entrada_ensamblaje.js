@@ -143,12 +143,18 @@ async function run() {
     const h1 = await page.locator("h1").first().textContent();
     const ajustesVisible = await page.locator("#abrir-ajustes").count();
     const sessionOk = await page.evaluate(() => sessionStorage.getItem("alergenos_access_ok"));
+    const sessionToken = await page.evaluate(() => sessionStorage.getItem("alergenos_session_token"));
+    const runtimeToken = await page.evaluate(() => localStorage.getItem("fase5_visible_session_token"));
+    const runtimeBackend = await page.evaluate(() => localStorage.getItem("fase5_visible_backend_url"));
 
     if (!finalUrl.includes("/frontend/pantallas/gestion_registros.html")) throw new Error("No entra en la app principal del ensamblaje.");
     if (!String(title).startsWith("Al") || !String(title).endsWith("rgenos")) throw new Error(`Titulo inesperado: ${title}`);
     if (!String(h1).startsWith("Al") || !String(h1).endsWith("rgenos")) throw new Error(`Pantalla principal inesperada: ${h1}`);
     if (ajustesVisible !== 1) throw new Error("No se encuentra Ajustes en la app principal.");
     if (sessionOk !== "1") throw new Error("No queda sesion local marcada.");
+    if (sessionToken !== "token_prueba_fase12") throw new Error("No queda token de sesion marcado.");
+    if (runtimeToken !== "token_prueba_fase12") throw new Error("No queda token operativo para Firebase.");
+    if (!runtimeBackend || !runtimeBackend.includes("cloudfunctions.net/api")) throw new Error("No queda URL de backend operativa.");
     if (errors.length) throw new Error(`Errores de navegador: ${errors.join(" | ")}`);
 
     console.log("OK smoke_entrada_ensamblaje");

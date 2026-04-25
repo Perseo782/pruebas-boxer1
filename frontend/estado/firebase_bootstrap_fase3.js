@@ -76,8 +76,14 @@ import {
 
     function readStorageValue(key) {
       try {
-        if (!globalScope.localStorage) return "";
-        return String(globalScope.localStorage.getItem(key) || "");
+        if (globalScope.localStorage) {
+          var localValue = String(globalScope.localStorage.getItem(key) || "");
+          if (localValue) return localValue;
+        }
+        if (key === TOKEN_STORAGE_KEY && globalScope.sessionStorage) {
+          return String(globalScope.sessionStorage.getItem("alergenos_session_token") || "");
+        }
+        return "";
       } catch (errStorage) {
         return "";
       }
