@@ -4,6 +4,7 @@
   var VISUAL_SETTINGS_STORAGE_KEY = "appv2_visual_settings_v1";
   var ALLERGEN_DISPLAY_SETTINGS_KEY = "appv2_allergen_card_display_v1";
   var LOCAL_IMPORT_HISTORY_KEY = "fase10_import_history_local_v1";
+  var LOCAL_PRODUCT_HISTORY_KEY = "appv2_product_history_local_v1";
   var DEFAULT_VISUAL_SETTINGS = {
     profileKey: "EQUILIBRADO_WEBP",
     qualityPct: 40,
@@ -21,6 +22,10 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  }
+
+  function cloneValue(value) {
+    return value == null ? value : JSON.parse(JSON.stringify(value));
   }
 
   function formatDate(value) {
@@ -139,6 +144,18 @@
     }
   }
 
+  function readLocalProductHistory() {
+    try {
+      if (!globalScope.localStorage) return [];
+      var raw = globalScope.localStorage.getItem(LOCAL_PRODUCT_HISTORY_KEY);
+      if (!raw) return [];
+      var parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (errLocalHistory) {
+      return [];
+    }
+  }
+
   function readImportEventFromUrl() {
     try {
       var params = new URLSearchParams(globalScope.location && globalScope.location.search || "");
@@ -169,6 +186,79 @@
     });
     if (!exists) safeItems.unshift(injected);
     return safeItems.slice(0, 30);
+  }
+
+  function compareHistoryDesc(a, b) {
+    var aMs = Date.parse(String(a && a.occurredAt || "")) || 0;
+    var bMs = Date.parse(String(b && b.occurredAt || "")) || 0;
+    if (aMs !== bMs) return bMs - aMs;
+    return String(b && b.eventId || "").localeCompare(String(a && a.eventId || ""));
+  }
+
+  function buildHistorySignature(item) {
+    if (!item || !item.eventType) return "";
+    var safe = item || {};
+    var parts = [
+      String(safe.eventType || "").trim(),
+      String(safe.productId || "").trim(),
+      String(safe.productLabel || "").trim().toLowerCase()
+    ];
+
+    if (safe.eventType === "PRODUCT_UPDATED") {
+      var changedFields = Array.isArray(safe.changedFields) ? safe.changedFields.slice(0).sort().join(",") : "";
+      var detail = safe.changeDetail && typeof safe.changeDetail === "object"
+        ? Object.keys(safe.changeDetail).sort().map(function each(key) {
+          return key + ":" + String(safe.changeDetail[key] || "").trim();
+        }).join("|")
+        : "";
+      parts.push(changedFields, detail);
+    }
+
+    if (
+      safe.eventType === "IMPORTACION_EXCEL" ||
+      safe.eventType === "IMPORTACION_EXCEL_REVISION" ||
+      safe.eventType === "IMPORTACION_EXCEL_RECHAZO"
+    ) {
+      var importDetail = safe.importDetail && typeof safe.importDetail === "object" ? safe.importDetail : {};
+      parts.push(
+        String(importDetail.fileName || "").trim(),
+        String(importDetail.sheetName || "").trim(),
+        String(importDetail.rowNumber || "").trim(),
+        String(importDetail.reason || "").trim(),
+        String(importDetail.imported || "").trim(),
+        String(importDetail.merged || "").trim(),
+        String(importDetail.review || "").trim(),
+        String(importDetail.rejected || "").trim()
+      );
+    }
+
+    return parts.join("||");
+  }
+
+  function mergeHistorySources(remoteItems, localProductItems, localImportItems) {
+    var out = [];
+    var seenEventIds = Object.create(null);
+    var seenSignatures = Object.create(null);
+
+    function push(item) {
+      if (!item || !item.eventType) return;
+      var cloned = cloneValue(item);
+      var eventId = String(cloned.eventId || "").trim();
+      var signature = buildHistorySignature(cloned);
+      if (eventId && seenEventIds[eventId]) return;
+      if (signature && seenSignatures[signature]) return;
+      if (eventId) seenEventIds[eventId] = true;
+      if (signature) seenSignatures[signature] = true;
+      out.push(cloned);
+    }
+
+    (Array.isArray(remoteItems) ? remoteItems : []).forEach(push);
+    (Array.isArray(localProductItems) ? localProductItems : []).forEach(push);
+    (Array.isArray(localImportItems) ? localImportItems : []).forEach(push);
+
+    out = mergeInjectedImportEvent(out);
+    out.sort(compareHistoryDesc);
+    return out.slice(0, 30);
   }
 
   function profileToLabel(key) {
@@ -511,11 +601,13 @@
   }
 
   async function loadHistory(state) {
+    var localProductItems = readLocalProductHistory();
+    var localImportItems = readLocalImportHistory();
     var resolved = resolveRemoteIndex();
     if (!resolved.ok) {
-      var localItems = readLocalImportHistory();
+      var localItems = mergeHistorySources([], localProductItems, localImportItems);
       state.el.historyStatus.textContent = localItems.length ? "Historial local cargado." : resolved.message;
-      state.items = mergeInjectedImportEvent(localItems);
+      state.items = localItems;
       renderHistoryList(state);
       return;
     }
@@ -523,16 +615,16 @@
     state.el.historyStatus.textContent = "Cargando historial...";
     var out = await resolved.remoteIndex.listHistoryEvents({ sessionToken: readSessionToken() || null });
     if (!out || out.ok !== true) {
-      var fallbackItems = readLocalImportHistory();
+      var fallbackItems = mergeHistorySources([], localProductItems, localImportItems);
       state.el.historyStatus.textContent = fallbackItems.length
         ? "Historial local cargado."
         : (out && out.message ? out.message : "No se pudo cargar el historial.");
-      state.items = mergeInjectedImportEvent(fallbackItems);
+      state.items = fallbackItems;
       renderHistoryList(state);
       return;
     }
 
-    state.items = mergeInjectedImportEvent(Array.isArray(out.items) ? out.items : []);
+    state.items = mergeHistorySources(Array.isArray(out.items) ? out.items : [], localProductItems, localImportItems);
     state.el.historyStatus.textContent = "Historial cargado.";
     renderHistoryList(state);
   }

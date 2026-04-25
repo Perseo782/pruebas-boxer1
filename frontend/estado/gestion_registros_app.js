@@ -32,6 +32,7 @@
   });
   var SHARED_BROWSER_STORE_KEY = "fase3_shared_browser_store_v1";
   var ALLERGEN_DISPLAY_SETTINGS_KEY = "appv2_allergen_card_display_v1";
+  var LOCAL_PRODUCT_HISTORY_KEY = "appv2_product_history_local_v1";
   var FASE11_DIAGNOSTICO_STORAGE_KEY = "fase11_diagnostico_actual_v1";
   var FEEDBACK_DURATION_MS = 2200;
   var DYNAMIC_SCRIPT_PROMISES = Object.create(null);
@@ -99,6 +100,10 @@
         return Object.assign({}, item || {});
       })
       : [];
+  }
+
+  function cloneValue(value) {
+    return value == null ? value : JSON.parse(JSON.stringify(value));
   }
 
   function makeFase11Id(prefix) {
@@ -338,6 +343,152 @@
       return globalScope.localStorage ? String(globalScope.localStorage.getItem("fase5_visible_session_token") || "").trim() : "";
     } catch (errToken) {
       return "";
+    }
+  }
+
+  function normalizeHistoryName(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9 ]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function readLocalProductHistory() {
+    try {
+      if (!globalScope.localStorage) return [];
+      var raw = globalScope.localStorage.getItem(LOCAL_PRODUCT_HISTORY_KEY);
+      if (!raw) return [];
+      var parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (errHistoryRead) {
+      return [];
+    }
+  }
+
+  function writeLocalProductHistory(items) {
+    try {
+      if (!globalScope.localStorage) return;
+      globalScope.localStorage.setItem(
+        LOCAL_PRODUCT_HISTORY_KEY,
+        JSON.stringify(Array.isArray(items) ? items.slice(0, 30) : [])
+      );
+    } catch (errHistoryWrite) {
+      // El historial visible no debe bloquear la operativa normal.
+    }
+  }
+
+  function compareHistoryDesc(a, b) {
+    var aMs = Date.parse(String(a && a.occurredAt || "")) || 0;
+    var bMs = Date.parse(String(b && b.occurredAt || "")) || 0;
+    if (aMs !== bMs) return bMs - aMs;
+    return String(b && b.eventId || "").localeCompare(String(a && a.eventId || ""));
+  }
+
+  function appendLocalProductHistory(record) {
+    if (!record || !record.eventType) return;
+    var next = [cloneValue(record)];
+    var eventId = String(record.eventId || "").trim();
+    readLocalProductHistory().forEach(function each(item) {
+      if (!item || !item.eventType) return;
+      if (eventId && String(item.eventId || "").trim() === eventId) return;
+      next.push(item);
+    });
+    next.sort(compareHistoryDesc);
+    writeLocalProductHistory(next);
+  }
+
+  function resolveVisibleHistoryApis() {
+    return {
+      core: globalScope.Fase7HistorialCore || null,
+      fields: globalScope.Fase7HistorialCampos || null
+    };
+  }
+
+  function buildVisibleHistoryActorId(state) {
+    var token = readSessionToken(state);
+    return token ? "sesion_" + token.slice(0, 8) : "usuario_local";
+  }
+
+  function findExistingActiveProductByName(store, rawName) {
+    if (!store || typeof store.listProductsForUi !== "function") return null;
+    var target = normalizeHistoryName(rawName);
+    if (!target) return null;
+    var items = store.listProductsForUi({ onlyPending: false, includeDeleted: false });
+    for (var i = 0; i < items.length; i += 1) {
+      var item = items[i];
+      var itemName = item && item.identidad
+        ? String(item.identidad.nombreNormalizado || item.identidad.nombre || "")
+        : "";
+      if (normalizeHistoryName(itemName) === target) {
+        return cloneValue(item);
+      }
+    }
+    return null;
+  }
+
+  function buildVisibleHistoryRecord(state, eventType, beforeRecord, afterRecord, forcedEventId) {
+    var apis = resolveVisibleHistoryApis();
+    if (!apis.core || !apis.fields) return null;
+    var actorId = buildVisibleHistoryActorId(state);
+    var options = {
+      occurredAt: new Date().toISOString()
+    };
+    if (String(forcedEventId || "").trim()) {
+      options.eventId = String(forcedEventId).trim();
+    }
+
+    if (eventType === apis.fields.EVENT_TYPES.PRODUCT_CREATED && afterRecord && afterRecord.id) {
+      return apis.core.construirRegistro(
+        apis.fields.EVENT_TYPES.PRODUCT_CREATED,
+        afterRecord.id,
+        afterRecord.identidad && afterRecord.identidad.nombre ? afterRecord.identidad.nombre : afterRecord.id,
+        actorId,
+        null,
+        null,
+        options
+      );
+    }
+
+    if (eventType === apis.fields.EVENT_TYPES.PRODUCT_UPDATED && beforeRecord && afterRecord && afterRecord.id) {
+      var diff = apis.core.construirDiff(beforeRecord, afterRecord);
+      if (!Array.isArray(diff.changedFields) || !diff.changedFields.length) return null;
+      return apis.core.construirRegistro(
+        apis.fields.EVENT_TYPES.PRODUCT_UPDATED,
+        afterRecord.id,
+        afterRecord.identidad && afterRecord.identidad.nombre ? afterRecord.identidad.nombre : afterRecord.id,
+        actorId,
+        diff.changedFields,
+        diff.changeDetail,
+        options
+      );
+    }
+
+    if (eventType === apis.fields.EVENT_TYPES.PRODUCT_DELETED && beforeRecord && beforeRecord.id) {
+      return apis.core.construirRegistro(
+        apis.fields.EVENT_TYPES.PRODUCT_DELETED,
+        beforeRecord.id,
+        beforeRecord.identidad && beforeRecord.identidad.nombre ? beforeRecord.identidad.nombre : beforeRecord.id,
+        actorId,
+        null,
+        null,
+        options
+      );
+    }
+
+    return null;
+  }
+
+  function recordVisibleHistory(state, eventType, beforeRecord, afterRecord, forcedEventId) {
+    try {
+      var record = buildVisibleHistoryRecord(state, eventType, beforeRecord, afterRecord, forcedEventId);
+      if (!record) return;
+      appendLocalProductHistory(record);
+    } catch (errVisibleHistory) {
+      // El historial visible no debe bloquear guardados ni borrados.
     }
   }
 
@@ -974,6 +1125,14 @@
       renderSyncStatus(state, out && out.error && out.error.message ? out.error.message : "No se pudo eliminar.");
       return false;
     }
+
+    recordVisibleHistory(
+      state,
+      "PRODUCT_DELETED",
+      localRecord,
+      null,
+      out && out.resultado && out.resultado.datos ? out.resultado.datos.historyEventId : null
+    );
 
     if (globalScope.Fase8SyncTombstone && typeof globalScope.Fase8SyncTombstone.markDeleted === "function") {
       globalScope.Fase8SyncTombstone.markDeleted(productId);
@@ -1629,6 +1788,7 @@
     }
     state.ui.add.busy = true;
     renderAddModal(state);
+    var previousExactProduct = findExistingActiveProductByName(state.store, state.ui.add.nombre);
     var photoResultReady = !!state.ui.add.photoResultReady;
     var photoRefs = cloneArray(state.ui.add.photoRefs);
     var photoVisuales = cloneVisuales(state.ui.add.photoVisuales);
@@ -1652,6 +1812,16 @@
     }
     var isMerge = !!(out.resultado && out.resultado.datos && out.resultado.datos.fusionExacta);
     var savedProduct = out.resultado && out.resultado.datos ? out.resultado.datos.producto : null;
+    if (savedProduct) {
+      var visibleHistoryType = isMerge && previousExactProduct ? "PRODUCT_UPDATED" : "PRODUCT_CREATED";
+      recordVisibleHistory(
+        state,
+        visibleHistoryType,
+        visibleHistoryType === "PRODUCT_UPDATED" ? previousExactProduct : null,
+        savedProduct,
+        out && out.resultado && out.resultado.datos ? out.resultado.datos.historyEventId : null
+      );
+    }
     closeAddModal(state);
     if (photoResultReady && savedProduct && photoVisuales.length) {
       seedProductVisualAsset(state, savedProduct.id, photoVisuales);
@@ -1759,6 +1929,9 @@
       showFeedback(state, "error", { message: "No hay producto para editar." });
       return;
     }
+    var previousRecord = state.store && typeof state.store.getProductById === "function"
+      ? state.store.getProductById(state.ui.edit.productId)
+      : null;
     state.ui.edit.busy = true;
     renderEditModal(state);
     var out = state.gestion.editarProducto(
@@ -1776,6 +1949,16 @@
         message: out && out.error && out.error.message ? out.error.message : "No se pudo editar el producto."
       });
       return;
+    }
+    var updatedProduct = out && out.resultado && out.resultado.datos ? out.resultado.datos.producto : null;
+    if (updatedProduct) {
+      recordVisibleHistory(
+        state,
+        "PRODUCT_UPDATED",
+        previousRecord,
+        updatedProduct,
+        out && out.resultado && out.resultado.datos ? out.resultado.datos.historyEventId : null
+      );
     }
     closeEditModal(state);
     refreshVisibleList(state, { skipAssetReload: true });
