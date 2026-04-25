@@ -569,6 +569,28 @@
     return map;
   }
 
+  function buildVisualAsset(thumbUrl, viewerUrl) {
+    var safeThumb = String(thumbUrl || "").trim();
+    var safeViewer = String(viewerUrl || "").trim();
+    if (!safeThumb && !safeViewer) return null;
+    return {
+      thumbUrl: safeThumb || safeViewer || "",
+      viewerUrl: safeViewer || safeThumb || ""
+    };
+  }
+
+  function seedProductVisualAsset(state, productId, visuales) {
+    var safeId = String(productId || "").trim();
+    var visual = Array.isArray(visuales) && visuales[0] ? visuales[0] : null;
+    if (!safeId || !visual) return;
+    var asset = buildVisualAsset(visual.thumbSrc, visual.viewerSrc || visual.thumbSrc);
+    if (!asset) return;
+    if (!state.assetVisualsByProductId) {
+      state.assetVisualsByProductId = Object.create(null);
+    }
+    state.assetVisualsByProductId[safeId] = asset;
+  }
+
   function sameStringArray(left, right) {
     var a = Array.isArray(left) ? left : [];
     var b = Array.isArray(right) ? right : [];
@@ -1511,6 +1533,11 @@
     if (!productId || !visual) return;
     var thumbSrc = String(visual.thumbSrc || "").trim();
     var viewerSrc = String(visual.viewerSrc || visual.thumbSrc || "").trim();
+    if (!thumbSrc && !viewerSrc) return;
+
+    seedProductVisualAsset(state, productId, visuales);
+    refreshVisibleList(state, { skipAssetReload: true });
+
     if (!isDataImageUrl(thumbSrc) && !isDataImageUrl(viewerSrc)) return;
 
     var runtime = getFirebaseRuntime();
@@ -1616,6 +1643,9 @@
     var isMerge = !!(out.resultado && out.resultado.datos && out.resultado.datos.fusionExacta);
     var savedProduct = out.resultado && out.resultado.datos ? out.resultado.datos.producto : null;
     closeAddModal(state);
+    if (photoResultReady && savedProduct && photoVisuales.length) {
+      seedProductVisualAsset(state, savedProduct.id, photoVisuales);
+    }
     refreshVisibleList(state, { skipAssetReload: true });
     showFeedback(state, isMerge ? "manual_merge" : "manual_add");
     if (photoResultReady && savedProduct && photoVisuales.length) {

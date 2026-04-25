@@ -44,6 +44,7 @@
       margin: 0;
       min-height: 100vh;
       padding: 16px 12px 24px;
+      overflow-x: hidden;
       color: var(--text);
       font-family: var(--font-family-operativa);
       background:
@@ -54,13 +55,14 @@
     }
     /* Vista movil estandar (mismo ancho que el resto de pantallas) */
     .wrap {
-      width: min(100%, 395px);
-      max-width: 395px;
+      width: min(calc(100vw - 24px), 390px);
+      max-width: 390px;
       margin: 0;
       display: grid;
       gap: 14px;
     }
     .panel {
+      min-width: 0;
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 24px;
@@ -219,6 +221,8 @@
       border-radius: 12px;
       padding: 14px;
       background: var(--bg-surface);
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
     .detail-box ul {
       margin: 12px 0 0;
@@ -227,6 +231,7 @@
     .empty { color: var(--muted); }
     .fase11-checks {
       width: 100%;
+      table-layout: fixed;
       border-collapse: collapse;
       margin-top: 12px;
       overflow-wrap: anywhere;
@@ -259,6 +264,8 @@
       border-radius: 12px;
       padding: 12px;
       background: var(--bg-surface);
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
     .fase11-event {
       margin: 0 0 8px;

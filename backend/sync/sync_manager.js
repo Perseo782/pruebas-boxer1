@@ -10,6 +10,27 @@
     heartbeatMs: 12000
   };
 
+  var historialCore = null;
+  var historialCampos = null;
+  if (typeof module !== "undefined" && module.exports) {
+    try {
+      historialCore = require("../historial/historial_core.js");
+    } catch (errHistoryCore) {
+      historialCore = null;
+    }
+    try {
+      historialCampos = require("../historial/historial_campos.js");
+    } catch (errHistoryFields) {
+      historialCampos = null;
+    }
+  }
+  if (!historialCore && globalScope && globalScope.Fase7HistorialCore) {
+    historialCore = globalScope.Fase7HistorialCore;
+  }
+  if (!historialCampos && globalScope && globalScope.Fase7HistorialCampos) {
+    historialCampos = globalScope.Fase7HistorialCampos;
+  }
+
   function nowIso() {
     return new Date().toISOString();
   }
@@ -33,6 +54,36 @@
 
   function buildSyncId() {
     return "sync_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 7);
+  }
+
+  function buildActorId(sessionToken) {
+    var token = asText(sessionToken);
+    return token ? "sesion_" + token.slice(0, 8) : "usuario_local";
+  }
+
+  function buildHistoryEventForPendingUpload(product, existingRecord, sessionToken) {
+    if (!historialCore || !historialCampos || !product || !product.id) return null;
+    var actorId = buildActorId(sessionToken);
+    if (existingRecord) {
+      var diff = historialCore.construirDiff(existingRecord, product);
+      if (!Array.isArray(diff.changedFields) || !diff.changedFields.length) return null;
+      return historialCore.construirRegistro(
+        historialCampos.EVENT_TYPES.PRODUCT_UPDATED,
+        product.id,
+        product.identidad && product.identidad.nombre ? product.identidad.nombre : product.id,
+        actorId,
+        diff.changedFields,
+        diff.changeDetail
+      );
+    }
+    return historialCore.construirRegistro(
+      historialCampos.EVENT_TYPES.PRODUCT_CREATED,
+      product.id,
+      product.identidad && product.identidad.nombre ? product.identidad.nombre : product.id,
+      actorId,
+      null,
+      null
+    );
   }
 
   function getEstadoApi() {
@@ -211,9 +262,22 @@
         var lastErr = null;
 
         for (var attempt = 1; attempt <= config.retryMax; attempt += 1) {
+          var existingRecord = null;
+          var needsHistoryRead = Number(product && product.sistema && product.sistema.rowVersion || 0) > 1;
+          if (needsHistoryRead && remoteIndex && typeof remoteIndex.getProductRecordById === "function") {
+            var existingOut = await remoteIndex.getProductRecordById({
+              productId: product.id,
+              sessionToken: sessionToken
+            });
+            if (existingOut && existingOut.ok === true) {
+              existingRecord = existingOut.item || null;
+            }
+          }
+          var historyEvent = buildHistoryEventForPendingUpload(product, existingRecord, sessionToken);
           var out = await remoteIndex.upsertProductRecord({
             product: product,
-            sessionToken: sessionToken
+            sessionToken: sessionToken,
+            historyEvent: historyEvent
           });
           if (out && out.ok === true) {
             ok = true;
