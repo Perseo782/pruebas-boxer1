@@ -180,7 +180,7 @@
       visible: count > 0,
       count: count,
       firstDraftId: firstDraft ? String(firstDraft.draftId || "").trim() : "",
-      text: count === 1 ? "1 Pendiente de revisiÃ³n" : count + " Pendientes de revisiÃ³n",
+      text: count === 1 ? "1 Pendiente de revisión" : count + " Pendientes de revisión",
       url: buildRevisionUrl(firstDraft ? firstDraft.draftId : "")
     };
   }
@@ -347,6 +347,7 @@
     if (safeKind === "photo_saved") return "Producto guardado desde foto.";
     if (safeKind === "photo_review") return "Foto enviada a revision.";
     if (safeKind === "photo_blocked") return "La foto necesita revision manual.";
+    if (safeKind === "photo_ready") return "Resultado listo. Revisa y guarda si es correcto.";
     if (safeKind === "error") return String(details.message || "No se pudo completar la accion.");
     return String(details.message || "Accion completada.");
   }
@@ -364,14 +365,14 @@
 
   function buildCardSummary(model) {
     var count = Math.max(0, Number(model && model.alergenosCount || 0));
-    if (count <= 0) return "âœ“ Sin alergenos";
+    if (count <= 0) return "\u2713 Sin al\u00e9rgenos";
     if (count === 1) return "1 alergeno";
     return count + " alergenos";
   }
 
   function buildCardAllergenIconsHtml(model) {
     var ids = normalizeAllergenList(model && model.alergenosIds);
-    if (!ids.length) return "<p class=\"card-allergens card-allergens-empty\"><span class=\"card-allergens-text\">Sin alÃ©rgenos</span></p>";
+    if (!ids.length) return "<p class=\"card-allergens card-allergens-empty\"><span class=\"card-allergens-text\">Sin alérgenos</span></p>";
     return (
       "<div class=\"card-allergen-icons\" aria-label=\"" + escapeHtml(model.alergenosTexto || "") + "\">" +
         ids.map(function mapIcon(allergenId) {
@@ -889,7 +890,7 @@
       selectedAllergenIds: [],
       photoStatus: "",
       photoStatusKind: "",
-      photoSummary: "TodavÃ­a no has elegido fotos.",
+      photoSummary: "Todavía no has elegido fotos.",
       photoTarget: "envase",
       envasePreviewUrl: "",
       etiquetaPreviewUrl: ""
@@ -928,13 +929,16 @@
     if (!ui.open) return;
     state.el.addProductName.value = ui.nombre;
     renderPickerButtons(state.el.addAllergenGrid, ui.selectedAllergenIds, "add");
-    setElementText(state.el.addPhotoSummary, ui.photoSummary || "TodavÃ­a no has elegido fotos.");
+    setElementText(state.el.addPhotoSummary, ui.photoSummary || "Todavía no has elegido fotos.");
     setElementText(state.el.addPhotoStatus, ui.photoStatus || "");
     state.el.addPhotoStatus.classList.toggle("is-error", ui.photoStatusKind === "error");
     state.el.addPhotoStatus.classList.toggle("is-ok", ui.photoStatusKind === "ok");
+    state.el.addPhotoStatus.classList.toggle("is-passport-green", ui.photoStatusKind === "passport-green");
+    state.el.addPhotoStatus.classList.toggle("is-passport-orange", ui.photoStatusKind === "passport-orange");
+    state.el.addPhotoStatus.classList.toggle("is-passport-red", ui.photoStatusKind === "passport-red");
     state.el.photoOriginCopy.textContent = ui.photoTarget === "etiqueta"
-      ? "Etiquetado: elige CÃ¡mara o GalerÃ­a"
-      : "Envase: elige CÃ¡mara o GalerÃ­a";
+      ? "Etiquetado: elige Cámara o Galería"
+      : "Envase: elige Cámara o Galería";
     state.el.photoSlotEnvase.innerHTML = ui.envasePreviewUrl
       ? "<img src=\"" + escapeHtml(ui.envasePreviewUrl) + "\" alt=\"Envase\">"
       : "<span><strong>ENVASE</strong><small>Toca para elegir</small></span>";
@@ -1008,7 +1012,7 @@
     }
     state.ui.add.photoSummary = names.length
       ? names.length + " foto(s): " + names.join(" | ")
-      : "TodavÃ­a no has elegido fotos.";
+      : "Todavía no has elegido fotos.";
     renderAddModal(state);
   }
 
@@ -1017,8 +1021,8 @@
     if (!state.el.photoOriginModal) return;
     state.ui.add.photoTarget = String(target || "envase") === "etiqueta" ? "etiqueta" : "envase";
     state.el.photoOriginCopy.textContent = state.ui.add.photoTarget === "etiqueta"
-      ? "Etiquetado: elige CÃ¡mara o GalerÃ­a"
-      : "Envase: elige CÃ¡mara o GalerÃ­a";
+      ? "Etiquetado: elige Cámara o Galería"
+      : "Envase: elige Cámara o Galería";
     state.el.photoOriginModal.hidden = false;
     state.el.photoOriginModal.setAttribute("aria-hidden", "false");
   }
@@ -1105,16 +1109,58 @@
     return state.ui.photoRuntimePromise;
   }
 
-  function createIntegratedPhotoSaveDestination(state, fotoRefs) {
-    return function saveDestination(routePayload) {
-      var finalData = routePayload && routePayload.datos ? routePayload.datos : {};
-      var propuesta = finalData.propuestaFinal || {};
-      return state.store.createOrMergeByNormalizedName({
-        nombre: propuesta.nombre || "Producto analizado",
-        alergenos: Array.isArray(propuesta.alergenos) ? propuesta.alergenos : [],
-        origenAlta: "foto",
-        fotoRefs: Array.isArray(fotoRefs) ? fotoRefs.slice(0, 2) : []
-      });
+  function getPhotoAnalysisFinalData(response) {
+    return response && response.resultado && response.resultado.datos
+      ? response.resultado.datos
+      : {};
+  }
+
+  function hasPhotoAnalysisResult(response) {
+    var finalData = getPhotoAnalysisFinalData(response);
+    return !!(finalData.propuestaFinal || finalData.decision);
+  }
+
+  function resolvePhotoPassport(finalData, outcome) {
+    var decision = finalData && finalData.decision ? finalData.decision : {};
+    var passport = String(decision.pasaporte || "").trim().toUpperCase();
+    if (passport) return passport;
+    if (outcome === "guardado") return "VERDE";
+    if (outcome === "bloqueado") return "ROJO";
+    return "NARANJA";
+  }
+
+  function getPhotoPassportStatusKind(passport) {
+    if (passport === "VERDE") return "passport-green";
+    if (passport === "NARANJA") return "passport-orange";
+    return "passport-red";
+  }
+
+  function buildPhotoAnalysisStatus(response, outcome) {
+    var finalData = getPhotoAnalysisFinalData(response);
+    var passport = resolvePhotoPassport(finalData, outcome);
+    var propuesta = finalData.propuestaFinal || {};
+    var nombre = String(propuesta.nombre || "").trim();
+    var label = passport === "VERDE"
+      ? "Pasaporte VERDE"
+      : passport === "NARANJA"
+        ? "Pasaporte NARANJA"
+        : "Pasaporte ROJO";
+    return label + ". Revisa y confirma antes de guardar" + (nombre ? ": " + nombre : ".");
+  }
+
+  function applyPhotoAnalysisToAddModal(state, response, outcome) {
+    var finalData = getPhotoAnalysisFinalData(response);
+    var propuesta = finalData.propuestaFinal || {};
+    var passport = resolvePhotoPassport(finalData, outcome);
+    state.ui.add.nombre = String(propuesta.nombre || "").trim();
+    state.ui.add.selectedAllergenIds = normalizeAllergenList(propuesta.alergenos || []);
+    state.ui.add.photoStatus = buildPhotoAnalysisStatus(response, outcome);
+    state.ui.add.photoStatusKind = getPhotoPassportStatusKind(passport);
+  }
+
+  function createManualConfirmationDestination() {
+    return function manualConfirmationDestination() {
+      return { ok: true, routed: false, manualConfirmation: true };
     };
   }
 
@@ -1169,12 +1215,12 @@
           sessionToken: readSessionToken(state),
           backendUrl: backendUrl,
           contextoAlta: "normal",
-          reviewPolicy: "non_guardar"
+          reviewPolicy: "disabled"
         },
         {
           store: state.store,
           visibleRuntime: state.runtime,
-          saveDestination: createIntegratedPhotoSaveDestination(state, fotoRefs)
+          openRevisionDestination: createManualConfirmationDestination()
         }
       );
       var outcome = typeof globalScope.Fase3AltaFotoVisibleApp.classifyVisibleOutcome === "function"
@@ -1182,6 +1228,12 @@
         : "revision";
       state.ui.add.busy = false;
       if (!response || response.ok !== true) {
+        if (hasPhotoAnalysisResult(response)) {
+          applyPhotoAnalysisToAddModal(state, response, outcome);
+          renderAddModal(state);
+          showFeedback(state, "photo_ready");
+          return;
+        }
         state.ui.add.photoStatus = response && response.error && response.error.message
           ? response.error.message
           : "No se pudo completar el analisis.";
@@ -1190,18 +1242,9 @@
         showFeedback(state, "error", { message: state.ui.add.photoStatus });
         return;
       }
-      closeAddModal(state);
-      refreshVisibleList(state, { skipAssetReload: true });
-      renderRevisionPendingButton(state);
-      if (outcome === "guardado") {
-        showFeedback(state, "photo_saved");
-        return;
-      }
-      if (outcome === "bloqueado") {
-        showFeedback(state, "photo_blocked");
-        return;
-      }
-      showFeedback(state, "photo_review");
+      applyPhotoAnalysisToAddModal(state, response, outcome);
+      renderAddModal(state);
+      showFeedback(state, "photo_ready");
     } catch (errPhoto) {
       state.ui.add.busy = false;
       state.ui.add.photoStatus = errPhoto && errPhoto.message ? errPhoto.message : "No se pudo leer la foto.";

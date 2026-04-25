@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AlÃ©rgenos</title>
+  <title>Alérgenos</title>
   <link rel="stylesheet" href="../styles/app_brand_tokens.css">
   <style>
     @font-face {
@@ -1174,6 +1174,18 @@
       color: var(--accent-strong);
     }
 
+    .photo-status.is-passport-green {
+      color: #2f7d32;
+    }
+
+    .photo-status.is-passport-orange {
+      color: #b66a00;
+    }
+
+    .photo-status.is-passport-red {
+      color: var(--danger);
+    }
+
     .empty {
       padding: 18px;
       border-radius: var(--radius-lg);
@@ -1301,7 +1313,7 @@
     <section class="hero">
       <div class="hero-title">
         <div>
-          <h1>AlÃ©rgenos</h1>
+          <h1>Alérgenos</h1>
           <p class="hero-help screen-only-mobile">Pantalla principal</p>
         </div>
       </div>
@@ -1360,7 +1372,7 @@
   </main>
 
   <div class="bottom-add-bar">
-    <button id="open-add-product" class="bottom-add-button" type="button">+ AÃ±adir producto</button>
+    <button id="open-add-product" class="bottom-add-button" type="button">+ Añadir producto</button>
   </div>
 
   <div id="feedback-toast" class="feedback-toast" hidden aria-live="polite"></div>
@@ -1369,7 +1381,7 @@
     <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="add-modal-title">
       <div class="sheet-head">
         <div class="sheet-copy">
-          <h2 id="add-modal-title">AÃ±adir producto</h2>
+          <h2 id="add-modal-title">Añadir producto</h2>
           <p>Trabajas dentro de la pantalla principal. Puedes guardar manual o arrancar por foto.</p>
         </div>
         <button id="close-add-product" class="sheet-close" type="button" aria-label="Cerrar">x</button>
@@ -1383,7 +1395,7 @@
             <input id="add-product-name" class="text-input" type="text" maxlength="63" placeholder="Ej: Galletas integrales">
           </div>
           <div class="field-group">
-            <label>AlÃ©rgenos</label>
+            <label>Alérgenos</label>
             <div id="add-allergen-grid" class="allergen-picker"></div>
           </div>
           <div class="sheet-actions">
@@ -1393,7 +1405,7 @@
 
         <div id="add-photo-pane" class="sheet-section">
           <p class="sheet-section-title">Agregado por foto</p>
-          <button id="open-photo-origin" class="origin-button" type="button">CÃ¡mara o galerÃ­a</button>
+          <button id="open-photo-origin" class="origin-button" type="button">Cámara o galería</button>
           <input id="add-photo-file-1" class="file-input" type="file" accept="image/*" hidden>
           <input id="add-photo-file-2" class="file-input" type="file" accept="image/*" hidden>
           <div class="photo-slots">
@@ -1404,7 +1416,7 @@
               <span><strong>Etiquetado</strong><small>Toca para elegir</small></span>
             </button>
           </div>
-          <p id="add-photo-summary" class="photo-summary">TodavÃ­a no has elegido fotos.</p>
+          <p id="add-photo-summary" class="photo-summary">Todavía no has elegido fotos.</p>
           <p id="add-photo-status" class="photo-status"></p>
           <div class="sheet-actions">
             <button id="analyze-photo-product" class="sheet-primary" type="button">Analizar etiquetado</button>
@@ -1423,7 +1435,7 @@
       <div class="sheet-head">
         <div class="sheet-copy">
           <h2 id="edit-modal-title">Editar producto</h2>
-          <p>Corrige nombre y alÃ©rgenos sin salir de la lista principal.</p>
+          <p>Corrige nombre y alérgenos sin salir de la lista principal.</p>
         </div>
         <button id="close-edit-product" class="sheet-close" type="button" aria-label="Cerrar">x</button>
       </div>
@@ -1436,7 +1448,7 @@
             <input id="edit-product-name" class="text-input" type="text" maxlength="63" placeholder="Nombre del producto">
           </div>
           <div class="field-group">
-            <label>AlÃ©rgenos</label>
+            <label>Alérgenos</label>
             <div id="edit-allergen-grid" class="allergen-picker"></div>
           </div>
           <div class="sheet-actions">
@@ -1454,10 +1466,10 @@
   <div id="photo-origin-modal" class="origin-modal" hidden aria-hidden="true">
     <section class="origin-panel" role="dialog" aria-modal="true" aria-labelledby="photo-origin-title">
       <h3 id="photo-origin-title">Seleccionar origen</h3>
-      <p id="photo-origin-copy">Envase: elige CÃ¡mara o GalerÃ­a</p>
+      <p id="photo-origin-copy">Envase: elige Cámara o Galería</p>
       <div class="origin-actions">
-        <button id="origin-camera" class="sheet-secondary" type="button">CÃ¡mara</button>
-        <button id="origin-gallery" class="sheet-secondary" type="button">GalerÃ­a</button>
+        <button id="origin-camera" class="sheet-secondary" type="button">Cámara</button>
+        <button id="origin-gallery" class="sheet-secondary" type="button">Galería</button>
       </div>
       <button id="origin-cancel" class="sheet-primary" type="button">Cancelar</button>
     </section>

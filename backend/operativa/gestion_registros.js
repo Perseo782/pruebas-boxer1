@@ -116,15 +116,15 @@
       altramuces: "Altramuces",
       apio: "Apio",
       cacahuetes: "Cacahuetes",
-      crustaceos: "CrustÃ¡ceos",
+      crustaceos: "Crustáceos",
       frutos_secos: "Frutos secos",
       gluten: "Gluten",
       huevos: "Huevos",
-      lacteos: "LÃ¡cteos",
+      lacteos: "Lácteos",
       moluscos: "Moluscos",
       mostaza: "Mostaza",
       pescado: "Pescado",
-      sesamo: "SÃ©samo",
+      sesamo: "Sésamo",
       soja: "Soja",
       sulfitos: "Sulfitos"
     };
@@ -164,7 +164,7 @@
 
   function buildAllergenSummary(record) {
     var alergenos = normalizeAllergenList(record && record.alergenos);
-    if (!alergenos.length) return "Sin alÃ©rgenos";
+    if (!alergenos.length) return "Sin alérgenos";
     return alergenos.map(toHumanAllergenName).join(", ");
   }
 

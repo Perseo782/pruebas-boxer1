@@ -1,6 +1,6 @@
 ﻿/**
  * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
- * Boxer1_Core Â· PASO 6 Â· RESCATE AVANZADO
+ * Boxer1_Core · PASO 6 · RESCATE AVANZADO
  * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  * Adaptado al contrato real de Trastienda para Gemini.
  *
@@ -197,54 +197,54 @@ function B1_normalizarSubrespuestaIARescate(subrespuestaIA) {
  * Construye el prompt para Gemini.
  * CAMBIADO v2: estados corregida / ya_valida / no_resuelta
  * Este prompt es la fuente base. B1_hotfix_71631.js lo sobreescribe en runtime
- * con la misma lÃ³gica de estados, por lo que ambas versiones son coherentes.
+ * con la misma lógica de estados, por lo que ambas versiones son coherentes.
  */
 function _B1_construirPromptRescate_legacy_unused(slots) {
   const instrucciones = [
-    'REPARADOR OCR DE ETIQUETAS ALIMENTARIAS Â· BOXER 1',
+    'REPARADOR OCR DE ETIQUETAS ALIMENTARIAS · BOXER 1',
     '',
     'CONTEXTO: Etiquetas alimentarias. Seguridad alimentaria. Supermercados.',
     '',
-    'REGLA CRÃTICA:',
+    'REGLA CRÍTICA:',
     '- Debes devolver UNA fila por cada slot recibido.',
     '- No se permite omitir slots.',
     '- No se permite texto extra fuera del JSON.',
     '',
     'ESTADOS PERMITIDOS POR SLOT (exactamente uno de los tres):',
-    '- corregida    â†’ el OCR estaba roto y propones una correcciÃ³n concreta.',
-    '- ya_valida    â†’ el texto ya era correcto para la aplicaciÃ³n. No necesitaba cambio.',
-    '- no_resuelta  â†’ no puedes corregir con seguridad. No inventes.',
+    '- corregida    → el OCR estaba roto y propones una corrección concreta.',
+    '- ya_valida    → el texto ya era correcto para la aplicación. No necesitaba cambio.',
+    '- no_resuelta  -> no puedes corregir con seguridad. No inventes.',
     '',
     'REGLAS DE SALIDA:',
     '- Si estado = corregida,   solucion es obligatoria y diferente al original.',
     '- Si estado = ya_valida,   solucion debe ser igual al texto original.',
-    '- Si estado = no_resuelta, solucion debe ir vacÃ­a y motivo debe ser corto.',
+    '- Si estado = no_resuelta, solucion debe ir vacía y motivo debe ser corto.',
     '',
     'REGLAS ESPECIALES:',
     '',
-    '1. AMBIGÃœEDAD ENTRE ALÃ‰RGENOS:',
-    '   Si dos alÃ©rgenos tienen sentido (maÃ­z/manÃ­, soja/soya):',
-    '   â†’ Usa imagen para desempatar.',
-    '   â†’ Si imagen borrosa â†’ estado="no_resuelta"',
+    '1. AMBIGÜEDAD ENTRE ALÉRGENOS:',
+    '   Si dos alérgenos tienen sentido (maíz/maní, soja/soya):',
+    '   -> Usa imagen para desempatar.',
+    '   -> Si imagen borrosa -> estado="no_resuelta"',
     '   PROHIBIDO elegir al azar.',
     '',
     '2. CIFRAS Y PESOS:',
-    '   Si nÃºmero roto y la imagen NO permite ver 100% claro:',
-    '   â†’ estado="no_resuelta"',
+    '   Si número roto y la imagen NO permite ver 100% claro:',
+    '   -> estado="no_resuelta"',
     '   NO aproximes. El peso es dato legal.',
     '',
-    '3. VACÃO ILEGIBLE:',
-    '   Si imagen es borrÃ³n/destello blanco:',
-    '   â†’ estado="no_resuelta"',
-    '   Preferible error marcado que invenciÃ³n.',
+    '3. VACÍO ILEGIBLE:',
+    '   Si imagen es borrón/destello blanco:',
+    '   -> estado="no_resuelta"',
+    '   Preferible error marcado que invención.',
     '',
     '4. TEXTO YA CORRECTO:',
-    '   Si el texto del slot ya estÃ¡ bien leÃ­do, usa ya_valida â€” nunca lo marques como error.',
+    '   Si el texto del slot ya está bien leído, usa ya_valida — nunca lo marques como error.',
     '',
     '5. NO TRADUCIR:',
     '   Conserva idioma original del texto.',
     '',
-    'FORMATO SALIDA (JSON PURO â€” SIN MARKDOWN):',
+    'FORMATO SALIDA (JSON PURO — SIN MARKDOWN):',
     '{',
     '  "correcciones": [',
     '    {"slotId":"B1", "estado":"corregida",   "solucion":"harina"},',
@@ -263,7 +263,7 @@ function _B1_construirPromptRescate_legacy_unused(slots) {
     instrucciones.push(`OCR: "${slot.textoOriginal}"`);
     instrucciones.push(`Contexto: ${slot.contexto}`);
     if (slot.roiBase64) {
-      instrucciones.push('[Imagen ROI adjunta â€” validaciÃ³n visual obligatoria]');
+      instrucciones.push('[Imagen ROI adjunta — validación visual obligatoria]');
     }
   });
 
@@ -275,7 +275,7 @@ function _B1_construirPromptRescate_legacy_unused(slots) {
 
 function B1_construirPromptRescate(slots) {
   const instrucciones = [
-    'REPARADOR OCR DE ETIQUETAS ALIMENTARIAS Â· BOXER 1',
+    'REPARADOR OCR DE ETIQUETAS ALIMENTARIAS · BOXER 1',
     '',
     'CONTEXTO: Etiquetas alimentarias. Seguridad alimentaria. Supermercados.',
     '',
@@ -435,7 +435,7 @@ async function B1_enviarRescateGemini(textoBase, slots, sessionToken, urlTrastie
   if (!response.ok || !respuesta || respuesta.ok !== true) {
     const err = (respuesta && respuesta.error) || {};
     throw B1_crearErrorUpstream({
-      message: err.mensaje || err.message || `Trastienda respondiÃ³ ${response.status || 'sin status'} en rescate Gemini`,
+      message: err.mensaje || err.message || `Trastienda respondió ${response.status || 'sin status'} en rescate Gemini`,
       upstreamCode: err.codigo || `HTTP_${response.status || 'UNKNOWN'}`,
       upstreamModule: err.modulo || 'TRASTIENDA',
       raw: respuesta
@@ -495,7 +495,7 @@ function _parsearRespuestaGemini(respuestaTrastienda) {
   }
 
   if (!payload || typeof payload !== 'object') {
-    return { ok: false, correcciones: [], simetria: null, raw: payload, parseError: 'respuestaGemini ausente o invÃ¡lida' };
+    return { ok: false, correcciones: [], simetria: null, raw: payload, parseError: 'respuestaGemini ausente o inválida' };
   }
 
   return {
@@ -582,7 +582,7 @@ async function B1_ejecutarRescate(loteRescate, textoBase, cronometro, sessionTok
       correcciones: [],
       slotsEnviados: 0,
       slotsDevueltos: 0,
-      razon: 'Sin tiempo para ningÃºn lote de rescate.',
+      razon: 'Sin tiempo para ningún lote de rescate.',
       erroresLote: 0,
       upstreamError: null,
       tiempos: {

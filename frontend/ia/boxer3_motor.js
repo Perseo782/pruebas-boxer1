@@ -58,7 +58,7 @@ function corregirUnidades(texto) {
   // El sÃ­mbolo de envasado "â„®" suele salir del OCR como una "e" pegada a la unidad:
   // "1000 ge" / "500 mle". Lo limpiamos solo en tokens numÃ©ricos de peso/volumen.
   res = res.replace(
-    /(\d+(?:[.,]\d+)?)\s*(kg|g|gr|grs|ml|cl|dl|lt|l|oz|lb)\s*[eEâ„®]\b/gi,
+    /(\d+(?:[.,]\d+)?)\s*(kg|g|gr|grs|ml|cl|dl|lt|l|oz|lb)\s*[eE\u212e]\b/gi,
     "$1 $2"
   );
   return res;
@@ -153,7 +153,7 @@ function distanciaOCR(s, t) {
 
 // Busca la palabra mÃ¡s cercana en todo el lÃ©xico.
 // Devuelve la palabra reparada si la distancia normalizada < umbral, o null.
-var UMBRAL_REPARACION = 0.28; // 0.35 permitÃ­a "ascorbido"â†’"escurrido" (0.33) â€” bajado a 0.28
+var UMBRAL_REPARACION = 0.28; // 0.35 permitía "ascorbido"→"escurrido" (0.33) — bajado a 0.28
 
 // repararToken: busca en todas las familias del lÃ©xico
 function repararToken(tokenNorm) {
@@ -222,7 +222,7 @@ function repararLineasCriticas(texto) {
                            UNIDADES_PATRON.test(lineas[i + 1]);
 
     if (tieneNumUnidad) {
-      resultado.push(repararTokensDeLinea(linea, false)); // lÃ©xico completo
+      resultado.push(repararTokensDeLinea(linea, false)); // léxico completo
     } else if (esEtiquetaVecina) {
       resultado.push(repararTokensDeLinea(linea, true));  // solo etiquetas
     } else {
@@ -391,8 +391,8 @@ function clasificarLinea(lineaNorm) {
   // Descarte secundario â€” solo si no hay etiqueta positiva
   if (/ingredientes?:|ingredients?:|contiene:|inhaltsstoffe:/.test(lineaNorm)) return "D";
   if (/%/.test(lineaNorm))             return "D";
-  if (/[â‚¬$Â£]/.test(lineaNorm))         return "D";
-  if (/grados|Â°[cf]/.test(lineaNorm))  return "D";
+  if (/[€$£]/.test(lineaNorm))         return "D";
+  if (/grados|°[cf]/.test(lineaNorm))  return "D";
   // Slash solo es descarte si NO fue normalizado a multipack (x) por normalizarSlashMultipack
   if (/\d+\/\d+/.test(lineaNorm))      return "D";
 
@@ -514,7 +514,7 @@ function extraerCandidatos(textoLimpio) {
       var matchStart = match.index;
       var lookback = lineaOrig.substring(Math.max(0, matchStart - 5), matchStart);
       if (/\d\s*-\s*$/.test(lookback)) {
-        descartados.push({ token: tokenOrig, linea: lineaOrig, motivo: "segundo extremo de rango numÃ©rico", clase: "D" });
+        descartados.push({ token: tokenOrig, linea: lineaOrig, motivo: "segundo extremo de rango numérico", clase: "D" });
         continue;
       }
 
@@ -535,7 +535,7 @@ function extraerCandidatos(textoLimpio) {
       // g < 10 sin multipack: descarte salvo etiqueta neto/escurrido explÃ­cita
       if ((unidad === "g" || unidad === "gr" || unidad === "grs") && !esMulti && valor1 < 10) {
         if (clase !== "A1" && clase !== "A2") {
-          descartados.push({ token: tokenOrig, linea: lineaOrig, motivo: "g < 10 sin neto explÃ­cito", clase: "D" });
+          descartados.push({ token: tokenOrig, linea: lineaOrig, motivo: "g < 10 sin neto explícito", clase: "D" });
           continue;
         }
       }
@@ -578,7 +578,7 @@ var VOLUMEN = ["ml", "l", "cl", "dl", "lt", "litro", "litros"];
 function tipoFisico(unidadNorm) {
   if (MASAS.indexOf(unidadNorm) !== -1)   return "masa";
   if (VOLUMEN.indexOf(unidadNorm) !== -1) return "volumen";
-  return "otro_" + unidadNorm; // desconocida â†’ nunca fusiona con nada
+  return "otro_" + unidadNorm; // desconocida -> nunca fusiona con nada
 }
 
 function colapsarDuplicados(candidatos) {
@@ -629,12 +629,12 @@ function inferenciaBrutoNeto(cBruto, cNeutro) {
     return { aplicable: false, motivo: "neutro no es menor que bruto" };
   }
   if (cNeutro.valorNorm < 50) {
-    return { aplicable: false, motivo: "neutro (" + cNeutro.valorNorm + ") < 50 â€” posible porciÃ³n" };
+    return { aplicable: false, motivo: "neutro (" + cNeutro.valorNorm + ") < 50 — posible porción" };
   }
   return {
     aplicable: true,
     resultado: cNeutro.tokenOriginal,
-    motivo:    "inferencia: " + cNeutro.tokenOriginal + " (neutro<bruto) â†’ neto"
+      motivo:    "inferencia: " + cNeutro.tokenOriginal + " (neutro<bruto) -> neto"
   };
 }
 
@@ -677,7 +677,7 @@ function scoringNeutros(candidatos, totalLineas) {
     // Sin contexto sospechoso: la lÃ­nea no contiene aÃ±o 4 dÃ­gitos, temperatura negativa ni "lote"
     var lineaNorm = c.lineaOrigen;
     if (!/\b(?:20\d{2}|19\d{2})\b/.test(lineaNorm) &&
-        !/[-\u2212]\s*\d+\s*[Â°cCfF]/.test(lineaNorm) &&
+        !/[-\u2212]\s*\d+\s*[°cCfF]/.test(lineaNorm) &&
         !/\blote\b/i.test(lineaNorm)) {
       pts.push({ r: "sin_ctx_sospechoso", p: 10 }); score += 10;
     }
@@ -695,7 +695,7 @@ function formatearNumero(n) {
   var r = Math.round(n * 10000) / 10000; // evita ruido flotante
   var s = r.toString();
   if (s.indexOf(".") !== -1) {
-    s = s.replace(/\.?0+$/, ""); // elimina ceros finales: "1.50" â†’ "1.5", "1500.0" â†’ "1500"
+  s = s.replace(/\.?0+$/, ""); // elimina ceros finales: "1.50" -> "1.5", "1500.0" -> "1500"
   }
   return s;
 }
@@ -742,7 +742,7 @@ function clusterCercano(lista, umbral) {
 
 function decidir(candidatos, textoLimpio) {
   if (candidatos.length === 0) {
-    return { resultado: null, motivo: "ningÃºn candidato", via: "sin_candidatos" };
+    return { resultado: null, motivo: "ningún candidato", via: "sin_candidatos" };
   }
 
   // Colapsar duplicados equivalentes (bilingÃ¼e, misma cantidad expresada dos veces)
@@ -755,7 +755,7 @@ function decidir(candidatos, textoLimpio) {
 
   // â”€â”€â”€ VÃA A1 â€” escurrido explÃ­cito â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (a1.length === 1) {
-    return { resultado: formatearSalida(a1[0]), motivo: "escurrido explÃ­cito", via: "clase_A1", candidatos: colapsados };
+    return { resultado: formatearSalida(a1[0]), motivo: "escurrido explícito", via: "clase_A1", candidatos: colapsados };
   }
   if (a1.length > 1) {
     var a1m = a1.filter(function(c) { return  c.esMultipack; });
@@ -773,7 +773,7 @@ function decidir(candidatos, textoLimpio) {
     // Cluster A1 simples â‰¤5% â†’ mismo escurrido deformado por OCR/idioma
     if (a1s.length > 1 && clusterCercano(a1s, 0.05)) {
       var repA1 = elegirRepresentante(a1s);
-      return { resultado: formatearSalida(repA1), motivo: "cluster A1 â‰¤5%: representante por evidencia/mediana", via: "clase_A1", candidatos: colapsados };
+    return { resultado: formatearSalida(repA1), motivo: "cluster A1 <=5%: representante por evidencia/mediana", via: "clase_A1", candidatos: colapsados };
     }
 
     // Spread >5% y sin multipack confirmado â†’ ambigÃ¼edad real â†’ campo vacÃ­o
@@ -782,7 +782,7 @@ function decidir(candidatos, textoLimpio) {
 
   // â”€â”€â”€ VÃA A2 â€” neto explÃ­cito â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (a2.length === 1) {
-    return { resultado: formatearSalida(a2[0]), motivo: "neto explÃ­cito", via: "clase_A2", candidatos: colapsados };
+    return { resultado: formatearSalida(a2[0]), motivo: "neto explícito", via: "clase_A2", candidatos: colapsados };
   }
   if (a2.length > 1) {
     var a2m = a2.filter(function(c) { return  c.esMultipack; });
@@ -800,7 +800,7 @@ function decidir(candidatos, textoLimpio) {
     // Cluster A2 simples â‰¤5% â†’ mismo neto deformado por OCR/idioma
     if (a2s.length > 1 && clusterCercano(a2s, 0.05)) {
       var repA2 = elegirRepresentante(a2s);
-      return { resultado: formatearSalida(repA2), motivo: "cluster A2 â‰¤5%: representante por evidencia/mediana", via: "clase_A2", candidatos: colapsados };
+    return { resultado: formatearSalida(repA2), motivo: "cluster A2 <=5%: representante por evidencia/mediana", via: "clase_A2", candidatos: colapsados };
     }
 
     // Valores muy distintos â†’ ambigÃ¼edad real â†’ campo vacÃ­o
@@ -904,7 +904,7 @@ function boxer3(textoVision) {
 
   var textoReparado = repararLineasCriticas(textoOCR);
   if (textoReparado !== textoOCR) {
-    console.log("-- CAPA 0B: REPARACIÃ“N LÃ‰XICA --");
+    console.log("-- CAPA 0B: REPARACIÓN LÉXICA --");
     var lr0 = textoOCR.split("\n"), lr1 = textoReparado.split("\n");
     for (var zr = 0; zr < lr0.length; zr++) {
       if (lr0[zr] !== lr1[zr]) {
@@ -918,14 +918,14 @@ function boxer3(textoVision) {
   var textoBruto   = filtroBasura(textoReparado);
   var textoLimpio  = fusionarLineasPartidas(textoBruto);
 
-  console.log("-- FILTRO 1+2a: BASURA + FUSIÃ“N --");
+  console.log("-- FILTRO 1+2a: BASURA + FUSIÓN --");
   console.log(textoLimpio);
   console.log("");
 
   console.log("-- FILTRO 2b: CANDIDATOS --");
   var ext = extraerCandidatos(textoLimpio);
   ext.descartados.forEach(function(d) {
-    console.log("  [D] \"" + d.token + "\" â€” " + d.motivo);
+    console.log("  [D] \"" + d.token + "\" — " + d.motivo);
   });
   ext.candidatos.forEach(function(c) {
     console.log("  [" + c.clase + "] \"" + c.tokenOriginal + "\" (norm:" + c.valorNorm + " " + c.unidadNorm + ") | " + c.lineaOrigen);
@@ -935,17 +935,17 @@ function boxer3(textoVision) {
   // Log consolidados
   var consolidados = colapsarDuplicados(ext.candidatos);
   if (consolidados.length !== ext.candidatos.length) {
-    console.log("-- CONSOLIDADOS (" + ext.candidatos.length + " â†’ " + consolidados.length + ") --");
+  console.log("-- CONSOLIDADOS (" + ext.candidatos.length + " -> " + consolidados.length + ") --");
     consolidados.forEach(function(c) {
-      console.log("  [" + c.clase + "] \"" + c.tokenOriginal + "\" Ã—" + c.evidencias + (c.evidencias > 1 ? " evidencias" : " evidencia") + " | " + c.lineaOrigen);
+      console.log("  [" + c.clase + "] \"" + c.tokenOriginal + "\" ×" + c.evidencias + (c.evidencias > 1 ? " evidencias" : " evidencia") + " | " + c.lineaOrigen);
     });
     console.log("");
   }
 
   var dec = decidir(ext.candidatos, textoLimpio);
-  console.log("-- DECISIÃ“N --");
+  console.log("-- DECISIÓN --");
   console.log("  Via       : " + dec.via);
-  console.log("  Resultado : " + (dec.resultado || "campo vacÃ­o"));
+  console.log("  Resultado : " + (dec.resultado || "campo vacío"));
   if (dec.pesoBrutoDetectado) {
     console.log("  Bruto     : " + dec.pesoBrutoDetectado + "  (solo bruto disponible, no es neto)");
   }

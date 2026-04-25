@@ -545,7 +545,7 @@
     state.el.pendingCount.textContent = "Pendientes abiertos: " + rows.length;
 
     if (!rows.length) {
-      state.el.pendingTable.innerHTML = "<p class=\"empty\">No hay pendientes de revisiÃ³n.</p>";
+      state.el.pendingTable.innerHTML = "<p class=\"empty\">No hay pendientes de revisión.</p>";
       return;
     }
 
@@ -809,14 +809,14 @@
       return {
         ok: false,
         errorCode: "REV_REPOSITORIO_RESOLVER_NO_DISPONIBLE",
-        message: "No estÃ¡ cargado el resolvedor del repositorio real."
+        message: "No está cargado el resolvedor del repositorio real."
       };
     }
     if (!persist || typeof persist.guardarResultadoAnalizado !== "function") {
       return {
         ok: false,
         errorCode: "REV_PERSISTENCIA_NO_DISPONIBLE",
-        message: "No estÃ¡ cargada la persistencia real de productos."
+        message: "No está cargada la persistencia real de productos."
       };
     }
     var resolved = resolver.resolveProductRepository({});

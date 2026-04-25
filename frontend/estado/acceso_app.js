@@ -190,12 +190,12 @@
     if (!password) {
       valid = false;
       if (showMessages) {
-        setHelp(passwordHelp, "Falta la contraseÃ±a.", "error");
+        setHelp(passwordHelp, "Falta la contraseña.", "error");
       } else {
-        setHelp(passwordHelp, "La contraseÃ±a queda oculta mientras escribes.", "");
+        setHelp(passwordHelp, "La contraseña queda oculta mientras escribes.", "");
       }
     } else {
-      setHelp(passwordHelp, "ContraseÃ±a introducida.", "");
+      setHelp(passwordHelp, "Contraseña introducida.", "");
     }
 
     submitButton.disabled = !valid;
@@ -227,7 +227,7 @@
     if (event.getModifierState && event.getModifierState("CapsLock")) {
       setHelp(passwordHelp, "Mayusculas activadas.", "warning");
     } else if (passwordInput.value) {
-      setHelp(passwordHelp, "ContraseÃ±a introducida.", "");
+      setHelp(passwordHelp, "Contraseña introducida.", "");
     }
   });
 

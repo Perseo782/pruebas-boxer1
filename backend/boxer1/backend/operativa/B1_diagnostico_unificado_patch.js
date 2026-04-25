@@ -1,6 +1,6 @@
 ﻿
 /**
- * Boxer1_Core Â· ADAPTADOR DE DIAGNÃ“STICO (parche unificaciÃ³n)
+ * Boxer1_Core · ADAPTADOR DE DIAGNÓSTICO (parche unificación)
  */
 const B1_TIPO_EVENTO = Object.freeze({
   INFO: 'info', REPARACION: 'reparacion_silenciosa', DEGRADACION: 'degradacion', ERROR: 'error',
@@ -48,7 +48,7 @@ function B1_diagPrechequeo(buffer, ok, problemas, totalMs, stageMs) {
   _emit(buffer,{ tipoEvento: ok?B1_TIPO_EVENTO.INFO:B1_TIPO_EVENTO.ERROR, code: ok?'B1_PRECHEQUEO_OK':'B1_PRECHEQUEO_FAIL', mensaje: ok?`Prechequeo completado en ${stageMs ?? totalMs}ms.`:`Prechequeo fallido: ${problemas.join(', ')}`, passport: ok?B1_PASSPORT.VERDE:B1_PASSPORT.ROJO, totalElapsedMs: totalMs, stageElapsedMs: stageMs ?? totalMs, detalle:{ problemas } });
 }
 function B1_diagOCR(buffer, vacia, totalPalabras, totalMs, stageMs) {
-  _emit(buffer,{ tipoEvento: vacia?B1_TIPO_EVENTO.ERROR:B1_TIPO_EVENTO.INFO, code: vacia?'B1_OCR_VACIO':'B1_OCR_OK', mensaje: vacia?'Vision no devolviÃ³ texto.':`OCR completado: ${totalPalabras} palabras en ${stageMs ?? totalMs}ms.`, passport: vacia?B1_PASSPORT.ROJO:B1_PASSPORT.VERDE, totalElapsedMs: totalMs, stageElapsedMs: stageMs ?? totalMs, detalle:{ totalPalabras } });
+  _emit(buffer,{ tipoEvento: vacia?B1_TIPO_EVENTO.ERROR:B1_TIPO_EVENTO.INFO, code: vacia?'B1_OCR_VACIO':'B1_OCR_OK', mensaje: vacia?'Vision no devolvió texto.':`OCR completado: ${totalPalabras} palabras en ${stageMs ?? totalMs}ms.`, passport: vacia?B1_PASSPORT.ROJO:B1_PASSPORT.VERDE, totalElapsedMs: totalMs, stageElapsedMs: stageMs ?? totalMs, detalle:{ totalPalabras } });
 }
 function B1_diagFiabilidad(buffer, fiabilidad, totalMs, stageMs) {
   const passport = fiabilidad.fotoViable ? B1_PASSPORT.VERDE : B1_PASSPORT.ROJO;
@@ -61,6 +61,6 @@ function B1_diagTimeout(buffer, fase, totalMs, stageMs) { _emit(buffer,{ tipoEve
 function B1_diagEncadenado(buffer, upstreamCode, upstreamModule, totalMs, stageMs) { _emit(buffer,{ tipoEvento:B1_TIPO_EVENTO.ENCADENADO, code:'B1_ERROR_ENCADENADO', mensaje:`Error propagado desde ${upstreamModule}: ${upstreamCode}`, passport:B1_PASSPORT.ROJO, totalElapsedMs: totalMs, stageElapsedMs: stageMs ?? 0, detalle:{ upstreamCode, upstreamModule } }); }
 function B1_diagReparacion(buffer, descripcion, totalMs, stageMs) { _emit(buffer,{ tipoEvento:B1_TIPO_EVENTO.REPARACION, code:'B1_REPARACION_SILENCIOSA', mensaje:descripcion, passport:B1_PASSPORT.VERDE, totalElapsedMs: totalMs, stageElapsedMs: stageMs ?? 0 }); }
 function B1_diagPasaporte(buffer, estado, explicacion, totalMs, stageMs) { _emit(buffer,{ tipoEvento:B1_TIPO_EVENTO.INFO, code:`B1_PASAPORTE_${estado}`, mensaje:`Pasaporte ${estado}: ${explicacion}`, passport:estado, totalElapsedMs: totalMs, stageElapsedMs: stageMs ?? 0 }); }
-function B1_diagRecuperacion(buffer, desde, hacia, totalMs, motivo, stageMs) { _emit(buffer,{ tipoEvento:B1_TIPO_EVENTO.RECUPERACION, code:'B1_RECUPERACION', mensaje:`RecuperaciÃ³n ${desde} â†’ ${hacia}. ${motivo || ''}`.trim(), passport:hacia, totalElapsedMs: totalMs, stageElapsedMs: stageMs ?? 0, detalle:{ desde, hacia, motivo:motivo || null } }); }
+function B1_diagRecuperacion(buffer, desde, hacia, totalMs, motivo, stageMs) { _emit(buffer,{ tipoEvento:B1_TIPO_EVENTO.RECUPERACION, code:'B1_RECUPERACION', mensaje:`Recuperación ${desde} → ${hacia}. ${motivo || ''}`.trim(), passport:hacia, totalElapsedMs: totalMs, stageElapsedMs: stageMs ?? 0, detalle:{ desde, hacia, motivo:motivo || null } }); }
 function B1_diagModoSeguro(buffer, totalMs, motivo, stageMs) { _emit(buffer,{ tipoEvento:B1_TIPO_EVENTO.MODO_SEGURO, code:'B1_MODO_SEGURO', mensaje:motivo || 'Se activa modo seguro.', passport:B1_PASSPORT.NARANJA, totalElapsedMs: totalMs, stageElapsedMs: stageMs ?? 0, detalle:{ motivo:motivo || null } }); }
 

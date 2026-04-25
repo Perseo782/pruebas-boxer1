@@ -27,7 +27,7 @@
   };
 
   var SUMMARY_BY_TYPE = {
-    PRODUCT_CREATED: "Producto aÃ±adido",
+    PRODUCT_CREATED: "Producto añadido",
     PRODUCT_UPDATED: "Producto modificado",
     PRODUCT_DELETED: "Producto eliminado",
     IMPORTACION_EXCEL: "Importacion Excel",
