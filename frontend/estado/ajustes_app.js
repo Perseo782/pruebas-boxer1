@@ -5,6 +5,7 @@
   var ALLERGEN_DISPLAY_SETTINGS_KEY = "appv2_allergen_card_display_v1";
   var LOCAL_IMPORT_HISTORY_KEY = "fase10_import_history_local_v1";
   var LOCAL_PRODUCT_HISTORY_KEY = "appv2_product_history_local_v1";
+  var BACKUP_LIST_TIMEOUT_MS = 12000;
   var DEFAULT_VISUAL_SETTINGS = {
     profileKey: "EQUILIBRADO_WEBP",
     qualityPct: 40,
@@ -48,6 +49,55 @@
       hour: "2-digit",
       minute: "2-digit"
     }).format(date);
+  }
+
+  function createUiError(message, code) {
+    var err = new Error(String(message || "Error"));
+    err.code = String(code || "UI_ERROR");
+    return err;
+  }
+
+  function runWithTimeout(promise, timeoutMs, timeoutMessage) {
+    var safePromise = promise && typeof promise.then === "function"
+      ? promise
+      : Promise.resolve(promise);
+    var safeTimeoutMs = Math.max(1000, Number(timeoutMs || 0) || BACKUP_LIST_TIMEOUT_MS);
+    return Promise.race([
+      safePromise,
+      new Promise(function onTimeout(_, reject) {
+        setTimeout(function fireTimeout() {
+          reject(createUiError(timeoutMessage || "La operacion tardo demasiado.", "UI_TIMEOUT"));
+        }, safeTimeoutMs);
+      })
+    ]);
+  }
+
+  function toUserBackupMessage(message, fallback) {
+    var safeMessage = String(message || "").trim();
+    var lower = safeMessage.toLowerCase();
+    if (!safeMessage) return String(fallback || "No se pudo completar ahora.");
+    if (lower.indexOf("retry-limit-exceeded") >= 0 || lower.indexOf("max retry time") >= 0) {
+      return "La nube no respondio a tiempo. Prueba otra vez.";
+    }
+    if (lower.indexOf("sessiontoken") >= 0 || lower.indexOf("token") >= 0 || lower.indexOf("sesion") >= 0) {
+      return "Hace falta iniciar sesion otra vez para consultar las copias.";
+    }
+    if (lower.indexOf("storage") >= 0 || lower.indexOf("backup") >= 0 || lower.indexOf("copias") >= 0) {
+      return "No se pudieron consultar las copias ahora.";
+    }
+    if (lower.indexOf("timeout") >= 0 || lower.indexOf("tardo demasiado") >= 0) {
+      return "La consulta de copias tardo demasiado. Prueba otra vez.";
+    }
+    return String(fallback || "No se pudo completar ahora.");
+  }
+
+  function buildSyncSummary(syncData) {
+    if (!syncData) return "Tus cambios se guardan automaticamente.";
+    if (Number(syncData.conflicts || 0) > 0) return "Hay cambios pendientes de revisar.";
+    if (Number(syncData.pending || 0) > 0) return "Hay cambios pendientes de guardar.";
+    if (syncData.ok === false) return "La conexion con la nube necesita revision.";
+    if (syncData.lastSyncAt) return "Todo al dia. Ultima actualizacion: " + formatDateTime(syncData.lastSyncAt);
+    return "Todo al dia.";
   }
 
   function isOnline() {
@@ -429,27 +479,19 @@
     }
 
     if (!syncData) {
-      state.el.syncResumen.textContent = "Estado sync: sin datos";
+      state.el.syncResumen.textContent = buildSyncSummary(null);
       if (message) state.el.syncStatus.textContent = message;
       return;
     }
 
-    var parts = [
-      "ok=" + (syncData.ok ? "si" : "no"),
-      "pend=" + Number(syncData.pending || 0),
-      "conf=" + Number(syncData.conflicts || 0),
-      "modo=" + String(syncData.mode || "normal")
-    ];
-    if (syncData.lastSyncAt) parts.push("ultimo=" + formatDateTime(syncData.lastSyncAt));
-    if (!syncData.ok && syncData.lastErrorCode) parts.push("error=" + syncData.lastErrorCode);
-    state.el.syncResumen.textContent = "Estado sync: " + parts.join(" | ");
+    state.el.syncResumen.textContent = buildSyncSummary(syncData);
     if (message) state.el.syncStatus.textContent = message;
   }
 
   function renderBackupList(state, items) {
     var safeItems = Array.isArray(items) ? items : [];
     if (!safeItems.length) {
-      state.el.backupList.innerHTML = "<p class=\"empty\">Sin copias todavia.</p>";
+      state.el.backupList.innerHTML = "<p class=\"empty\">No hay copias guardadas.</p>";
       return;
     }
 
@@ -458,7 +500,7 @@
         "<div class=\"event-card\">" +
           "<span class=\"event-type\">Copia " + (index + 1) + "</span>" +
           "<strong>" + String(item.name || "(sin nombre)") + "</strong>" +
-          "<span class=\"event-date\">" + formatDateTime(item.updated) + " | " + Number(item.size || 0) + " bytes</span>" +
+          "<span class=\"event-date\">Guardada: " + formatDateTime(item.updated) + "</span>" +
           "<div class=\"toolbar\"><button type=\"button\" class=\"ok js-restore-backup\" data-path=\"" + String(item.fullPath || "") + "\">Restaurar</button></div>" +
         "</div>"
       );
@@ -469,6 +511,10 @@
         restoreBackup(state, btn.getAttribute("data-path"));
       });
     });
+  }
+
+  function renderBackupEmpty(state, message) {
+    state.el.backupList.innerHTML = "<p class=\"empty\">" + escapeHtml(message || "No hay copias guardadas.") + "</p>";
   }
 
   function getFase11Store() {
@@ -774,22 +820,22 @@
   async function runSyncNow(state) {
     var manager = getSyncManager(state);
     if (!manager) {
-      renderSyncResumen(state, "Sync manager no disponible.");
+      renderSyncResumen(state, "La sincronizacion no esta disponible ahora.");
       return;
     }
     var token = readSessionToken();
     if (!token) {
-      renderSyncResumen(state, "Sin token valido. Sync pausado.");
+      renderSyncResumen(state, "Hace falta iniciar sesion otra vez.");
       return;
     }
 
-    state.el.syncStatus.textContent = "Sincronizando...";
+    state.el.syncStatus.textContent = "Guardando cambios...";
     var out = await manager.iniciarSync(token);
     if (!out || out.ok !== true) {
-      renderSyncResumen(state, "Sync fallo.");
+      renderSyncResumen(state, "No se pudieron guardar los cambios ahora.");
       return;
     }
-    renderSyncResumen(state, "Sync completado.");
+    renderSyncResumen(state, "Cambios guardados.");
     loadDatabaseSummary(state);
     loadHistory(state);
   }
@@ -797,25 +843,43 @@
   async function loadBackups(state) {
     var controller = getBackupController(state);
     if (!controller || controller.ok !== true) {
-      state.el.syncStatus.textContent = "Backup no disponible.";
-      renderBackupList(state, []);
+      state.el.syncStatus.textContent = "Las copias no estan disponibles ahora.";
+      renderBackupEmpty(state, "Las copias no estan disponibles ahora.");
       return;
     }
     var token = readSessionToken();
     if (!token) {
-      state.el.syncStatus.textContent = "Sin token valido para copias.";
-      renderBackupList(state, []);
+      state.el.syncStatus.textContent = "Hace falta iniciar sesion para ver las copias.";
+      renderBackupEmpty(state, "Hace falta iniciar sesion para consultar las copias.");
       return;
     }
-    state.el.syncStatus.textContent = "Cargando copias...";
-    var listed = await controller.listarBackups(token);
+    state.el.syncStatus.textContent = "Buscando copias...";
+    var listed = null;
+    try {
+      listed = await runWithTimeout(
+        controller.listarBackups(token),
+        BACKUP_LIST_TIMEOUT_MS,
+        "La consulta de copias tardo demasiado."
+      );
+    } catch (errBackups) {
+      listed = {
+        ok: false,
+        message: toUserBackupMessage(errBackups && errBackups.message, "No se pudieron consultar las copias ahora.")
+      };
+    }
     if (!listed || listed.ok !== true) {
-      state.el.syncStatus.textContent = listed && listed.message ? listed.message : "No se pudo listar copias.";
-      renderBackupList(state, []);
+      var failedMessage = toUserBackupMessage(
+        listed && listed.message,
+        "No se pudieron consultar las copias ahora."
+      );
+      state.el.syncStatus.textContent = failedMessage;
+      renderBackupEmpty(state, failedMessage);
       return;
     }
     renderBackupList(state, listed.items || []);
-    state.el.syncStatus.textContent = "Copias cargadas.";
+    state.el.syncStatus.textContent = (listed.items || []).length
+      ? "Copias cargadas."
+      : "No hay copias guardadas.";
   }
 
   async function restoreBackup(state, path) {
@@ -825,32 +889,35 @@
 
     var controller = getBackupController(state);
     if (!controller || controller.ok !== true) {
-      state.el.syncStatus.textContent = "Backup no disponible.";
+      state.el.syncStatus.textContent = "Las copias no estan disponibles ahora.";
       return;
     }
     var token = readSessionToken();
     if (!token) {
-      state.el.syncStatus.textContent = "Sin token valido para restaurar.";
+      state.el.syncStatus.textContent = "Hace falta iniciar sesion para restaurar.";
       return;
     }
 
     var store = getOrCreateStore(state);
     if (!store) {
-      state.el.syncStatus.textContent = "Store local no disponible.";
+      state.el.syncStatus.textContent = "No se pudo preparar la restauracion.";
       return;
     }
 
     state.el.syncStatus.textContent = "Restaurando copia...";
     var restored = await controller.restaurarBackup(token, fullPath, store);
     if (!restored || restored.ok !== true) {
-      state.el.syncStatus.textContent = restored && restored.message ? restored.message : "No se pudo restaurar.";
+      state.el.syncStatus.textContent = toUserBackupMessage(
+        restored && restored.message,
+        "No se pudo restaurar la copia."
+      );
       return;
     }
 
     var resolved = resolveRemoteIndex();
     if (!resolved.ok) {
-      state.el.syncStatus.textContent = "Restaurado local, pero no se pudo sincronizar nube.";
-      renderSyncResumen(state, "Pendiente de sync remoto.");
+      state.el.syncStatus.textContent = "Copia restaurada. Falta terminar de guardarla en la nube.";
+      renderSyncResumen(state, "Queda un paso pendiente.");
       return;
     }
 
@@ -861,7 +928,7 @@
       sessionToken: token
     });
     if (!pushed || pushed.ok !== true) {
-      state.el.syncStatus.textContent = pushed && pushed.message ? pushed.message : "Restaurado local. Fallo subida a nube.";
+      state.el.syncStatus.textContent = "Copia restaurada, pero la nube no pudo actualizarse ahora.";
       return;
     }
 
@@ -905,10 +972,6 @@
       });
     }
 
-    state.el.syncNow.addEventListener("click", function onSyncNow() {
-      runSyncNow(state);
-    });
-
     state.el.backupReload.addEventListener("click", function onBackupReload() {
       loadBackups(state);
     });
@@ -946,13 +1009,13 @@
     globalScope.addEventListener("fase3-firebase-ready", function onReady() {
       loadDatabaseSummary(state);
       loadHistory(state);
-      renderSyncResumen(state, "Firebase listo.");
-      loadBackups(state);
+      renderSyncResumen(state, "Pulsa \"Ver copias\" para consultar.");
       refreshFase11Estado(state, "Firebase listo.");
     });
     globalScope.addEventListener("pageshow", function onPageShow() {
       loadDatabaseSummary(state);
       loadHistory(state);
+      renderSyncResumen(state, "Pulsa \"Ver copias\" para consultar.");
       refreshFase11Estado(state, "Vista actualizada.");
     });
 
@@ -994,7 +1057,6 @@
         reloadHistory: byId("historial-reload"),
         syncResumen: byId("sync-resumen"),
         syncStatus: byId("sync-status"),
-        syncNow: byId("sync-now"),
         backupReload: byId("backup-reload"),
         backupList: byId("backup-list"),
         fase11EstadoSistema: byId("fase11-estado-sistema"),
@@ -1017,12 +1079,11 @@
     renderPhotoSettings(state, null);
     renderAllergenDisplaySettings(state, null);
     renderHistoryList(state);
-    renderSyncResumen(state, "Listo.");
+    renderSyncResumen(state, "Pulsa \"Ver copias\" para consultar.");
     renderBackupList(state, []);
     refreshFase11Estado(state, "Listo.");
     loadDatabaseSummary(state);
     loadHistory(state);
-    loadBackups(state);
   }
 
   if (document.readyState === "loading") {
