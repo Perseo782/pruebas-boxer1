@@ -50,6 +50,35 @@ function testAltaGestion() {
     { store: store }
   );
   assert.equal(edit.ok, true, "Edicion debe funcionar");
+
+  var altaFotoConfirmada = altaManual.ejecutarAltaManual(
+    {
+      nombre: "Producto con miniatura",
+      alergenos: ["soja"],
+      origenAlta: "foto",
+      fotoRefs: ["alta_foto_normal_1"],
+      visuales: [{
+        ref: "alta_foto_normal_1",
+        thumbSrc: "data:image/webp;base64,UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA",
+        viewerSrc: "data:image/webp;base64,UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA",
+        profileKey: "EQUILIBRADO_WEBP",
+        qualityPct: 80,
+        resolutionMaxPx: 800
+      }]
+    },
+    { store: store }
+  );
+  assert.equal(altaFotoConfirmada.ok, true, "Alta confirmada desde foto debe guardar");
+  assert.equal(altaFotoConfirmada.resultado.datos.producto.analisis.origenAlta, "foto");
+  assert.ok(altaFotoConfirmada.resultado.datos.producto.visual, "Producto desde foto debe conservar visual");
+  assert.ok(
+    altaFotoConfirmada.resultado.datos.producto.visual.visuales[0].thumbSrc.indexOf("data:image/webp") === 0,
+    "Miniatura local debe quedar disponible"
+  );
+  var modeloFoto = gestion.crearModeloTarjetaProductoFase9({
+    producto: altaFotoConfirmada.resultado.datos.producto
+  });
+  assert.equal(modeloFoto.tieneImagen, true, "Tarjeta debe quedar con miniatura clicable");
 }
 
 async function testRevisionYLote() {

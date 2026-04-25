@@ -39,6 +39,10 @@
     return /^https?:\/\//i.test(String(value || "").trim());
   }
 
+  function isInlineDataUrl(value) {
+    return /^data:image\//i.test(String(value || "").trim());
+  }
+
   function sanitizeVisualEntryForRemote(input) {
     var safeInput = input || {};
     var ref = String(safeInput.ref || "").trim();
@@ -60,7 +64,10 @@
   function sanitizeProductVisualForRemote(input) {
     var safeInput = input || {};
     var fotoRefs = Array.isArray(safeInput.fotoRefs)
-      ? safeInput.fotoRefs.map(function mapRef(ref) { return String(ref || "").trim(); }).filter(Boolean).slice(0, 2)
+      ? safeInput.fotoRefs
+          .map(function mapRef(ref) { return String(ref || "").trim(); })
+          .filter(function onlySafeRefs(ref) { return !!ref && !isInlineDataUrl(ref); })
+          .slice(0, 2)
       : [];
     var visuales = Array.isArray(safeInput.visuales)
       ? safeInput.visuales

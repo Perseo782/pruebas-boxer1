@@ -1286,6 +1286,7 @@
     buildCerebroRequest: buildCerebroRequest,
     buildReviewDraftPayload: buildReviewDraftPayload,
     buildCaseRevisionV1: buildCaseRevisionV1,
+    buildDraftVisuales: buildDraftVisuales,
     getFinalDataFromResponse: getFinalDataFromResponse,
     classifyVisibleOutcome: classifyVisibleOutcome,
     ejecutarAnalisisVisible: ejecutarAnalisisVisible

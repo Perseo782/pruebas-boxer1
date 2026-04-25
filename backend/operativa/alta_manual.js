@@ -57,7 +57,10 @@
     try {
       var persist = store.createOrMergeByNormalizedName({
         nombre: nombre,
-        alergenos: Array.isArray(safePayload.alergenos) ? safePayload.alergenos : []
+        alergenos: Array.isArray(safePayload.alergenos) ? safePayload.alergenos : [],
+        origenAlta: String(safePayload.origenAlta || "manual"),
+        fotoRefs: Array.isArray(safePayload.fotoRefs) ? safePayload.fotoRefs : [],
+        visuales: Array.isArray(safePayload.visuales) ? safePayload.visuales : []
       });
 
       if (!persist || persist.ok !== true) {

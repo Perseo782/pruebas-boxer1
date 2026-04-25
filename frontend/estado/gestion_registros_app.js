@@ -92,6 +92,14 @@
     return Array.isArray(items) ? items.slice(0) : [];
   }
 
+  function cloneVisuales(items) {
+    return Array.isArray(items)
+      ? items.map(function cloneVisual(item) {
+        return Object.assign({}, item || {});
+      })
+      : [];
+  }
+
   function getAllergenDisplayMode() {
     try {
       if (!globalScope.localStorage) return "texto";
@@ -725,7 +733,7 @@
   async function triggerSync(state, triggerLabel) {
     var now = Date.now();
     var safeLabel = String(triggerLabel || "sync");
-    var bypassCooldown = safeLabel === "manual" || safeLabel === "post_delete" || safeLabel === "init" || safeLabel === "firebase_ready";
+    var bypassCooldown = safeLabel === "manual" || safeLabel === "manual_save" || safeLabel === "post_delete" || safeLabel === "init" || safeLabel === "firebase_ready";
     if (!bypassCooldown && (now - Number(state.lastSyncTriggerAt || 0)) < SYNC_TRIGGER_COOLDOWN_MS) {
       return { ok: true, skipped: true, reason: "SYNC_TRIGGER_COOLDOWN" };
     }
@@ -889,6 +897,8 @@
       nombre: "",
       selectedAllergenIds: [],
       photoResultReady: false,
+      photoRefs: [],
+      photoVisuales: [],
       photoStatus: "",
       photoStatusKind: "",
       photoSummary: "Todavía no has elegido fotos.",
@@ -1103,6 +1113,43 @@
     return refs;
   }
 
+  function buildProductPhotoVisuales(fotoRefs, visuales) {
+    var refs = Array.isArray(fotoRefs) ? fotoRefs.filter(Boolean).slice(0, 2) : [];
+    var rawVisuales = Array.isArray(visuales) ? visuales : [];
+    var out = [];
+    for (var i = 0; i < refs.length && i < 2; i += 1) {
+      var raw = rawVisuales[i] && typeof rawVisuales[i] === "object" ? rawVisuales[i] : {};
+      var src = String(refs[i] || "").trim();
+      var thumbSrc = String(raw.thumbSrc || raw.viewerSrc || src || "").trim();
+      var viewerSrc = String(raw.viewerSrc || raw.thumbSrc || src || "").trim();
+      if (!thumbSrc && !viewerSrc) continue;
+      out.push({
+        ref: "alta_foto_normal_" + (i + 1),
+        thumbSrc: thumbSrc || viewerSrc,
+        viewerSrc: viewerSrc || thumbSrc,
+        profileKey: String(raw.profileKey || "").trim() || null,
+        qualityPct: Number(raw.qualityPct) || null,
+        resolutionMaxPx: Number(raw.resolutionMaxPx) || null,
+        generatedAt: String(raw.generatedAt || "").trim() || new Date().toISOString()
+      });
+    }
+    return out;
+  }
+
+  async function buildPhotoVisualesForAdd(fotoRefs) {
+    var refs = Array.isArray(fotoRefs) ? fotoRefs.filter(Boolean).slice(0, 2) : [];
+    if (!refs.length) return [];
+    var visuales = [];
+    try {
+      if (globalScope.Fase3AltaFotoVisibleApp && typeof globalScope.Fase3AltaFotoVisibleApp.buildDraftVisuales === "function") {
+        visuales = await globalScope.Fase3AltaFotoVisibleApp.buildDraftVisuales(refs);
+      }
+    } catch (errVisual) {
+      visuales = [];
+    }
+    return buildProductPhotoVisuales(refs, visuales);
+  }
+
   async function ensurePhotoRuntimeReady(state) {
     if (globalScope.CerebroOrquestador && globalScope.Fase3AltaFotoVisibleApp) {
       return;
@@ -1164,15 +1211,142 @@
     return label + ". Revisa y confirma antes de guardar" + (nombre ? ": " + nombre : ".");
   }
 
-  function applyPhotoAnalysisToAddModal(state, response, outcome) {
+  function applyPhotoAnalysisToAddModal(state, response, outcome, photoPayload) {
     var finalData = getPhotoAnalysisFinalData(response);
     var propuesta = finalData.propuestaFinal || {};
     var passport = resolvePhotoPassport(finalData, outcome);
+    var safePayload = photoPayload || {};
+    var photoVisuales = cloneVisuales(safePayload.visuales);
     state.ui.add.nombre = String(propuesta.nombre || "").trim();
     state.ui.add.selectedAllergenIds = normalizeAllergenList(propuesta.alergenos || []);
     state.ui.add.photoResultReady = true;
+    state.ui.add.photoVisuales = photoVisuales;
+    state.ui.add.photoRefs = photoVisuales.map(function mapRef(item) {
+      return String(item && item.ref || "").trim();
+    }).filter(Boolean).slice(0, 2);
     state.ui.add.photoStatus = buildPhotoAnalysisStatus(response, outcome);
     state.ui.add.photoStatusKind = getPhotoPassportStatusKind(passport);
+  }
+
+  function isDataImageUrl(value) {
+    return /^data:image\//i.test(String(value || "").trim());
+  }
+
+  function dataUrlMime(value) {
+    var match = String(value || "").match(/^data:([^;,]+)[;,]/i);
+    return match && match[1] ? match[1].toLowerCase() : "image/webp";
+  }
+
+  function dataUrlBytes(value) {
+    var raw = String(value || "");
+    var comma = raw.indexOf(",");
+    if (comma < 0) return null;
+    var payload = raw.slice(comma + 1);
+    return Math.floor((payload.length * 3) / 4);
+  }
+
+  function sanitizeAssetPart(value) {
+    return String(value || "")
+      .trim()
+      .replace(/[^a-zA-Z0-9._-]+/g, "_")
+      .slice(0, 120);
+  }
+
+  async function uploadDataImage(runtime, path, dataUrl) {
+    if (!runtime || !runtime.storageModule || !isDataImageUrl(dataUrl)) return null;
+    var storageModule = runtime.storageModule;
+    if (
+      typeof storageModule.getStorage !== "function" ||
+      typeof storageModule.ref !== "function" ||
+      typeof storageModule.uploadString !== "function" ||
+      typeof storageModule.getDownloadURL !== "function"
+    ) {
+      return null;
+    }
+    var storage = storageModule.getStorage(runtime.app || undefined);
+    var objectRef = storageModule.ref(storage, path);
+    await storageModule.uploadString(objectRef, dataUrl, "data_url", { contentType: dataUrlMime(dataUrl) });
+    return {
+      path: path,
+      downloadURL: await storageModule.getDownloadURL(objectRef),
+      mimeType: dataUrlMime(dataUrl),
+      bytes: dataUrlBytes(dataUrl)
+    };
+  }
+
+  async function persistPhotoAssetForProduct(state, product, visuales) {
+    var safeProduct = product || {};
+    var productId = String(safeProduct.id || "").trim();
+    var visual = Array.isArray(visuales) && visuales[0] ? visuales[0] : null;
+    if (!productId || !visual) return;
+    var thumbSrc = String(visual.thumbSrc || "").trim();
+    var viewerSrc = String(visual.viewerSrc || visual.thumbSrc || "").trim();
+    if (!isDataImageUrl(thumbSrc) && !isDataImageUrl(viewerSrc)) return;
+
+    var runtime = getFirebaseRuntime();
+    if (!runtime || runtime.ok !== true || !runtime.storageModule) return;
+    var token = readSessionToken(state);
+    if (runtime && typeof runtime.waitForAuth === "function") {
+      await runtime.waitForAuth(token || null);
+    }
+
+    var assetId = sanitizeAssetPart("asset_" + productId + "_" + Date.now().toString(36));
+    var root = "fase4_activos/" + sanitizeAssetPart(productId) + "/" + assetId;
+    var thumbUpload = await uploadDataImage(runtime, root + "_thumb.webp", thumbSrc || viewerSrc);
+    var viewerUpload = await uploadDataImage(runtime, root + "_viewer.webp", viewerSrc || thumbSrc);
+    if (!thumbUpload && !viewerUpload) return;
+
+    var resolved = resolveRemoteAssetIndex(state);
+    if (!resolved.ok || !resolved.remoteIndex || typeof resolved.remoteIndex.upsertAssetRecord !== "function") return;
+    var now = new Date().toISOString();
+    var asset = {
+      assetId: assetId,
+      schemaVersion: 1,
+      productId: productId,
+      origen: "alta_foto_normal",
+      contenedor: "firebase_storage",
+      archivo: {
+        fileName: assetId + ".webp",
+        mimeType: viewerUpload ? viewerUpload.mimeType : (thumbUpload ? thumbUpload.mimeType : "image/webp"),
+        bytes: viewerUpload ? viewerUpload.bytes : (thumbUpload ? thumbUpload.bytes : null)
+      },
+      derivados: {
+        thumbnailPath: thumbUpload ? thumbUpload.path : null,
+        compressedPath: viewerUpload ? viewerUpload.path : null,
+        miniaturaTarjeta: thumbUpload ? {
+          mimeType: thumbUpload.mimeType,
+          bytes: thumbUpload.bytes,
+          qualityPct: Number(visual.qualityPct) || null,
+          maxSidePx: 200,
+          downloadURL: thumbUpload.downloadURL
+        } : null,
+        imagenVisor: viewerUpload ? {
+          mimeType: viewerUpload.mimeType,
+          bytes: viewerUpload.bytes,
+          qualityPct: Number(visual.qualityPct) || null,
+          maxSidePx: Number(visual.resolutionMaxPx) || null,
+          compressionProfile: String(visual.profileKey || "").trim() || null,
+          downloadURL: viewerUpload.downloadURL
+        } : null
+      },
+      sistema: {
+        estadoRegistro: "ACTIVO",
+        syncState: "SYNCED",
+        rowVersion: 1,
+        dirty: false,
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null
+      }
+    };
+    var saved = await resolved.remoteIndex.upsertAssetRecord({ asset: asset, sessionToken: token || null });
+    if (!saved || saved.ok !== true) return;
+    state.assetVisualsByProductId[productId] = {
+      thumbUrl: thumbUpload && thumbUpload.downloadURL ? thumbUpload.downloadURL : (viewerUpload ? viewerUpload.downloadURL : ""),
+      viewerUrl: viewerUpload && viewerUpload.downloadURL ? viewerUpload.downloadURL : (thumbUpload ? thumbUpload.downloadURL : "")
+    };
+    state.assetVisualsLoaded = true;
+    refreshVisibleList(state, { skipAssetReload: true });
   }
 
   function createManualConfirmationDestination() {
@@ -1188,10 +1362,16 @@
     }
     state.ui.add.busy = true;
     renderAddModal(state);
+    var photoResultReady = !!state.ui.add.photoResultReady;
+    var photoRefs = cloneArray(state.ui.add.photoRefs);
+    var photoVisuales = cloneVisuales(state.ui.add.photoVisuales);
     var out = globalScope.Fase3OperativaAltaManual.ejecutarAltaManual(
       {
         nombre: state.ui.add.nombre,
-        alergenos: cloneArray(state.ui.add.selectedAllergenIds)
+        alergenos: cloneArray(state.ui.add.selectedAllergenIds),
+        origenAlta: photoResultReady ? "foto" : "manual",
+        fotoRefs: photoResultReady ? photoRefs : [],
+        visuales: photoResultReady ? photoVisuales : []
       },
       { store: state.store }
     );
@@ -1203,9 +1383,16 @@
       });
       return;
     }
+    var savedProduct = out.resultado && out.resultado.datos ? out.resultado.datos.producto : null;
     closeAddModal(state);
     refreshVisibleList(state, { skipAssetReload: true });
     showFeedback(state, out.resultado && out.resultado.datos && out.resultado.datos.fusionExacta ? "manual_merge" : "manual_add");
+    if (photoResultReady && savedProduct && photoVisuales.length) {
+      persistPhotoAssetForProduct(state, savedProduct, photoVisuales).catch(function onAssetError() {
+        // La miniatura local ya esta disponible; la subida remota no debe bloquear el alta.
+      });
+    }
+    triggerSync(state, "manual_save");
   }
 
   async function submitPhotoAdd(state) {
@@ -1244,10 +1431,13 @@
       var outcome = typeof globalScope.Fase3AltaFotoVisibleApp.classifyVisibleOutcome === "function"
         ? globalScope.Fase3AltaFotoVisibleApp.classifyVisibleOutcome(response)
         : "revision";
+      var photoVisuales = hasPhotoAnalysisResult(response)
+        ? await buildPhotoVisualesForAdd(fotoRefs)
+        : [];
       state.ui.add.busy = false;
       if (!response || response.ok !== true) {
         if (hasPhotoAnalysisResult(response)) {
-          applyPhotoAnalysisToAddModal(state, response, outcome);
+          applyPhotoAnalysisToAddModal(state, response, outcome, { visuales: photoVisuales });
           renderAddModal(state);
           showFeedback(state, "photo_ready");
           return;
@@ -1261,7 +1451,7 @@
         showFeedback(state, "error", { message: state.ui.add.photoStatus });
         return;
       }
-      applyPhotoAnalysisToAddModal(state, response, outcome);
+      applyPhotoAnalysisToAddModal(state, response, outcome, { visuales: photoVisuales });
       renderAddModal(state);
       showFeedback(state, "photo_ready");
     } catch (errPhoto) {

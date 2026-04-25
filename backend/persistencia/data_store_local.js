@@ -68,6 +68,11 @@
       return Math.floor(n);
     }
 
+    function isAllowedVisualSrc(value) {
+      var safe = String(value || "").trim();
+      return /^https?:\/\//i.test(safe) || /^data:image\//i.test(safe);
+    }
+
     function buildHydratedProductRecord(input) {
       var safeInput = input || {};
       var nombre = String(
@@ -233,8 +238,8 @@
         var viewerSrc = String(raw.viewerSrc || "").trim();
         out.push({
           ref: String(raw.ref || ref).trim() || ref,
-          thumbSrc: /^https?:\/\//i.test(thumbSrc) ? thumbSrc : null,
-          viewerSrc: /^https?:\/\//i.test(viewerSrc) ? viewerSrc : null,
+          thumbSrc: isAllowedVisualSrc(thumbSrc) ? thumbSrc : null,
+          viewerSrc: isAllowedVisualSrc(viewerSrc) ? viewerSrc : null,
           profileKey: String(raw.profileKey || "").trim() || null,
           qualityPct: toPositiveInt(raw.qualityPct, null),
           resolutionMaxPx: toPositiveInt(raw.resolutionMaxPx, null),
@@ -291,10 +296,10 @@
         var current = visualsByRef[ref] || { ref: ref };
         var thumbSrc = String(raw.thumbSrc || "").trim();
         var viewerSrc = String(raw.viewerSrc || "").trim();
-        current.thumbSrc = /^https?:\/\//i.test(thumbSrc)
+        current.thumbSrc = isAllowedVisualSrc(thumbSrc)
           ? thumbSrc
           : (String(current.thumbSrc || "").trim() || null);
-        current.viewerSrc = /^https?:\/\//i.test(viewerSrc)
+        current.viewerSrc = isAllowedVisualSrc(viewerSrc)
           ? viewerSrc
           : (String(current.viewerSrc || "").trim() || null);
         current.profileKey = String(raw.profileKey || current.profileKey || "").trim() || null;
