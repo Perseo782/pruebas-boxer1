@@ -4,6 +4,7 @@
   var VISUAL_SETTINGS_STORAGE_KEY = "appv2_visual_settings_v1";
   var ALLERGEN_DISPLAY_SETTINGS_KEY = "appv2_allergen_card_display_v1";
   var LOCAL_IMPORT_HISTORY_KEY = "fase10_import_history_local_v1";
+  var LOCAL_APP_HISTORY_KEY = "fase7_app_history_local_v1";
   var DEFAULT_VISUAL_SETTINGS = {
     profileKey: "EQUILIBRADO_WEBP",
     qualityPct: 40,
@@ -139,6 +140,18 @@
     }
   }
 
+  function readLocalAppHistory() {
+    try {
+      if (!globalScope.localStorage) return [];
+      var raw = globalScope.localStorage.getItem(LOCAL_APP_HISTORY_KEY);
+      if (!raw) return [];
+      var parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (err) {
+      return [];
+    }
+  }
+
   function readImportEventFromUrl() {
     try {
       var params = new URLSearchParams(globalScope.location && globalScope.location.search || "");
@@ -169,6 +182,37 @@
     });
     if (!exists) safeItems.unshift(injected);
     return safeItems.slice(0, 30);
+  }
+
+  function mergeHistoryItems(primary, secondary) {
+    var seen = Object.create(null);
+    var merged = [];
+    [primary, secondary].forEach(function eachGroup(group) {
+      if (!Array.isArray(group)) return;
+      group.forEach(function eachItem(item) {
+        if (!item || typeof item !== "object") return;
+        var key = String(item.eventId || "").trim();
+        if (!key) {
+          key = [
+            item.eventType || "",
+            item.productId || "",
+            item.productLabel || "",
+            item.occurredAt || ""
+          ].join("|");
+        }
+        if (seen[key]) return;
+        seen[key] = true;
+        merged.push(item);
+      });
+    });
+    merged.sort(function sortByDate(a, b) {
+      return Date.parse(b && b.occurredAt || "") - Date.parse(a && a.occurredAt || "");
+    });
+    return merged.slice(0, 30);
+  }
+
+  function readLocalHistoryItems() {
+    return mergeHistoryItems(readLocalAppHistory(), readLocalImportHistory());
   }
 
   function profileToLabel(key) {
@@ -513,7 +557,7 @@
   async function loadHistory(state) {
     var resolved = resolveRemoteIndex();
     if (!resolved.ok) {
-      var localItems = readLocalImportHistory();
+      var localItems = readLocalHistoryItems();
       state.el.historyStatus.textContent = localItems.length ? "Historial local cargado." : resolved.message;
       state.items = mergeInjectedImportEvent(localItems);
       renderHistoryList(state);
@@ -523,7 +567,7 @@
     state.el.historyStatus.textContent = "Cargando historial...";
     var out = await resolved.remoteIndex.listHistoryEvents({ sessionToken: readSessionToken() || null });
     if (!out || out.ok !== true) {
-      var fallbackItems = readLocalImportHistory();
+      var fallbackItems = readLocalHistoryItems();
       state.el.historyStatus.textContent = fallbackItems.length
         ? "Historial local cargado."
         : (out && out.message ? out.message : "No se pudo cargar el historial.");
@@ -532,7 +576,7 @@
       return;
     }
 
-    state.items = mergeInjectedImportEvent(Array.isArray(out.items) ? out.items : []);
+    state.items = mergeInjectedImportEvent(mergeHistoryItems(Array.isArray(out.items) ? out.items : [], readLocalHistoryItems()));
     state.el.historyStatus.textContent = "Historial cargado.";
     renderHistoryList(state);
   }
