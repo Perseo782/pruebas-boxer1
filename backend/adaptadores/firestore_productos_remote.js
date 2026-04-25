@@ -50,6 +50,12 @@
     return JSON.parse(JSON.stringify(value));
   }
 
+  function isIgnorableHistoryError(err) {
+    var code = safeCode(err, "");
+    return code === "HIST_LIMITE_COMPROBACION_FALLIDA" ||
+      code === "FIRESTORE_HISTORIAL_NO_CONFIGURADO";
+  }
+
   function isRemoteUrl(value) {
     return /^https?:\/\//i.test(String(value || "").trim());
   }
@@ -253,30 +259,33 @@
         var docRef = docFn(db, collectionName, productId);
         if (historyEvent && typeof writeBatchFn === "function") {
           var activeHistorialCore = resolveHistorialCore();
-          if (!activeHistorialCore) {
-            return {
-              ok: false,
-              errorCode: "FIRESTORE_HISTORIAL_NO_CONFIGURADO",
-              message: "Falta el modulo de historial para guardar el evento."
-            };
+          if (activeHistorialCore) {
+            try {
+              var batch = writeBatchFn(db);
+              batch.set(docRef, payload, { merge: true });
+              await activeHistorialCore.escribirEvento(batch, historyEvent, {
+                db: db,
+                firestoreModule: firestoreModule
+              });
+              await batch.commit();
+              return {
+                ok: true,
+                docPath: collectionName + "/" + productId,
+                historyEventId: historyEvent.eventId || null
+              };
+            } catch (historyErr) {
+              if (!isIgnorableHistoryError(historyErr)) {
+                throw historyErr;
+              }
+            }
           }
-          var batch = writeBatchFn(db);
-          batch.set(docRef, payload, { merge: true });
-          await activeHistorialCore.escribirEvento(batch, historyEvent, {
-            db: db,
-            firestoreModule: firestoreModule
-          });
-          await batch.commit();
-          return {
-            ok: true,
-            docPath: collectionName + "/" + productId,
-            historyEventId: historyEvent.eventId || null
-          };
         }
         await setDoc(docRef, payload, { merge: true });
         return {
           ok: true,
-          docPath: collectionName + "/" + productId
+          docPath: collectionName + "/" + productId,
+          historyEventId: null,
+          historySkipped: !!historyEvent
         };
       } catch (err) {
         return {
@@ -305,26 +314,27 @@
         var docRef = docFn(db, collectionName, productId);
         if (historyEvent && typeof writeBatchFn === "function") {
           var activeHistorialCore = resolveHistorialCore();
-          if (!activeHistorialCore) {
-            return {
-              ok: false,
-              errorCode: "FIRESTORE_HISTORIAL_NO_CONFIGURADO",
-              message: "Falta el modulo de historial para guardar el evento."
-            };
+          if (activeHistorialCore) {
+            try {
+              var batch = writeBatchFn(db);
+              batch.delete(docRef);
+              await activeHistorialCore.escribirEvento(batch, historyEvent, {
+                db: db,
+                firestoreModule: firestoreModule
+              });
+              await batch.commit();
+              return {
+                ok: true,
+                docPath: collectionName + "/" + productId,
+                historyEventId: historyEvent.eventId || null,
+                deleted: true
+              };
+            } catch (historyErr) {
+              if (!isIgnorableHistoryError(historyErr)) {
+                throw historyErr;
+              }
+            }
           }
-          var batch = writeBatchFn(db);
-          batch.delete(docRef);
-          await activeHistorialCore.escribirEvento(batch, historyEvent, {
-            db: db,
-            firestoreModule: firestoreModule
-          });
-          await batch.commit();
-          return {
-            ok: true,
-            docPath: collectionName + "/" + productId,
-            historyEventId: historyEvent.eventId || null,
-            deleted: true
-          };
         }
 
         if (typeof deleteDoc !== "function") {
@@ -339,6 +349,8 @@
         return {
           ok: true,
           docPath: collectionName + "/" + productId,
+          historyEventId: null,
+          historySkipped: !!historyEvent,
           deleted: true
         };
       } catch (err) {
