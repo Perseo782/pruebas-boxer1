@@ -32,7 +32,7 @@
   });
   var SHARED_BROWSER_STORE_KEY = "fase3_shared_browser_store_v1";
   var ALLERGEN_DISPLAY_SETTINGS_KEY = "appv2_allergen_card_display_v1";
-  var LOCAL_APP_HISTORY_KEY = "fase7_app_history_local_v1";
+  var FASE11_DIAGNOSTICO_STORAGE_KEY = "fase11_diagnostico_actual_v1";
   var FEEDBACK_DURATION_MS = 2200;
   var DYNAMIC_SCRIPT_PROMISES = Object.create(null);
   var PHOTO_RUNTIME_SCRIPT_PATHS = Object.freeze([
@@ -101,50 +101,136 @@
       : [];
   }
 
-  function readLocalAppHistory() {
+  function makeFase11Id(prefix) {
+    return String(prefix || "fase11") + "_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 7);
+  }
+
+  function getFase11Store() {
+    if (!globalScope.Fase11DiagnosticoStore || typeof globalScope.Fase11DiagnosticoStore.getDefaultStore !== "function") {
+      return null;
+    }
+    return globalScope.Fase11DiagnosticoStore.getDefaultStore();
+  }
+
+  function stringifyDiagnostic(value) {
+    if (value == null || value === "") return "";
+    if (typeof value === "string") return value;
     try {
-      if (!globalScope.localStorage) return [];
-      var raw = globalScope.localStorage.getItem(LOCAL_APP_HISTORY_KEY);
-      if (!raw) return [];
-      var parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (errHistory) {
-      return [];
+      return JSON.stringify(value);
+    } catch (errJson) {
+      return String(value);
     }
   }
 
-  function writeLocalAppHistory(items) {
+  function readFase11FallbackSnapshot() {
+    try {
+      if (!globalScope.localStorage) return null;
+      var raw = globalScope.localStorage.getItem(FASE11_DIAGNOSTICO_STORAGE_KEY);
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch (errDiagRead) {
+      return null;
+    }
+  }
+
+  function writeFase11FallbackSnapshot(snapshot) {
     try {
       if (!globalScope.localStorage) return;
-      globalScope.localStorage.setItem(LOCAL_APP_HISTORY_KEY, JSON.stringify(cloneArray(items).slice(0, 30)));
-    } catch (errHistory) {
-      // El historial local no debe bloquear altas, ediciones ni borrados.
+      globalScope.localStorage.setItem(FASE11_DIAGNOSTICO_STORAGE_KEY, JSON.stringify(snapshot || {}));
+    } catch (errDiagWrite) {
+      // El diagnostico nunca debe bloquear el alta.
     }
   }
 
-  function pushLocalAppHistory(eventType, product, detail) {
-    var safeProduct = product && typeof product === "object" ? product : {};
-    var safeDetail = detail && typeof detail === "object" ? detail : {};
-    var identity = safeProduct.identidad && typeof safeProduct.identidad === "object" ? safeProduct.identidad : {};
-    var changeDetail = safeDetail.changeDetail && typeof safeDetail.changeDetail === "object" ? safeDetail.changeDetail : {};
-    var label = String(identity.nombre || safeProduct.nombre || safeDetail.productLabel || "").trim();
-    var event = {
-      eventId: "local_hist_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 7),
-      eventType: String(eventType || "PRODUCT_UPDATED").trim() || "PRODUCT_UPDATED",
-      productId: String(safeProduct.id || safeDetail.productId || "").trim(),
-      productLabel: label || "(sin nombre)",
-      actorId: "app_local",
-      occurredAt: new Date().toISOString(),
-      summary: "",
-      changeDetail: changeDetail
+  function makeFase11Event(level, moduleName, action, message, rawDetail, durationMs) {
+    var now = Date.now();
+    return {
+      eventId: makeFase11Id("evt"),
+      createdAt: new Date(now).toISOString(),
+      createdAtMs: now,
+      level: String(level || "INFO").toUpperCase(),
+      module: String(moduleName || "Sistema"),
+      action: String(action || "evento"),
+      message: String(message || "Sin detalle."),
+      rawDetail: stringifyDiagnostic(rawDetail).slice(0, 1200),
+      durationMs: Number.isFinite(Number(durationMs)) ? Number(durationMs) : null
     };
-    if (event.eventType === "PRODUCT_UPDATED") {
-      event.changedFields = Array.isArray(safeDetail.changedFields) ? safeDetail.changedFields.slice(0) : ["producto"];
-      if (!Object.keys(event.changeDetail).length) {
-        event.changeDetail = { producto: "Producto actualizado." };
-      }
+  }
+
+  function addFase11FallbackEvent(event) {
+    var snapshot = readFase11FallbackSnapshot() || {
+      caseId: makeFase11Id("fase11_case"),
+      status: "open",
+      openedAt: new Date().toISOString(),
+      closedAt: null,
+      events: []
+    };
+    var events = Array.isArray(snapshot.events) ? snapshot.events.slice(-39) : [];
+    events.push(event);
+    snapshot.status = "open";
+    snapshot.closedAt = null;
+    snapshot.events = events;
+    writeFase11FallbackSnapshot(snapshot);
+  }
+
+  function openFase11PhotoCase(caseId, fotoRefs) {
+    var safeCaseId = String(caseId || "").trim() || makeFase11Id("alta_foto_normal");
+    var store = getFase11Store();
+    if (store && typeof store.openCase === "function") {
+      store.openCase({
+        caseId: safeCaseId,
+        module: "Alta foto",
+        action: "analisis normal",
+        message: "Analisis por foto iniciado con " + (fotoRefs || []).length + " foto(s)."
+      });
+      return;
     }
-    writeLocalAppHistory([event].concat(readLocalAppHistory()));
+    writeFase11FallbackSnapshot({
+      caseId: safeCaseId,
+      status: "open",
+      openedAt: new Date().toISOString(),
+      closedAt: null,
+      events: [
+        makeFase11Event("INFO", "Alta foto", "analisis normal", "Analisis por foto iniciado con " + (fotoRefs || []).length + " foto(s).", null, null)
+      ]
+    });
+  }
+
+  function addFase11DiagnosticEvent(level, moduleName, action, message, rawDetail, durationMs) {
+    var store = getFase11Store();
+    if (store && typeof store.addEvent === "function") {
+      store.addEvent({
+        level: level || "INFO",
+        module: moduleName || "Sistema",
+        action: action || "evento",
+        message: message || "Sin detalle.",
+        rawDetail: stringifyDiagnostic(rawDetail),
+        durationMs: durationMs
+      });
+      return;
+    }
+    addFase11FallbackEvent(makeFase11Event(level, moduleName, action, message, rawDetail, durationMs));
+  }
+
+  function closeFase11PhotoCase(ok, message, durationMs, rawDetail) {
+    addFase11DiagnosticEvent(ok ? "INFO" : "ERROR", "Alta foto", "resultado analisis", message, rawDetail, durationMs);
+    var store = getFase11Store();
+    if (store && typeof store.closeCase === "function") {
+      store.closeCase({
+        level: ok ? "INFO" : "ERROR",
+        module: "Alta foto",
+        action: "fin analisis",
+        message: ok ? "Caso tecnico cerrado." : "Caso tecnico cerrado con error.",
+        durationMs: durationMs
+      });
+      return;
+    }
+    var snapshot = readFase11FallbackSnapshot();
+    if (!snapshot) return;
+    snapshot.status = "closed";
+    snapshot.closedAt = new Date().toISOString();
+    writeFase11FallbackSnapshot(snapshot);
   }
 
   function getAllergenDisplayMode() {
@@ -960,7 +1046,6 @@
       photoVisuales: [],
       photoStatus: "",
       photoStatusKind: "",
-      photoLog: [],
       photoSummary: "Todavía no has elegido fotos.",
       photoTarget: "envase",
       envasePreviewUrl: "",
@@ -1022,13 +1107,6 @@
     state.el.addPhotoStatus.classList.toggle("is-passport-green", ui.photoStatusKind === "passport-green");
     state.el.addPhotoStatus.classList.toggle("is-passport-orange", ui.photoStatusKind === "passport-orange");
     state.el.addPhotoStatus.classList.toggle("is-passport-red", ui.photoStatusKind === "passport-red");
-    if (state.el.addPhotoLog) {
-      var logLines = Array.isArray(ui.photoLog) ? ui.photoLog : [];
-      state.el.addPhotoLog.hidden = !logLines.length;
-      state.el.addPhotoLog.innerHTML = logLines.map(function mapLogLine(line) {
-        return "<li>" + escapeHtml(line) + "</li>";
-      }).join("");
-    }
     state.el.photoOriginCopy.textContent = ui.photoTarget === "etiqueta"
       ? "Etiquetado: elige Cámara o Galería"
       : "Envase: elige Cámara o Galería";
@@ -1278,6 +1356,91 @@
     return label + ". Revisa y confirma antes de guardar" + (nombre ? ": " + nombre : ".");
   }
 
+  function moduleLabel(moduleKey, moduleData) {
+    var safe = moduleData || {};
+    return String(safe.modulo || moduleKey || "Motor");
+  }
+
+  function addBoxerInternalDiagnostic(moduleKey, moduleData) {
+    var local = moduleData && moduleData.resultadoLocal ? moduleData.resultadoLocal : null;
+    var data = local && local.datos ? local.datos : {};
+    var diag = data && data.diagnostico ? data.diagnostico : (local && local.diagnostico ? local.diagnostico : null);
+    var events = diag && Array.isArray(diag.eventos) ? diag.eventos : [];
+    events.slice(-12).forEach(function eachDiagEvent(event) {
+      var level = event && event.tipoEvento === "error" ? "ERROR" : (event && event.passport === "ROJO" ? "WARN" : "INFO");
+      addFase11DiagnosticEvent(
+        level,
+        moduleLabel(moduleKey, moduleData),
+        event && event.code ? event.code : "diagnostico interno",
+        event && event.mensaje ? event.mensaje : "Evento tecnico interno.",
+        event && event.detalle ? event.detalle : event,
+        event && event.elapsedMs
+      );
+    });
+  }
+
+  function addResponseMetricDiagnostics(response) {
+    var metricas = response && response.metricas ? response.metricas : null;
+    var events = metricas && Array.isArray(metricas.eventos) ? metricas.eventos : [];
+    events.slice(-12).forEach(function eachMetric(event) {
+      addFase11DiagnosticEvent(
+        event && event.level === "error" ? "ERROR" : (event && event.level === "warn" ? "WARN" : "INFO"),
+        "Cerebro",
+        event && event.code ? event.code : "evento",
+        event && event.message ? event.message : "Evento de orquestacion.",
+        event && event.detail ? event.detail : event,
+        null
+      );
+    });
+  }
+
+  function addModuleDiagnostics(response) {
+    var finalData = getPhotoAnalysisFinalData(response);
+    var modules = finalData && finalData.modulos && typeof finalData.modulos === "object" ? finalData.modulos : {};
+    ["boxer1", "boxer2", "boxer3", "boxer4"].forEach(function eachModule(moduleKey) {
+      var item = modules[moduleKey];
+      if (!item) return;
+      addFase11DiagnosticEvent(
+        item.estadoPasaporteModulo === "ROJO" ? "WARN" : "INFO",
+        moduleLabel(moduleKey, item),
+        "resultado motor",
+        "Pasaporte " + String(item.estadoPasaporteModulo || "-") + ". IA: " + String(item.estadoIA || "-") + ".",
+        item,
+        item.elapsedMs
+      );
+      addBoxerInternalDiagnostic(moduleKey, item);
+    });
+  }
+
+  function addFinalDecisionDiagnostic(response, outcome) {
+    var finalData = getPhotoAnalysisFinalData(response);
+    if (!finalData || (!finalData.decision && !finalData.propuestaFinal)) return;
+    var decision = finalData && finalData.decision ? finalData.decision : {};
+    var propuesta = finalData && finalData.propuestaFinal ? finalData.propuestaFinal : {};
+    addFase11DiagnosticEvent(
+      outcome === "bloqueado" ? "WARN" : "INFO",
+      "Cerebro",
+      "decision final",
+      "Pasaporte " + String(decision.pasaporte || "-") + ". Flujo " + String(decision.decisionFlujo || "-") + ".",
+      {
+        analysisId: finalData && finalData.analysisId,
+        traceId: finalData && finalData.traceId,
+        propuestaFinal: propuesta,
+        decision: decision,
+        revision: finalData && finalData.revision,
+        ia: finalData && finalData.ia
+      },
+      finalData && finalData.elapsedMs
+    );
+  }
+
+  function recordPhotoAnalysisDiagnostics(response, outcome) {
+    if (!response) return;
+    addResponseMetricDiagnostics(response);
+    addModuleDiagnostics(response);
+    addFinalDecisionDiagnostic(response, outcome);
+  }
+
   function applyPhotoAnalysisToAddModal(state, response, outcome, photoPayload) {
     var finalData = getPhotoAnalysisFinalData(response);
     var propuesta = finalData.propuestaFinal || {};
@@ -1422,24 +1585,6 @@
     };
   }
 
-  function setPhotoLog(state, lines) {
-    state.ui.add.photoLog = Array.isArray(lines)
-      ? lines.map(function normalizeLine(line) {
-        return String(line || "").trim();
-      }).filter(Boolean).slice(0, 8)
-      : [];
-  }
-
-  function appendPhotoLog(state, line) {
-    var lines = Array.isArray(state.ui.add.photoLog) ? state.ui.add.photoLog.slice(0) : [];
-    lines.push(String(line || "").trim());
-    setPhotoLog(state, lines);
-  }
-
-  function formatElapsedSeconds(ms) {
-    return (Math.max(0, Number(ms) || 0) / 1000).toFixed(1).replace(".", ",") + " s";
-  }
-
   async function submitManualAdd(state) {
     if (!globalScope.Fase3OperativaAltaManual || typeof globalScope.Fase3OperativaAltaManual.ejecutarAltaManual !== "function") {
       showFeedback(state, "error", { message: "Alta manual no disponible." });
@@ -1468,14 +1613,8 @@
       });
       return;
     }
-    var savedProduct = out.resultado && out.resultado.datos ? out.resultado.datos.producto : null;
     var isMerge = !!(out.resultado && out.resultado.datos && out.resultado.datos.fusionExacta);
-    pushLocalAppHistory(isMerge ? "PRODUCT_UPDATED" : "PRODUCT_CREATED", savedProduct || { identidad: { nombre: state.ui.add.nombre } }, {
-      changedFields: ["producto"],
-      changeDetail: {
-        producto: photoResultReady ? "Producto confirmado desde analisis de foto." : "Producto guardado manualmente."
-      }
-    });
+    var savedProduct = out.resultado && out.resultado.datos ? out.resultado.datos.producto : null;
     closeAddModal(state);
     refreshVisibleList(state, { skipAssetReload: true });
     showFeedback(state, isMerge ? "manual_merge" : "manual_add");
@@ -1494,17 +1633,20 @@
     }
     try {
       var photoStartedAt = Date.now();
+      var fase11CaseId = "alta_foto_normal_" + photoStartedAt.toString(36);
+      var fase11CaseOpened = false;
       state.ui.add.busy = true;
       state.ui.add.photoResultReady = false;
       state.ui.add.photoStatus = "Preparando analisis...";
       state.ui.add.photoStatusKind = "";
-      setPhotoLog(state, ["Preparando analisis de foto."]);
       renderAddModal(state);
       var fotoRefs = await readPhotoRefsFromInputs(state);
-      appendPhotoLog(state, "Foto leida: " + fotoRefs.length + " foto(s).");
+      openFase11PhotoCase(fase11CaseId, fotoRefs);
+      fase11CaseOpened = true;
+      addFase11DiagnosticEvent("INFO", "Alta foto", "foto leida", "Foto leida: " + fotoRefs.length + " foto(s).", { totalFotos: fotoRefs.length }, null);
       await ensurePhotoRuntimeReady(state);
       state.ui.add.photoStatus = "Analizando foto...";
-      appendPhotoLog(state, "Analizando con motores de la app.");
+      addFase11DiagnosticEvent("INFO", "Alta foto", "motores", "Analisis enviado a motores de la app.", null, null);
       renderAddModal(state);
       var backendUrl = globalScope.Fase3AltaFotoVisibleApp.DEFAULT_BACKEND_URL;
       if (state.runtime && typeof state.runtime.getBackendUrl === "function") {
@@ -1533,11 +1675,12 @@
       var passport = hasPhotoAnalysisResult(response)
         ? resolvePhotoPassport(getPhotoAnalysisFinalData(response), outcome)
         : "";
+      recordPhotoAnalysisDiagnostics(response, outcome);
       state.ui.add.busy = false;
       if (!response || response.ok !== true) {
         if (hasPhotoAnalysisResult(response)) {
           applyPhotoAnalysisToAddModal(state, response, outcome, { visuales: photoVisuales });
-          appendPhotoLog(state, "Resultado recibido en " + formatElapsedSeconds(Date.now() - photoStartedAt) + ". Pasaporte " + passport + ".");
+          closeFase11PhotoCase(true, "Analisis recibido con datos aprovechables. Pasaporte " + passport + ".", Date.now() - photoStartedAt, response);
           renderAddModal(state);
           showFeedback(state, "photo_ready");
           return;
@@ -1547,13 +1690,13 @@
           : "No se pudo completar el analisis.";
         state.ui.add.photoResultReady = false;
         state.ui.add.photoStatusKind = "error";
-        setPhotoLog(state, ["Analisis detenido.", state.ui.add.photoStatus]);
+        closeFase11PhotoCase(false, state.ui.add.photoStatus, Date.now() - photoStartedAt, response);
         renderAddModal(state);
         showFeedback(state, "error", { message: state.ui.add.photoStatus });
         return;
       }
       applyPhotoAnalysisToAddModal(state, response, outcome, { visuales: photoVisuales });
-      appendPhotoLog(state, "Resultado recibido en " + formatElapsedSeconds(Date.now() - photoStartedAt) + ". Pasaporte " + passport + ".");
+      closeFase11PhotoCase(true, "Analisis completado. Pasaporte " + passport + ".", Date.now() - photoStartedAt, response);
       renderAddModal(state);
       showFeedback(state, "photo_ready");
     } catch (errPhoto) {
@@ -1561,7 +1704,11 @@
       state.ui.add.photoResultReady = false;
       state.ui.add.photoStatus = errPhoto && errPhoto.message ? errPhoto.message : "No se pudo leer la foto.";
       state.ui.add.photoStatusKind = "error";
-      setPhotoLog(state, ["Error leyendo o analizando la foto.", state.ui.add.photoStatus]);
+      if (!fase11CaseOpened) openFase11PhotoCase(fase11CaseId || "alta_foto_error_" + Date.now().toString(36), []);
+      closeFase11PhotoCase(false, state.ui.add.photoStatus, Date.now() - photoStartedAt, {
+        message: state.ui.add.photoStatus,
+        raw: errPhoto && errPhoto.stack ? errPhoto.stack : String(errPhoto || "")
+      });
       renderAddModal(state);
       showFeedback(state, "error", { message: state.ui.add.photoStatus });
     }
@@ -1590,13 +1737,6 @@
       });
       return;
     }
-    var editedProduct = state.store && typeof state.store.getProductById === "function"
-      ? state.store.getProductById(state.ui.edit.productId)
-      : null;
-    pushLocalAppHistory("PRODUCT_UPDATED", editedProduct || { id: state.ui.edit.productId, identidad: { nombre: state.ui.edit.nombre } }, {
-      changedFields: ["producto"],
-      changeDetail: { producto: "Producto editado." }
-    });
     closeEditModal(state);
     refreshVisibleList(state, { skipAssetReload: true });
     showFeedback(state, "edit_saved");
@@ -1611,11 +1751,6 @@
     var ok = await deleteProduct(state, productId, productName);
     state.ui.edit.busy = false;
     if (ok) {
-      pushLocalAppHistory("PRODUCT_DELETED", { id: productId, identidad: { nombre: productName } }, {
-        productId: productId,
-        productLabel: productName,
-        changeDetail: { producto: "Producto eliminado." }
-      });
       closeEditModal(state);
       showFeedback(state, "", { message: "Producto eliminado." });
       return;
@@ -2158,7 +2293,6 @@
         addPhotoFile2: byId("add-photo-file-2"),
         addPhotoSummary: byId("add-photo-summary"),
         addPhotoStatus: byId("add-photo-status"),
-        addPhotoLog: byId("add-photo-log"),
         analyzePhotoProduct: byId("analyze-photo-product"),
         openPhotoOrigin: byId("open-photo-origin"),
         photoSlotEnvase: byId("photo-slot-envase"),

@@ -990,14 +990,6 @@
       line-height: var(--line-height-secondary);
     }
 
-    .photo-log {
-      margin: 10px 0 0;
-      padding-left: 18px;
-      color: var(--muted);
-      font-size: var(--font-size-small);
-      line-height: var(--line-height-small);
-    }
-
     .origin-button {
       min-height: 56px;
       border-radius: 16px;
@@ -1401,7 +1393,6 @@
         <div id="add-manual-pane" class="sheet-section">
           <p id="add-manual-title" class="sheet-section-title">Agregado manual</p>
           <p id="add-photo-status" class="photo-status" hidden></p>
-          <ul id="add-photo-log" class="photo-log" hidden></ul>
           <div class="field-group">
             <label for="add-product-name">Nombre del producto</label>
             <input id="add-product-name" class="text-input" type="text" maxlength="63" placeholder="Ej: Galletas integrales">
@@ -1519,6 +1510,9 @@
   <script src="../../backend/sync/sync_log.js"></script>
   <script src="../../backend/sync/sync_backup.js"></script>
   <script src="../../backend/sync/sync_manager.js"></script>
+  <script src="../../backend/diagnostico/diagnostico_formatter.js"></script>
+  <script src="../../backend/diagnostico/diagnostico_cleanup.js"></script>
+  <script src="../../backend/diagnostico/diagnostico_store.js"></script>
   <script src="../../backend/operativa/alta_manual.js"></script>
   <script src="../../backend/operativa/gestion_registros.js"></script>
   <script src="../estado/shared_store_browser.js"></script>
