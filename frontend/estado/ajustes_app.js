@@ -94,12 +94,12 @@
   }
 
   function buildSyncSummary(syncData) {
-    if (!syncData) return "Tus cambios se guardan automaticamente.";
+    if (!syncData) return "La app guarda tus cambios automaticamente.";
     if (Number(syncData.conflicts || 0) > 0) return "Hay cambios pendientes de revisar.";
     if (Number(syncData.pending || 0) > 0) return "Hay cambios pendientes de guardar.";
     if (syncData.ok === false) return "La conexion con la nube necesita revision.";
-    if (syncData.lastSyncAt) return "Todo al dia. Ultima actualizacion: " + formatDateTime(syncData.lastSyncAt);
-    return "Todo al dia.";
+    if (syncData.lastSyncAt) return "Cambios guardados. Ultima actualizacion: " + formatDateTime(syncData.lastSyncAt);
+    return "Sin cambios pendientes.";
   }
 
   function isOnline() {
