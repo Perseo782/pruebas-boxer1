@@ -178,17 +178,18 @@
 
     try {
       var historyCollection = collectionFn(db, campos.COLLECTION_NAME);
-      var oldestQuery = queryFn(historyCollection, orderByFn("occurredAt", "asc"), orderByFn("eventId", "asc"), limitFn(1));
-      var countQuery = queryFn(historyCollection, orderByFn("occurredAt", "desc"), limitFn(campos.MAX_ITEMS));
-      var results = await Promise.all([getDocs(oldestQuery), getDocs(countQuery)]);
-      var oldestSnapshot = results[0];
-      var countSnapshot = results[1];
-      var currentCount = countSnapshot && typeof countSnapshot.size === "number"
-        ? countSnapshot.size
-        : 0;
+      var cleanupLimit = Math.max(campos.MAX_ITEMS + 1, campos.MAX_ITEMS * 4);
+      var recentQuery = queryFn(historyCollection, orderByFn("occurredAt", "desc"), limitFn(cleanupLimit));
+      var recentSnapshot = await getDocs(recentQuery);
+      var recentDocs = [];
+      if (recentSnapshot && typeof recentSnapshot.forEach === "function") {
+        recentSnapshot.forEach(function each(docSnap) {
+          recentDocs.push(docSnap);
+        });
+      }
 
-      if (currentCount >= campos.MAX_ITEMS && oldestSnapshot && !oldestSnapshot.empty) {
-        oldestSnapshot.forEach(function each(docSnap) {
+      if (recentDocs.length >= campos.MAX_ITEMS) {
+        recentDocs.slice(campos.MAX_ITEMS - 1).forEach(function each(docSnap) {
           safeBatch.delete(docFn(db, campos.COLLECTION_NAME, docSnap.id));
         });
       }
@@ -202,7 +203,7 @@
       return {
         ok: true,
         registro: normalized,
-        removedOldest: currentCount >= campos.MAX_ITEMS
+        removedOldest: recentDocs.length >= campos.MAX_ITEMS
       };
     } catch (err) {
       throw buildHistorialError(

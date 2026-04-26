@@ -623,6 +623,56 @@
       }
     }
 
+    async function appendHistoryEvent(input) {
+      var safeInput = input || {};
+      var readiness = await ensureRemoteReady(safeInput.sessionToken);
+      if (!readiness.ok) return readiness;
+      if (typeof writeBatchFn !== "function") {
+        return {
+          ok: false,
+          errorCode: "FIRESTORE_HISTORIAL_WRITE_NO_DISPONIBLE",
+          message: "Firestore no expone escritura por lote para historial."
+        };
+      }
+      var activeHistorialCore = resolveHistorialCore();
+      if (!activeHistorialCore) {
+        return {
+          ok: false,
+          errorCode: "FIRESTORE_HISTORIAL_NO_CONFIGURADO",
+          message: "Falta el modulo de historial para guardar eventos."
+        };
+      }
+      var historyEvent = safeInput.historyEvent || safeInput.event || null;
+      if (!historyEvent || !historyEvent.eventType) {
+        return {
+          ok: false,
+          errorCode: "FIRESTORE_HISTORIAL_EVENTO_INVALIDO",
+          message: "Falta evento de historial valido."
+        };
+      }
+
+      try {
+        var batch = writeBatchFn(db);
+        var written = await activeHistorialCore.escribirEvento(batch, historyEvent, {
+          db: db,
+          firestoreModule: firestoreModule
+        });
+        await batch.commit();
+        return {
+          ok: true,
+          historyEventId: written && written.registro && written.registro.eventId
+            ? written.registro.eventId
+            : String(historyEvent.eventId || "").trim() || null
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          errorCode: safeCode(err, "FIRESTORE_HISTORIAL_WRITE_FAILED"),
+          message: safeMessage(err, "No se pudo guardar historial en Firestore.")
+        };
+      }
+    }
+
     async function leerCambiosDesde(cursor, options) {
       var safeOptions = options || {};
       var readiness = await ensureRemoteReady(safeOptions.sessionToken);
@@ -830,6 +880,7 @@
       listProductRecords: listProductRecords,
       findProductRecordsByIdentity: findProductRecordsByIdentity,
       listHistoryEvents: listHistoryEvents,
+      appendHistoryEvent: appendHistoryEvent,
       leerCambiosDesde: leerCambiosDesde,
       marcarBorradoEnNube: marcarBorradoEnNube,
       iniciarListenerCambios: iniciarListenerCambios,

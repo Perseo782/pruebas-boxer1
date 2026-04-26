@@ -311,6 +311,73 @@
     return out.slice(0, 30);
   }
 
+  function buildHistorySeenMaps(items) {
+    var seenEventIds = Object.create(null);
+    var seenSignatures = Object.create(null);
+    (Array.isArray(items) ? items : []).forEach(function each(item) {
+      if (!item || !item.eventType) return;
+      var eventId = String(item.eventId || "").trim();
+      var signature = buildHistorySignature(item);
+      if (eventId) seenEventIds[eventId] = true;
+      if (signature) seenSignatures[signature] = true;
+    });
+    return {
+      seenEventIds: seenEventIds,
+      seenSignatures: seenSignatures
+    };
+  }
+
+  function findHistoryBackfillCandidates(remoteItems, localItems) {
+    var maps = buildHistorySeenMaps(remoteItems);
+    var candidates = [];
+    (Array.isArray(localItems) ? localItems : []).forEach(function each(item) {
+      if (!item || !item.eventType) return;
+      var eventId = String(item.eventId || "").trim();
+      var signature = buildHistorySignature(item);
+      if (eventId && maps.seenEventIds[eventId]) return;
+      if (signature && maps.seenSignatures[signature]) return;
+      if (eventId) maps.seenEventIds[eventId] = true;
+      if (signature) maps.seenSignatures[signature] = true;
+      candidates.push(cloneValue(item));
+    });
+    candidates.sort(function sortAsc(a, b) {
+      return compareHistoryDesc(b, a);
+    });
+    return candidates;
+  }
+
+  async function repairRemoteHistory(state, remoteIndex, remoteItems, localItems) {
+    if (
+      !state ||
+      state.historyRepairBusy === true ||
+      !remoteIndex ||
+      typeof remoteIndex.appendHistoryEvent !== "function"
+    ) {
+      return { ok: false, repaired: 0 };
+    }
+
+    var pending = findHistoryBackfillCandidates(remoteItems, localItems);
+    if (!pending.length) return { ok: true, repaired: 0 };
+
+    state.historyRepairBusy = true;
+    try {
+      var repaired = 0;
+      for (var i = 0; i < pending.length; i += 1) {
+        var out = await remoteIndex.appendHistoryEvent({
+          historyEvent: pending[i],
+          sessionToken: readSessionToken() || null
+        });
+        if (out && out.ok === true) repaired += 1;
+      }
+      return {
+        ok: repaired === pending.length,
+        repaired: repaired
+      };
+    } finally {
+      state.historyRepairBusy = false;
+    }
+  }
+
   function profileToLabel(key) {
     if (key === "MAXIMA_COMPRESION_WEBP") return "Maxima compresion (WebP)";
     if (key === "ALTA_CALIDAD_JPEG") return "Alta calidad (JPEG)";
@@ -652,9 +719,9 @@
   async function loadHistory(state) {
     var localProductItems = readLocalProductHistory();
     var localImportItems = readLocalImportHistory();
+    var localItems = mergeHistorySources([], localProductItems, localImportItems);
     var resolved = resolveRemoteIndex();
     if (!resolved.ok) {
-      var localItems = mergeHistorySources([], localProductItems, localImportItems);
       state.el.historyStatus.textContent = localItems.length ? "Historial local cargado." : resolved.message;
       state.items = localItems;
       renderHistoryList(state);
@@ -673,9 +740,21 @@
       return;
     }
 
-    state.items = mergeHistorySources(Array.isArray(out.items) ? out.items : [], localProductItems, localImportItems);
-    state.el.historyStatus.textContent = "Historial cargado.";
+    var remoteItems = Array.isArray(out.items) ? out.items : [];
+    state.items = mergeHistorySources(remoteItems, localProductItems, localImportItems);
     renderHistoryList(state);
+    var repairOut = await repairRemoteHistory(state, resolved.remoteIndex, remoteItems, localItems);
+    if (repairOut && repairOut.repaired > 0) {
+      var refreshed = await resolved.remoteIndex.listHistoryEvents({ sessionToken: readSessionToken() || null });
+      if (refreshed && refreshed.ok === true) {
+        state.items = mergeHistorySources(Array.isArray(refreshed.items) ? refreshed.items : [], localProductItems, localImportItems);
+        renderHistoryList(state);
+      }
+      state.el.historyStatus.textContent = "Historial compartido actualizado.";
+      return;
+    }
+
+    state.el.historyStatus.textContent = "Historial cargado.";
   }
 
   function emitVisualSettingsChanged(detail) {
@@ -1030,6 +1109,7 @@
     var state = {
       items: [],
       selectedIndex: 0,
+      historyRepairBusy: false,
       store: null,
       syncManager: null,
       backupController: null,
