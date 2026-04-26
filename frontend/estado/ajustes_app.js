@@ -629,9 +629,11 @@
       var updatedLabel = updatedRaw ? formatDateTime(updatedRaw) : "Fecha sin leer";
       return (
         "<div class=\"event-card backup-card\">" +
-          "<span class=\"event-type\">Copia " + (index + 1) + "</span>" +
-          "<strong class=\"event-name\">Guardada: " + escapeHtml(updatedLabel) + "</strong>" +
-          "<span class=\"event-date\">Pulsa restaurar para volver a ese momento.</span>" +
+          "<div class=\"backup-copy\">" +
+            "<span class=\"event-type\">Copia " + (index + 1) + "</span>" +
+            "<strong class=\"event-name\">" + escapeHtml(updatedLabel) + "</strong>" +
+            "<span class=\"event-date\">Vuelve a ese momento.</span>" +
+          "</div>" +
           "<div class=\"toolbar\"><button type=\"button\" class=\"ok js-restore-backup\" data-path=\"" + escapeHtml(String(item.fullPath || "")) + "\" data-updated=\"" + escapeHtml(updatedRaw) + "\">Restaurar</button></div>" +
         "</div>"
       );
@@ -1105,7 +1107,7 @@
     }
     renderBackupList(state, listed.items || []);
     state.el.syncStatus.textContent = (listed.items || []).length
-      ? "Elige una copia para restaurar."
+      ? "Elige una copia."
       : "No hay copias guardadas.";
   }
 
@@ -1229,13 +1231,13 @@
     globalScope.addEventListener("fase3-firebase-ready", function onReady() {
       loadDatabaseSummary(state);
       loadHistory(state);
-      renderSyncResumen(state, "Pulsa \"Ver copias\" para consultar.");
+      renderSyncResumen(state, "Consulta tus copias.");
       refreshFase11Estado(state, "Firebase listo.");
     });
     globalScope.addEventListener("pageshow", function onPageShow() {
       loadDatabaseSummary(state);
       loadHistory(state);
-      renderSyncResumen(state, "Pulsa \"Ver copias\" para consultar.");
+      renderSyncResumen(state, "Consulta tus copias.");
       refreshFase11Estado(state, "Vista actualizada.");
     });
 
@@ -1311,7 +1313,7 @@
     renderPhotoSettings(state, null);
     renderAllergenDisplaySettings(state, null);
     renderHistoryList(state);
-    renderSyncResumen(state, "Pulsa \"Ver copias\" para consultar.");
+    renderSyncResumen(state, "Consulta tus copias.");
     renderBackupList(state, []);
     refreshFase11Estado(state, "Listo.");
     loadDatabaseSummary(state);

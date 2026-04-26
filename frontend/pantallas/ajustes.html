@@ -232,25 +232,46 @@
     #backup-list .backup-card {
       grid-template-columns: minmax(0, 1fr) auto;
       align-items: center;
-      gap: 8px 10px;
-      min-height: 74px;
-      max-height: 74px;
-      padding: 8px 10px;
-      overflow: hidden;
+      gap: 10px 12px;
+      min-height: 88px;
+      padding: 10px 12px;
+    }
+    #backup-list .backup-copy {
+      min-width: 0;
+      display: grid;
+      gap: 4px;
+      align-content: center;
     }
     #backup-list .backup-card .event-name,
     #backup-list .backup-card .event-date {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
     }
     #backup-list .backup-card .toolbar {
       margin-top: 0;
       justify-self: end;
       align-self: center;
+      display: flex;
+      align-items: center;
     }
     #backup-list .backup-card .toolbar button {
-      min-width: 100px;
+      min-width: 98px;
+      min-height: 38px;
+      padding: 0 12px;
+    }
+    #backup-list .backup-card .event-type {
+      font-size: 11px;
+      line-height: 14px;
+      padding: 3px 8px;
+    }
+    #backup-list .backup-card .event-name {
+      font-size: 13px;
+      line-height: 16px;
+    }
+    #backup-list .backup-card .event-date {
+      font-size: 12px;
+      line-height: 15px;
     }
     #historial-list .event-card {
       grid-template-columns: auto minmax(0, 1fr) auto;
@@ -512,9 +533,9 @@
       <p id="sync-resumen">Tus cambios se guardan automaticamente.</p>
       <div class="toolbar">
         <button id="backup-reload" type="button">Ver copias</button>
-        <span id="sync-status" class="meta">Pulsa "Ver copias" para consultar.</span>
+        <span id="sync-status" class="meta">Consulta tus copias.</span>
       </div>
-      <p class="meta" style="margin-top:8px;">La app conserva hasta 3 copias automaticas y las puedes restaurar desde aqui.</p>
+      <p class="meta" style="margin-top:8px;">Se guardan hasta 3 copias automaticas para recuperar momentos anteriores.</p>
       <div id="backup-list" class="list"></div>
     </section>
 
@@ -535,7 +556,7 @@
   <script src="../../shared/alergenos_oficiales.js"></script>
   <script src="../../backend/persistencia/data_store_local.js"></script>
   <script src="../config/firebase_config_fase3.js"></script>
-  <script src="../estado/shared_store_browser.js?v=20260426e"></script>
+  <script src="../estado/shared_store_browser.js?v=20260426f"></script>
   <script src="../../backend/historial/historial_campos.js"></script>
   <script src="../../backend/historial/historial_core.js"></script>
   <script src="../../backend/adaptadores/firestore_productos_remote.js"></script>
@@ -544,7 +565,7 @@
   <script src="../../backend/sync/sync_tombstone.js"></script>
   <script src="../../backend/sync/sync_conflictos.js"></script>
   <script src="../../backend/sync/sync_log.js"></script>
-  <script src="../../backend/sync/sync_backup.js?v=20260426e"></script>
+  <script src="../../backend/sync/sync_backup.js?v=20260426f"></script>
   <script src="../../backend/sync/sync_manager.js"></script>
   <script src="../../backend/ia/cerebro_broker_ia.js"></script>
   <script src="../../backend/diagnostico/diagnostico_formatter.js"></script>
@@ -554,7 +575,7 @@
   <script src="../../backend/diagnostico/diagnostico_pruebas.js"></script>
   <script src="../estado/cerebro_visible_runtime.js"></script>
   <script src="../estado/cerebro_warmup.js"></script>
-  <script src="../estado/ajustes_app.js?v=20260426e"></script>
+  <script src="../estado/ajustes_app.js?v=20260426f"></script>
 </body>
 </html>
 
