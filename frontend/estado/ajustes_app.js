@@ -68,7 +68,7 @@
       safePromise,
       new Promise(function onTimeout(_, reject) {
         setTimeout(function fireTimeout() {
-          reject(createUiError(timeoutMessage || "La operacion tardo demasiado.", "UI_TIMEOUT"));
+          reject(createUiError(timeoutMessage || "La operación tardó demasiado.", "UI_TIMEOUT"));
         }, safeTimeoutMs);
       })
     ]);
@@ -79,16 +79,16 @@
     var lower = safeMessage.toLowerCase();
     if (!safeMessage) return String(fallback || "No se pudo completar ahora.");
     if (lower.indexOf("retry-limit-exceeded") >= 0 || lower.indexOf("max retry time") >= 0) {
-      return "La nube no respondio a tiempo. Prueba otra vez.";
+      return "La nube no respondió a tiempo. Prueba otra vez.";
     }
     if (lower.indexOf("sessiontoken") >= 0 || lower.indexOf("token") >= 0 || lower.indexOf("sesion") >= 0) {
-      return "Hace falta iniciar sesion otra vez para consultar las copias.";
+      return "Hace falta iniciar sesión otra vez para consultar las copias.";
     }
     if (lower.indexOf("storage") >= 0 || lower.indexOf("backup") >= 0 || lower.indexOf("copias") >= 0) {
       return "No se pudieron consultar las copias ahora.";
     }
     if (lower.indexOf("timeout") >= 0 || lower.indexOf("tardo demasiado") >= 0) {
-      return "La consulta de copias tardo demasiado. Prueba otra vez.";
+      return "La consulta de copias tardó demasiado. Prueba otra vez.";
     }
     return String(fallback || "No se pudo completar ahora.");
   }
@@ -97,8 +97,8 @@
     if (!syncData) return "";
     if (Number(syncData.conflicts || 0) > 0) return "Hay cambios pendientes de revisar.";
     if (Number(syncData.pending || 0) > 0) return "Hay cambios pendientes de guardar.";
-    if (syncData.ok === false) return "La conexion con la nube necesita revision.";
-    if (syncData.lastSyncAt) return "Ultimo guardado: " + formatDateTime(syncData.lastSyncAt);
+    if (syncData.ok === false) return "La conexión con la nube necesita revisión.";
+    if (syncData.lastSyncAt) return "Último guardado: " + formatDateTime(syncData.lastSyncAt);
     return "Sin cambios pendientes.";
   }
 
@@ -407,7 +407,7 @@
   }
 
   function profileToLabel(key) {
-    if (key === "MAXIMA_COMPRESION_WEBP") return "Maxima compresion (WebP)";
+    if (key === "MAXIMA_COMPRESION_WEBP") return "Máxima compresión (WebP)";
     if (key === "ALTA_CALIDAD_JPEG") return "Alta calidad (JPEG)";
     return "Equilibrado (WebP)";
   }
@@ -418,7 +418,7 @@
       return {
         ok: false,
         errorCode: runtime && runtime.errorCode ? runtime.errorCode : "FIREBASE_RUNTIME_NO_LISTO",
-        message: runtime && runtime.message ? runtime.message : "Firebase aun no esta listo."
+        message: runtime && runtime.message ? runtime.message : "Firebase aún no está listo."
       };
     }
     if (!globalScope.Fase3FirestoreProductosRemote) {
@@ -450,7 +450,7 @@
 
   function buildDetailLines(item) {
     if (!item || !item.eventType) return ["Sin detalle."];
-    if (item.eventType === "PRODUCT_CREATED") return ["El producto fue anadido."];
+    if (item.eventType === "PRODUCT_CREATED") return ["El producto fue añadido."];
     if (item.eventType === "PRODUCT_DELETED") return ["El producto fue eliminado."];
     if (
       item.eventType === "IMPORTACION_EXCEL" ||
@@ -465,7 +465,7 @@
       if (item.eventType === "IMPORTACION_EXCEL") {
         lines.push("Importados: " + Number(importDetail.imported || 0));
         lines.push("Fusionados: " + Number(importDetail.merged || 0));
-        lines.push("En revision: " + Number(importDetail.review || 0));
+        lines.push("En revisión: " + Number(importDetail.review || 0));
         lines.push("Rechazados: " + Number(importDetail.rejected || 0));
         return lines;
       }
@@ -531,11 +531,11 @@
   }
 
   function toVisibleType(eventType) {
-    if (eventType === "PRODUCT_CREATED") return "Anadido";
+    if (eventType === "PRODUCT_CREATED") return "Añadido";
     if (eventType === "PRODUCT_UPDATED") return "Modificado";
     if (eventType === "PRODUCT_DELETED") return "Eliminado";
     if (eventType === "IMPORTACION_EXCEL") return "Importacion Excel";
-    if (eventType === "IMPORTACION_EXCEL_REVISION") return "En revision";
+    if (eventType === "IMPORTACION_EXCEL_REVISION") return "En revisión";
     if (eventType === "IMPORTACION_EXCEL_RECHAZO") return "Rechazado";
     return "Movimiento";
   }
@@ -582,11 +582,11 @@
     state.el.photoCurrent.textContent =
       "Actual: " + profileToLabel(cfg.profileKey) +
       " | Calidad " + cfg.qualityPct + "%" +
-      " | Resolucion " + cfg.resolutionMaxPx + " px";
+      " | Resolución " + cfg.resolutionMaxPx + " px";
 
     var lines = [];
     if (cfg.updatedAt) lines.push("Guardado: " + formatDate(cfg.updatedAt));
-    if (cfg.recompressAllAt) lines.push("Recompresion pedida: " + formatDate(cfg.recompressAllAt));
+    if (cfg.recompressAllAt) lines.push("Recompresión pedida: " + formatDate(cfg.recompressAllAt));
     state.el.photoMeta.textContent = lines.join(" | ") || "Sin cambios recientes.";
     if (message) state.el.photoStatus.textContent = message;
   }
@@ -711,7 +711,7 @@
 
   function refreshFase11Estado(state, message) {
     if (!globalScope.Fase11DiagnosticoEstado || typeof globalScope.Fase11DiagnosticoEstado.leerEstadoSistema !== "function") {
-      if (state.el.fase11EstadoStatus) state.el.fase11EstadoStatus.textContent = "Diagnostico no cargado.";
+      if (state.el.fase11EstadoStatus) state.el.fase11EstadoStatus.textContent = "Diagnóstico no cargado.";
       return;
     }
     renderFase11Estado(state, globalScope.Fase11DiagnosticoEstado.leerEstadoSistema(buildFase11Deps(state)));
@@ -743,20 +743,20 @@
   async function copyFase11Diagnostico(state) {
     var store = getFase11Store();
     if (!store || typeof store.buildCopyText !== "function") {
-      state.el.fase11CopyStatus.textContent = "No hay diagnostico disponible.";
+      state.el.fase11CopyStatus.textContent = "No hay diagnóstico disponible.";
       return;
     }
     var text = store.buildCopyText();
     try {
       if (globalScope.navigator && globalScope.navigator.clipboard && typeof globalScope.navigator.clipboard.writeText === "function") {
         await globalScope.navigator.clipboard.writeText(text);
-        state.el.fase11CopyStatus.textContent = "Diagnostico copiado.";
+        state.el.fase11CopyStatus.textContent = "Diagnóstico copiado.";
         return;
       }
     } catch (errClipboard) {
       // No-op.
     }
-    state.el.fase11CopyStatus.textContent = "Diagnostico preparado para copiar.";
+    state.el.fase11CopyStatus.textContent = "Diagnóstico preparado para copiar.";
   }
 
   function clearFase11Diagnostico(state) {
@@ -982,7 +982,7 @@
       return {
         ok: false,
         errorCode: "SYNC_RESTORE_REMOTE_NO_DISPONIBLE",
-        message: "La nube no esta disponible ahora."
+          message: "La nube no está disponible ahora."
       };
     }
 
@@ -1040,7 +1040,7 @@
           return {
             ok: false,
             errorCode: (deleted && deleted.errorCode) || "SYNC_RESTORE_REMOTE_DELETE_FAILED",
-            message: "La copia subio, pero no se pudo limpiar la base actual completa."
+          message: "La copia subió, pero no se pudo limpiar la base actual completa."
           };
         }
       }
@@ -1055,12 +1055,12 @@
   async function runSyncNow(state) {
     var manager = getSyncManager(state);
     if (!manager) {
-      renderSyncResumen(state, "La sincronizacion no esta disponible ahora.");
+      renderSyncResumen(state, "La sincronización no está disponible ahora.");
       return;
     }
     var token = readSessionToken();
     if (!token) {
-      renderSyncResumen(state, "Hace falta iniciar sesion otra vez.");
+      renderSyncResumen(state, "Hace falta iniciar sesión otra vez.");
       return;
     }
 
@@ -1079,13 +1079,13 @@
     var controller = getBackupController(state);
     if (!controller || controller.ok !== true) {
       state.el.syncStatus.textContent = "";
-      renderBackupEmpty(state, "Las copias no estan disponibles ahora.");
+      renderBackupEmpty(state, "Las copias no están disponibles ahora.");
       return;
     }
     var token = readSessionToken();
     if (!token) {
       state.el.syncStatus.textContent = "";
-      renderBackupEmpty(state, "Hace falta iniciar sesion para consultar las copias.");
+      renderBackupEmpty(state, "Hace falta iniciar sesión para consultar las copias.");
       return;
     }
     state.el.syncStatus.textContent = "Buscando copias...";
@@ -1094,7 +1094,7 @@
       listed = await runWithTimeout(
         controller.listarBackups(token, getOrCreateStore(state)),
         BACKUP_LIST_TIMEOUT_MS,
-        "La consulta de copias tardo demasiado."
+        "La consulta de copias tardó demasiado."
       );
     } catch (errBackups) {
       listed = {
@@ -1123,12 +1123,12 @@
 
     var controller = getBackupController(state);
     if (!controller || controller.ok !== true) {
-      state.el.syncStatus.textContent = "Las copias no estan disponibles ahora.";
+      state.el.syncStatus.textContent = "Las copias no están disponibles ahora.";
       return;
     }
     var token = readSessionToken();
     if (!token) {
-      state.el.syncStatus.textContent = "Hace falta iniciar sesion para restaurar.";
+      state.el.syncStatus.textContent = "Hace falta iniciar sesión para restaurar.";
       return;
     }
 
@@ -1247,8 +1247,8 @@
 
     globalScope.addEventListener("online", function onOnline() {
       loadDatabaseSummary(state);
-      renderSyncResumen(state, "Conexion recuperada.");
-      refreshFase11Estado(state, "Conexion recuperada.");
+      renderSyncResumen(state, "Conexión recuperada.");
+      refreshFase11Estado(state, "Conexión recuperada.");
     });
 
     globalScope.document.addEventListener("click", function onDocumentClick(event) {

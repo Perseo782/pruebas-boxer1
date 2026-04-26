@@ -433,31 +433,12 @@
     <section class="panel hero">
       <div>
         <h1>Ajustes</h1>
-        <p>Base de datos, fotografias e historial reciente.</p>
+        <p>Base de datos, fotografías e historial reciente.</p>
       </div>
       <button id="ajustes-back" type="button">Volver</button>
     </section>
 
-    <section id="diagnostico-tecnico" class="grid-2" aria-label="Control tecnico">
-      <section class="panel">
-        <h2>Estado del sistema</h2>
-        <p class="meta">Lectura corta de los componentes principales.</p>
-        <table class="fase11-checks" aria-label="Estado del sistema">
-          <thead>
-            <tr>
-              <th>Componente</th>
-              <th>Estado</th>
-              <th>Detalle</th>
-            </tr>
-          </thead>
-          <tbody id="fase11-estado-sistema"></tbody>
-        </table>
-        <div class="toolbar">
-          <button id="fase11-refresh" type="button">Refrescar estado</button>
-          <span id="fase11-estado-status" class="meta">Listo.</span>
-        </div>
-      </section>
-
+    <section id="diagnostico-tecnico" class="grid-2" aria-label="Control técnico">
       <section class="panel">
         <h2>Diagn&oacute;stico t&eacute;cnico</h2>
         <p class="meta">Caso actual, corto y limpio.</p>
@@ -475,7 +456,7 @@
         <div class="toolbar">
           <button id="fase11-test-backend" type="button">Probar backend</button>
           <button id="fase11-test-ia" type="button">Probar IA</button>
-          <button id="fase11-test-vision" type="button">Probar Vision</button>
+          <button id="fase11-test-vision" type="button">Probar Visión</button>
           <button id="fase11-test-sync" type="button">Probar sync</button>
         </div>
         <p id="fase11-test-status" class="meta" style="margin-top:10px;">Sin pruebas recientes.</p>
@@ -494,16 +475,16 @@
           <button id="db-import" type="button">&darr; Importar Excel</button>
           <button id="db-export" type="button">&uarr; Exportar Excel</button>
         </div>
-        <p class="meta" style="margin-top:8px;">Importar y exportar viven aqui dentro de la base de datos.</p>
+        <p class="meta" style="margin-top:8px;">Importar y exportar viven aquí dentro de la base de datos.</p>
       </section>
 
       <section class="panel">
-        <h2>Detalles de fotografias</h2>
-        <p>Estos ajustes mandan sobre las fotos nuevas y sobre la recompresion forzada.</p>
+        <h2>Detalles de fotografías</h2>
+        <p>Estos ajustes mandan sobre las fotos nuevas y sobre la recompresión forzada.</p>
         <div class="row">
           <label for="photo-profile">Formato</label>
           <select id="photo-profile">
-            <option value="MAXIMA_COMPRESION_WEBP">Maxima compresion (WebP)</option>
+            <option value="MAXIMA_COMPRESION_WEBP">Máxima compresión (WebP)</option>
             <option value="EQUILIBRADO_WEBP">Equilibrado (WebP)</option>
             <option value="ALTA_CALIDAD_JPEG">Alta calidad (JPEG)</option>
           </select>
@@ -519,7 +500,7 @@
           </select>
         </div>
         <div class="row">
-          <label for="photo-resolution">Resolucion maxima</label>
+          <label for="photo-resolution">Resolución máxima</label>
           <select id="photo-resolution">
             <option value="400">400 px</option>
             <option value="600">600 px</option>
@@ -537,7 +518,7 @@
 
       <section class="panel">
         <h2>Tarjetas de productos</h2>
-        <p>Elige si dentro de la tarjeta quieres ver texto o pictogramas de alergenos.</p>
+        <p>Elige si dentro de la tarjeta quieres ver texto o pictogramas de alérgenos.</p>
         <div class="toggle-card">
           <div class="toggle-row">
             <div>
@@ -583,7 +564,7 @@
   <script src="../../shared/alergenos_oficiales.js"></script>
   <script src="../../backend/persistencia/data_store_local.js"></script>
   <script src="../config/firebase_config_fase3.js"></script>
-  <script src="../estado/shared_store_browser.js?v=20260426h"></script>
+  <script src="../estado/shared_store_browser.js?v=20260426i"></script>
   <script src="../../backend/historial/historial_campos.js"></script>
   <script src="../../backend/historial/historial_core.js"></script>
   <script src="../../backend/adaptadores/firestore_productos_remote.js"></script>
@@ -592,7 +573,7 @@
   <script src="../../backend/sync/sync_tombstone.js"></script>
   <script src="../../backend/sync/sync_conflictos.js"></script>
   <script src="../../backend/sync/sync_log.js"></script>
-  <script src="../../backend/sync/sync_backup.js?v=20260426h"></script>
+  <script src="../../backend/sync/sync_backup.js?v=20260426i"></script>
   <script src="../../backend/sync/sync_manager.js"></script>
   <script src="../../backend/ia/cerebro_broker_ia.js"></script>
   <script src="../../backend/diagnostico/diagnostico_formatter.js"></script>
@@ -602,7 +583,7 @@
   <script src="../../backend/diagnostico/diagnostico_pruebas.js"></script>
   <script src="../estado/cerebro_visible_runtime.js"></script>
   <script src="../estado/cerebro_warmup.js"></script>
-  <script src="../estado/ajustes_app.js?v=20260426h"></script>
+  <script src="../estado/ajustes_app.js?v=20260426i"></script>
 </body>
 </html>
 
