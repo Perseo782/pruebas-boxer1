@@ -94,11 +94,11 @@
   }
 
   function buildSyncSummary(syncData) {
-    if (!syncData) return "La app guarda tus cambios automaticamente.";
+    if (!syncData) return "";
     if (Number(syncData.conflicts || 0) > 0) return "Hay cambios pendientes de revisar.";
     if (Number(syncData.pending || 0) > 0) return "Hay cambios pendientes de guardar.";
     if (syncData.ok === false) return "La conexion con la nube necesita revision.";
-    if (syncData.lastSyncAt) return "Cambios guardados. Ultima actualizacion: " + formatDateTime(syncData.lastSyncAt);
+    if (syncData.lastSyncAt) return "Ultimo guardado: " + formatDateTime(syncData.lastSyncAt);
     return "Sin cambios pendientes.";
   }
 
@@ -619,6 +619,9 @@
 
   function renderBackupList(state, items) {
     var safeItems = Array.isArray(items) ? items : [];
+    if (state.el.backupList && state.el.backupList.classList) {
+      state.el.backupList.classList.toggle("is-empty", safeItems.length === 0);
+    }
     if (!safeItems.length) {
       state.el.backupList.innerHTML = "<p class=\"empty\">No hay copias guardadas.</p>";
       return;
@@ -647,6 +650,9 @@
   }
 
   function renderBackupEmpty(state, message) {
+    if (state.el.backupList && state.el.backupList.classList) {
+      state.el.backupList.classList.add("is-empty");
+    }
     state.el.backupList.innerHTML = "<p class=\"empty\">" + escapeHtml(message || "No hay copias guardadas.") + "</p>";
   }
 
@@ -1072,13 +1078,13 @@
   async function loadBackups(state) {
     var controller = getBackupController(state);
     if (!controller || controller.ok !== true) {
-      state.el.syncStatus.textContent = "Las copias no estan disponibles ahora.";
+      state.el.syncStatus.textContent = "";
       renderBackupEmpty(state, "Las copias no estan disponibles ahora.");
       return;
     }
     var token = readSessionToken();
     if (!token) {
-      state.el.syncStatus.textContent = "Hace falta iniciar sesion para ver las copias.";
+      state.el.syncStatus.textContent = "";
       renderBackupEmpty(state, "Hace falta iniciar sesion para consultar las copias.");
       return;
     }
@@ -1101,14 +1107,12 @@
         listed && listed.message,
         "No se pudieron consultar las copias ahora."
       );
-      state.el.syncStatus.textContent = failedMessage;
+      state.el.syncStatus.textContent = "";
       renderBackupEmpty(state, failedMessage);
       return;
     }
     renderBackupList(state, listed.items || []);
-    state.el.syncStatus.textContent = (listed.items || []).length
-      ? "Elige una copia."
-      : "No hay copias guardadas.";
+    state.el.syncStatus.textContent = "";
   }
 
   async function restoreBackup(state, path, updatedAt) {
@@ -1231,13 +1235,13 @@
     globalScope.addEventListener("fase3-firebase-ready", function onReady() {
       loadDatabaseSummary(state);
       loadHistory(state);
-      renderSyncResumen(state, "Consulta tus copias.");
+      renderSyncResumen(state, "");
       refreshFase11Estado(state, "Firebase listo.");
     });
     globalScope.addEventListener("pageshow", function onPageShow() {
       loadDatabaseSummary(state);
       loadHistory(state);
-      renderSyncResumen(state, "Consulta tus copias.");
+      renderSyncResumen(state, "");
       refreshFase11Estado(state, "Vista actualizada.");
     });
 
@@ -1313,7 +1317,7 @@
     renderPhotoSettings(state, null);
     renderAllergenDisplaySettings(state, null);
     renderHistoryList(state);
-    renderSyncResumen(state, "Consulta tus copias.");
+    renderSyncResumen(state, "");
     renderBackupList(state, []);
     refreshFase11Estado(state, "Listo.");
     loadDatabaseSummary(state);

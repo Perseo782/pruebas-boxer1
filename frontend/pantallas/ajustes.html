@@ -191,12 +191,38 @@
       gap: 10px;
       margin-top: 12px;
     }
+    .backup-panel {
+      display: grid;
+      gap: 12px;
+    }
+    .backup-panel-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .backup-panel-copy {
+      min-width: 0;
+      display: grid;
+      gap: 4px;
+    }
+    .backup-summary,
+    .backup-status {
+      font-size: 12px;
+      line-height: 16px;
+    }
+    .backup-summary:empty,
+    .backup-status:empty {
+      display: none;
+    }
     #backup-list {
-      min-height: 220px;
       max-height: 220px;
       overflow-y: auto;
       padding-right: 4px;
       align-content: start;
+    }
+    #backup-list.is-empty {
+      max-height: none;
     }
     #backup-list::-webkit-scrollbar {
       width: 8px;
@@ -528,14 +554,15 @@
       </section>
     </section>
 
-    <section class="panel">
-      <h2>Copias de seguridad</h2>
-      <p id="sync-resumen">Tus cambios se guardan automaticamente.</p>
-      <div class="toolbar">
+    <section class="panel backup-panel">
+      <div class="backup-panel-head">
+        <div class="backup-panel-copy">
+          <h2>Copias de seguridad</h2>
+          <p id="sync-resumen" class="meta backup-summary"></p>
+        </div>
         <button id="backup-reload" type="button">Ver copias</button>
-        <span id="sync-status" class="meta">Consulta tus copias.</span>
       </div>
-      <p class="meta" style="margin-top:8px;">Se guardan hasta 3 copias automaticas para recuperar momentos anteriores.</p>
+      <p id="sync-status" class="meta backup-status"></p>
       <div id="backup-list" class="list"></div>
     </section>
 
@@ -556,7 +583,7 @@
   <script src="../../shared/alergenos_oficiales.js"></script>
   <script src="../../backend/persistencia/data_store_local.js"></script>
   <script src="../config/firebase_config_fase3.js"></script>
-  <script src="../estado/shared_store_browser.js?v=20260426f"></script>
+  <script src="../estado/shared_store_browser.js?v=20260426h"></script>
   <script src="../../backend/historial/historial_campos.js"></script>
   <script src="../../backend/historial/historial_core.js"></script>
   <script src="../../backend/adaptadores/firestore_productos_remote.js"></script>
@@ -565,7 +592,7 @@
   <script src="../../backend/sync/sync_tombstone.js"></script>
   <script src="../../backend/sync/sync_conflictos.js"></script>
   <script src="../../backend/sync/sync_log.js"></script>
-  <script src="../../backend/sync/sync_backup.js?v=20260426f"></script>
+  <script src="../../backend/sync/sync_backup.js?v=20260426h"></script>
   <script src="../../backend/sync/sync_manager.js"></script>
   <script src="../../backend/ia/cerebro_broker_ia.js"></script>
   <script src="../../backend/diagnostico/diagnostico_formatter.js"></script>
@@ -575,7 +602,7 @@
   <script src="../../backend/diagnostico/diagnostico_pruebas.js"></script>
   <script src="../estado/cerebro_visible_runtime.js"></script>
   <script src="../estado/cerebro_warmup.js"></script>
-  <script src="../estado/ajustes_app.js?v=20260426g"></script>
+  <script src="../estado/ajustes_app.js?v=20260426h"></script>
 </body>
 </html>
 
