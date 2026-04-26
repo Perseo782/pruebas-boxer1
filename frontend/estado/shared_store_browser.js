@@ -76,13 +76,14 @@
 
     function resolveController() {
       var runtime = globalScope.Fase3FirebaseRuntime || null;
-      if (!runtime || runtime.ok !== true || !runtime.storageModule) return null;
+      if (!runtime || runtime.ok !== true || (!runtime.storageModule && !runtime.firestoreModule)) return null;
       var ownerKey = readBackupOwnerKey();
       if (store.__fase8BackupController && store.__fase8BackupControllerUserKey === ownerKey) {
         return store.__fase8BackupController;
       }
       store.__fase8BackupController = globalScope.Fase8SyncBackup.createSyncBackup({
         storageModule: runtime.storageModule,
+        firestoreModule: runtime.firestoreModule,
         firebaseApp: runtime.app,
         rootPath: "fase8_backups",
         userId: ownerKey,

@@ -7,6 +7,14 @@
   var VISUAL_ASSET_SCHEMA_VERSION = 1;
   var VISUAL_ASSET_DIR = "_visuals";
   var AUTO_BACKUP_DEBOUNCE_MS = 3500;
+  var FIRESTORE_FALLBACK_COLLECTION = "historial_eventos";
+  var FIRESTORE_BACKUP_KIND = "sync_snapshot";
+  var FIRESTORE_BACKUP_CHUNK_KIND = "sync_snapshot_chunk";
+  var FIRESTORE_USER_COLLECTION_SUFFIX = "_users";
+  var FIRESTORE_ITEMS_SUBCOLLECTION = "items";
+  var FIRESTORE_CHUNKS_SUBCOLLECTION = "chunks";
+  var FIRESTORE_CHUNK_SIZE = 180000;
+  var STORAGE_PROVIDER_TIMEOUT_MS = 4500;
   var AUTO_BACKUP_CHANGE_TYPES = {
     product_create_local: true,
     product_upsert_local: true,
@@ -64,6 +72,40 @@
 
   function isInlineDataUrl(value) {
     return /^data:/i.test(String(value || "").trim());
+  }
+
+  function splitTextChunks(text, chunkSize) {
+    var raw = String(text || "");
+    var size = Math.max(1000, toPositiveInt(chunkSize, FIRESTORE_CHUNK_SIZE));
+    var parts = [];
+    for (var start = 0; start < raw.length; start += size) {
+      parts.push(raw.slice(start, start + size));
+    }
+    return parts.length ? parts : [""];
+  }
+
+  function joinTextChunks(items) {
+    return (Array.isArray(items) ? items : []).join("");
+  }
+
+  function encodeBackupPath(kind, path) {
+    return String(kind || "storage") + ":" + String(path || "").trim();
+  }
+
+  function decodeBackupPath(fullPath) {
+    var raw = String(fullPath || "").trim();
+    var idx = raw.indexOf(":");
+    if (idx > 0) {
+      var kind = raw.slice(0, idx).trim().toLowerCase();
+      var path = raw.slice(idx + 1).trim();
+      if ((kind === "storage" || kind === "firestore") && path) {
+        return { kind: kind, path: path };
+      }
+    }
+    return {
+      kind: "storage",
+      path: raw
+    };
   }
 
   function isInterestingAutoBackupChange(change) {
@@ -175,42 +217,66 @@
   function createSyncBackup(options) {
     var safeOptions = options || {};
     var storageModule = safeOptions.storageModule || null;
+    var firestoreModule = safeOptions.firestoreModule || null;
     var firebaseApp = safeOptions.firebaseApp || null;
     var rootPath = sanitizeSegment(safeOptions.rootPath || DEFAULT_PATH);
     var userId = sanitizeSegment(safeOptions.userId || "usuario_local");
     var modeApi = safeOptions.modeApi || null;
     var ensureAuth = typeof safeOptions.ensureAuth === "function" ? safeOptions.ensureAuth : null;
+    var getStorage = storageModule && typeof storageModule.getStorage === "function"
+      ? storageModule.getStorage
+      : null;
+    var refFn = storageModule ? storageModule.ref : null;
+    var uploadString = storageModule ? storageModule.uploadString : null;
+    var listAll = storageModule ? storageModule.listAll : null;
+    var getBlob = storageModule ? storageModule.getBlob : null;
+    var deleteObject = storageModule ? storageModule.deleteObject : null;
+    var hasStorageProvider = !!(
+      getStorage &&
+      typeof refFn === "function" &&
+      typeof uploadString === "function" &&
+      typeof listAll === "function" &&
+      typeof getBlob === "function" &&
+      typeof deleteObject === "function"
+    );
 
-    if (!storageModule || typeof storageModule.getStorage !== "function") {
+    var getFirestore = firestoreModule && typeof firestoreModule.getFirestore === "function"
+      ? firestoreModule.getFirestore
+      : null;
+    var collectionFn = firestoreModule ? firestoreModule.collection : null;
+    var deleteDocFn = firestoreModule ? firestoreModule.deleteDoc : null;
+    var docFn = firestoreModule ? firestoreModule.doc : null;
+    var getDocFn = firestoreModule ? firestoreModule.getDoc : null;
+    var getDocsFn = firestoreModule ? firestoreModule.getDocs : null;
+    var limitFn = firestoreModule ? firestoreModule.limit : null;
+    var orderByFn = firestoreModule ? firestoreModule.orderBy : null;
+    var queryFn = firestoreModule ? firestoreModule.query : null;
+    var setDocFn = firestoreModule ? firestoreModule.setDoc : null;
+    var writeBatchFn = firestoreModule ? firestoreModule.writeBatch : null;
+    var hasFirestoreProvider = !!(
+      getFirestore &&
+      typeof collectionFn === "function" &&
+      typeof deleteDocFn === "function" &&
+      typeof docFn === "function" &&
+      typeof getDocFn === "function" &&
+      typeof getDocsFn === "function" &&
+      typeof limitFn === "function" &&
+      typeof orderByFn === "function" &&
+      typeof queryFn === "function" &&
+      typeof setDocFn === "function" &&
+      typeof writeBatchFn === "function"
+    );
+
+    if (!hasStorageProvider && !hasFirestoreProvider) {
       return {
         ok: false,
-        errorCode: "SYNC_BACKUP_STORAGE_NO_CONFIGURADO",
-        message: "Falta modulo de Firebase Storage para backup."
+        errorCode: "SYNC_BACKUP_NO_PROVIDER",
+        message: "No hay servicio de nube disponible para las copias."
       };
     }
 
-    var getStorage = storageModule.getStorage;
-    var refFn = storageModule.ref;
-    var uploadString = storageModule.uploadString;
-    var listAll = storageModule.listAll;
-    var getBlob = storageModule.getBlob;
-    var deleteObject = storageModule.deleteObject;
-
-    if (
-      typeof refFn !== "function" ||
-      typeof uploadString !== "function" ||
-      typeof listAll !== "function" ||
-      typeof getBlob !== "function" ||
-      typeof deleteObject !== "function"
-    ) {
-      return {
-        ok: false,
-        errorCode: "SYNC_BACKUP_STORAGE_SDK_INCOMPLETO",
-        message: "El SDK de Storage no expone funciones suficientes para backup/restauracion."
-      };
-    }
-
-    var storage = getStorage(firebaseApp || undefined);
+    var storage = hasStorageProvider ? getStorage(firebaseApp || undefined) : null;
+    var firestore = hasFirestoreProvider ? getFirestore(firebaseApp || undefined) : null;
 
     function buildRootRef() {
       return refFn(storage, rootPath + "/" + userId);
@@ -222,6 +288,21 @@
 
     function buildVisualAssetRef(assetKey) {
       return refFn(storage, rootPath + "/" + userId + "/" + VISUAL_ASSET_DIR + "/" + sanitizeSegment(assetKey) + ".json");
+    }
+
+    function buildFirestoreFallbackCollection() {
+      return collectionFn(firestore, FIRESTORE_FALLBACK_COLLECTION);
+    }
+
+    function buildFirestoreBackupDoc(backupId) {
+      return docFn(buildFirestoreFallbackCollection(), sanitizeSegment(backupId || "backup"));
+    }
+
+    function buildFirestoreChunkDoc(backupId, index) {
+      return docFn(
+        buildFirestoreFallbackCollection(),
+        sanitizeSegment(String(backupId || "backup") + "_chunk_" + String(index).padStart(4, "0"))
+      );
     }
 
     function ensureMode(mode) {
@@ -263,31 +344,56 @@
       }
     }
 
-    async function listBackupItemsInternal() {
+    function getBackupSortMs(item) {
+      var explicitMs = Number(item && item.updatedMs || 0);
+      if (Number.isFinite(explicitMs) && explicitMs > 0) return explicitMs;
+      var parsed = Date.parse(String(item && item.updated || ""));
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+      return 0;
+    }
+
+    function sortBackupItemsDesc(a, b) {
+      var delta = getBackupSortMs(b) - getBackupSortMs(a);
+      if (delta !== 0) return delta;
+      return String(b && b.name || "").localeCompare(String(a && a.name || ""));
+    }
+
+    async function listStorageBackupItems() {
+      if (!hasStorageProvider) {
+        return {
+          ok: false,
+          errorCode: "SYNC_BACKUP_STORAGE_NO_DISPONIBLE",
+          message: "La nube de copias no esta disponible."
+        };
+      }
       var rootRef = buildRootRef();
-      var listed = await listAll(rootRef);
+      var listed = await withStorageTimeout(listAll(rootRef), "listar copias");
       var items = [];
       for (var i = 0; i < listed.items.length; i += 1) {
         var itemRef = listed.items[i];
         if (itemRef.fullPath.indexOf("/" + VISUAL_ASSET_DIR + "/") >= 0) continue;
+        var updated = parseBackupUpdated(itemRef.name);
         items.push({
-          fullPath: itemRef.fullPath,
+          providerKind: "storage",
+          providerPath: itemRef.fullPath,
+          fullPath: encodeBackupPath("storage", itemRef.fullPath),
           name: itemRef.name,
-          updated: parseBackupUpdated(itemRef.name),
-          size: 0
+          updated: updated,
+          updatedMs: Date.parse(String(updated || "")) || 0,
+          size: 0,
+          snapshotHash: null
         });
       }
-      items.sort(function byDate(a, b) {
-        var am = Date.parse(String(a.updated || "")) || 0;
-        var bm = Date.parse(String(b.updated || "")) || 0;
-        return bm - am;
-      });
-      return items;
+      items.sort(sortBackupItemsDesc);
+      return {
+        ok: true,
+        items: items
+      };
     }
 
-    async function readJsonObject(fullPath) {
+    async function readStorageJsonObject(fullPath) {
       var objectRef = refFn(storage, String(fullPath || "").trim());
-      var blob = await getBlob(objectRef);
+      var blob = await withStorageTimeout(getBlob(objectRef), "leer copia");
       var text = await blob.text();
       return JSON.parse(text);
     }
@@ -295,7 +401,7 @@
     async function writeVisualAsset(entry) {
       var assetKey = buildVisualAssetKey(entry);
       var objectRef = buildVisualAssetRef(assetKey);
-      await uploadString(objectRef, JSON.stringify({
+      await withStorageTimeout(uploadString(objectRef, JSON.stringify({
         schemaVersion: VISUAL_ASSET_SCHEMA_VERSION,
         assetKey: assetKey,
         exportedAt: nowIso(),
@@ -310,11 +416,13 @@
         }
       }), "raw", {
         contentType: "application/json"
-      });
+      }), "guardar foto ligera");
       return assetKey;
     }
 
-    async function prepareVisualStateForSnapshot(visualState) {
+    async function prepareVisualStateForSnapshot(visualState, options) {
+      var safeOptions = options || {};
+      var persistInlineAssets = safeOptions.persistInlineAssets === true && hasStorageProvider;
       if (!visualState) return { state: null, manifest: [] };
       var fotoRefs = Array.isArray(visualState.fotoRefs)
         ? visualState.fotoRefs.map(function mapRef(ref) { return String(ref || "").trim(); }).filter(Boolean).slice(0, 2)
@@ -329,7 +437,7 @@
         var viewerSrc = String(entry.viewerSrc || "").trim();
         var inline = isInlineDataUrl(thumbSrc) || isInlineDataUrl(viewerSrc);
         var assetKey = null;
-        if (inline) {
+        if (inline && persistInlineAssets) {
           assetKey = await writeVisualAsset(entry);
           manifest.push({
             ref: String(entry.ref || "").trim() || null,
@@ -361,14 +469,14 @@
       };
     }
 
-    async function prepareSnapshotItems(items, ownerKind, getters) {
+    async function prepareSnapshotItems(items, getters, options) {
       var safeItems = Array.isArray(items) ? clone(items) : [];
       var manifest = {};
       for (var i = 0; i < safeItems.length; i += 1) {
         var item = safeItems[i] || {};
         var ownerId = String(getters.getId(item) || "").trim();
         if (!ownerId) continue;
-        var prepared = await prepareVisualStateForSnapshot(getters.getVisual(item));
+        var prepared = await prepareVisualStateForSnapshot(getters.getVisual(item), options);
         if (prepared && prepared.state) {
           getters.setVisual(item, prepared.state);
           if (prepared.manifest.length) {
@@ -382,19 +490,19 @@
       };
     }
 
-    async function buildSnapshot(store) {
+    async function buildSnapshot(store, options) {
       var products = store && typeof store.list === "function" ? store.list() : [];
       var drafts = store && typeof store.listRevisionDrafts === "function" ? store.listRevisionDrafts() : [];
-      var preparedProducts = await prepareSnapshotItems(products, "product", {
+      var preparedProducts = await prepareSnapshotItems(products, {
         getId: function getId(item) { return item && item.id; },
         getVisual: getProductVisualState,
         setVisual: setProductVisualState
-      });
-      var preparedDrafts = await prepareSnapshotItems(drafts, "draft", {
+      }, options);
+      var preparedDrafts = await prepareSnapshotItems(drafts, {
         getId: function getId(item) { return item && item.draftId; },
         getVisual: getDraftVisualState,
         setVisual: setDraftVisualState
-      });
+      }, options);
       return {
         schemaVersion: SNAPSHOT_SCHEMA_VERSION,
         exportedAt: nowIso(),
@@ -435,7 +543,7 @@
         var assetKey = String(manifest.assetKey || "").trim();
         if (assetKey) {
           try {
-            var assetPayload = await readJsonObject(buildVisualAssetRef(assetKey).fullPath);
+            var assetPayload = await readStorageJsonObject(buildVisualAssetRef(assetKey).fullPath);
             var visual = assetPayload && assetPayload.visual ? assetPayload.visual : {};
             current.thumbSrc = String(visual.thumbSrc || current.thumbSrc || "").trim() || null;
             current.viewerSrc = String(visual.viewerSrc || current.viewerSrc || "").trim() || null;
@@ -521,12 +629,17 @@
     }
 
     async function cleanupVisualAssets(store, keptBackupItems) {
+      if (!hasStorageProvider) return;
       try {
         var keepAssetKeys = collectLiveAssetKeys(store);
-        var backups = Array.isArray(keptBackupItems) ? keptBackupItems : [];
+        var backups = Array.isArray(keptBackupItems)
+          ? keptBackupItems.filter(function onlyStorage(item) {
+              return item && item.providerKind === "storage" && item.providerPath;
+            })
+          : [];
         for (var i = 0; i < backups.length; i += 1) {
           try {
-            var snapshot = await readJsonObject(backups[i].fullPath);
+            var snapshot = await readStorageJsonObject(backups[i].providerPath);
             collectAssetKeysFromSnapshot(snapshot, keepAssetKeys);
           } catch (errReadBackup) {
             // No-op.
@@ -534,7 +647,7 @@
         }
 
         var visualRoot = buildVisualRootRef();
-        var listed = await listAll(visualRoot).catch(function onListErr() {
+        var listed = await withStorageTimeout(listAll(visualRoot), "limpiar fotos").catch(function onListErr() {
           return { items: [] };
         });
         var items = listed && Array.isArray(listed.items) ? listed.items : [];
@@ -542,7 +655,7 @@
           var itemRef = items[j];
           var key = String(itemRef.name || "").replace(/\.json$/i, "");
           if (!key || keepAssetKeys[key]) continue;
-          await deleteObject(itemRef).catch(function onDeleteErr() {
+          await withStorageTimeout(deleteObject(itemRef), "borrar foto antigua").catch(function onDeleteErr() {
             return null;
           });
         }
@@ -551,20 +664,366 @@
       }
     }
 
-    async function trimBackups(store) {
-      try {
-        var items = await listBackupItemsInternal();
-        if (items.length > MAX_BACKUPS) {
-          for (var i = MAX_BACKUPS; i < items.length; i += 1) {
-            var refDelete = refFn(storage, items[i].fullPath);
-            await deleteObject(refDelete);
-          }
-          items = await listBackupItemsInternal();
-        }
-        await cleanupVisualAssets(store, items.slice(0, MAX_BACKUPS));
-      } catch (errTrim) {
-        // No-op.
+    function countVisualAssets(snapshot) {
+      var total = 0;
+      var visualManifest = snapshot && snapshot.visualManifest ? snapshot.visualManifest : {};
+      ["products", "drafts"].forEach(function eachBucket(bucket) {
+        var bucketMap = visualManifest && visualManifest[bucket] ? visualManifest[bucket] : {};
+        Object.keys(bucketMap).forEach(function eachOwner(ownerId) {
+          var items = Array.isArray(bucketMap[ownerId]) ? bucketMap[ownerId] : [];
+          total += items.length;
+        });
+      });
+      return total;
+    }
+
+    function buildSnapshotHash(snapshot) {
+      var safeSnapshot = snapshot ? clone(snapshot) : {};
+      delete safeSnapshot.exportedAt;
+      delete safeSnapshot.snapshotHash;
+      return hashString(JSON.stringify(safeSnapshot));
+    }
+
+    function createProviderError(code, message) {
+      var err = new Error(String(message || "Error"));
+      err.code = String(code || "SYNC_BACKUP_ERROR");
+      return err;
+    }
+
+    function withStorageTimeout(promise, actionLabel) {
+      return Promise.race([
+        promise,
+        new Promise(function onTimeout(_, reject) {
+          setTimeout(function fireTimeout() {
+            reject(createProviderError(
+              "SYNC_BACKUP_STORAGE_TIMEOUT",
+              "La ruta antigua de copias tardo demasiado en responder durante " + String(actionLabel || "la operacion") + "."
+            ));
+          }, STORAGE_PROVIDER_TIMEOUT_MS);
+        })
+      ]);
+    }
+
+    async function listFirestoreBackupItems() {
+      if (!hasFirestoreProvider) {
+        return {
+          ok: false,
+          errorCode: "SYNC_BACKUP_FIRESTORE_NO_DISPONIBLE",
+          message: "La nube compartida no esta disponible."
+        };
       }
+      var listed = await getDocsFn(buildFirestoreFallbackCollection());
+      var items = [];
+      listed.forEach(function each(docSnap) {
+        if (!docSnap || typeof docSnap.data !== "function") return;
+        var data = docSnap.data() || {};
+        if (String(data.backupKind || "").trim() !== FIRESTORE_BACKUP_KIND) return;
+        if (String(data.backupOwnerKey || "").trim() !== userId) return;
+        var backupId = String(docSnap.id || "").trim();
+        if (!backupId) return;
+        var fileName = String(data.name || (backupId + ".json")).trim();
+        var updated = String(data.backupUpdatedAt || data.updated || "").trim() || parseBackupUpdated(fileName) || null;
+        items.push({
+          providerKind: "firestore",
+          providerPath: backupId,
+          fullPath: encodeBackupPath("firestore", backupId),
+          name: fileName,
+          updated: updated,
+          updatedMs: Number(data.updatedMs || 0) || (Date.parse(String(updated || "")) || 0),
+          size: Number(data.size || 0) || 0,
+          snapshotHash: String(data.snapshotHash || "").trim() || null
+        });
+      });
+      items.sort(sortBackupItemsDesc);
+      return {
+        ok: true,
+        items: items
+      };
+    }
+
+    async function listAllBackupItems() {
+      var results = [];
+      if (hasStorageProvider) {
+        try {
+          results.push(await listStorageBackupItems());
+        } catch (errStorageList) {
+          results.push({
+            ok: false,
+            providerKind: "storage",
+            errorCode: safeCode(errStorageList, "SYNC_BACKUP_LIST_FAILED"),
+            message: safeMessage(errStorageList, "No se pudieron consultar las copias.")
+          });
+        }
+      }
+      if (hasFirestoreProvider) {
+        try {
+          results.push(await listFirestoreBackupItems());
+        } catch (errFirestoreList) {
+          results.push({
+            ok: false,
+            providerKind: "firestore",
+            errorCode: safeCode(errFirestoreList, "SYNC_BACKUP_LIST_FAILED"),
+            message: safeMessage(errFirestoreList, "No se pudieron consultar las copias.")
+          });
+        }
+      }
+
+      var items = [];
+      var okProviders = 0;
+      for (var i = 0; i < results.length; i += 1) {
+        if (!results[i] || results[i].ok !== true) continue;
+        okProviders += 1;
+        items = items.concat(Array.isArray(results[i].items) ? results[i].items : []);
+      }
+      items.sort(sortBackupItemsDesc);
+      return {
+        ok: okProviders > 0,
+        items: items,
+        providerResults: results
+      };
+    }
+
+    async function writeFirestoreBackupSnapshot(snapshot, snapshotHash) {
+      if (!hasFirestoreProvider) {
+        throw createProviderError("SYNC_BACKUP_FIRESTORE_NO_DISPONIBLE", "La nube compartida no esta disponible.");
+      }
+      var fileName = Date.now() + ".json";
+      var backupId = sanitizeSegment("backup_" + userId + "_" + String(fileName).replace(/\.json$/i, ""));
+      var backupDoc = buildFirestoreBackupDoc(backupId);
+      var snapshotText = JSON.stringify(snapshot || {});
+      var chunks = splitTextChunks(snapshotText, FIRESTORE_CHUNK_SIZE);
+      var updated = String(snapshot && snapshot.exportedAt || "").trim() || nowIso();
+      await setDocFn(backupDoc, {
+        backupKind: FIRESTORE_BACKUP_KIND,
+        backupOwnerKey: userId,
+        backupId: backupId,
+        name: fileName,
+        backupUpdatedAt: updated,
+        updatedMs: Date.parse(updated) || Date.now(),
+        size: snapshotText.length,
+        snapshotHash: String(snapshotHash || "").trim() || null,
+        chunkCount: chunks.length,
+        countProducts: Array.isArray(snapshot && snapshot.products) ? snapshot.products.length : 0,
+        countDrafts: Array.isArray(snapshot && snapshot.drafts) ? snapshot.drafts.length : 0,
+        schemaVersion: snapshot && snapshot.schemaVersion ? snapshot.schemaVersion : SNAPSHOT_SCHEMA_VERSION
+      });
+      var batch = writeBatchFn(firestore);
+      for (var i = 0; i < chunks.length; i += 1) {
+        batch.set(buildFirestoreChunkDoc(backupId, i), {
+          backupKind: FIRESTORE_BACKUP_CHUNK_KIND,
+          backupOwnerKey: userId,
+          backupRefId: backupId,
+          chunkIndex: i,
+          chunkData: chunks[i]
+        });
+      }
+      await batch.commit();
+      return {
+        ok: true,
+        providerKind: "firestore",
+        fileName: fileName,
+        exportedAt: updated,
+        countProducts: Array.isArray(snapshot && snapshot.products) ? snapshot.products.length : 0,
+        countDrafts: Array.isArray(snapshot && snapshot.drafts) ? snapshot.drafts.length : 0,
+        visualAssets: countVisualAssets(snapshot)
+      };
+    }
+
+    async function readFirestoreSnapshot(backupId) {
+      if (!hasFirestoreProvider) {
+        throw createProviderError("SYNC_BACKUP_FIRESTORE_NO_DISPONIBLE", "La nube compartida no esta disponible.");
+      }
+      var safeBackupId = sanitizeSegment(backupId || "");
+      if (!safeBackupId) {
+        throw createProviderError("SYNC_BACKUP_PATH_INVALIDO", "Falta la copia a restaurar.");
+      }
+      var backupDoc = buildFirestoreBackupDoc(safeBackupId);
+      var header = await getDocFn(backupDoc);
+      if (!header || (typeof header.exists === "function" && header.exists() !== true)) {
+        throw createProviderError("SYNC_BACKUP_NOT_FOUND", "La copia ya no existe.");
+      }
+      var chunksSnap = await getDocsFn(buildFirestoreFallbackCollection());
+      var orderedChunks = [];
+      chunksSnap.forEach(function each(docSnap) {
+        if (!docSnap || typeof docSnap.data !== "function") return;
+        var data = docSnap.data() || {};
+        if (String(data.backupKind || "").trim() !== FIRESTORE_BACKUP_CHUNK_KIND) return;
+        if (String(data.backupRefId || "").trim() !== safeBackupId) return;
+        orderedChunks.push({
+          index: Number(data.chunkIndex || 0) || 0,
+          data: String(data.chunkData || "")
+        });
+      });
+      orderedChunks.sort(function byIndex(a, b) {
+        return a.index - b.index;
+      });
+      return JSON.parse(joinTextChunks(orderedChunks.map(function mapChunk(item) {
+        return item.data;
+      })) || "{}");
+    }
+
+    async function readSnapshotHashFromItem(item) {
+      var safeItem = item || null;
+      if (!safeItem) return null;
+      var inlineHash = String(safeItem.snapshotHash || "").trim();
+      if (inlineHash) return inlineHash;
+      if (safeItem.providerKind === "storage" && safeItem.providerPath) {
+        var storageSnapshot = await readStorageJsonObject(safeItem.providerPath);
+        return String(storageSnapshot && storageSnapshot.snapshotHash || "").trim() || buildSnapshotHash(storageSnapshot);
+      }
+      if (safeItem.providerKind === "firestore" && safeItem.providerPath) {
+        var firestoreSnapshot = await readFirestoreSnapshot(safeItem.providerPath);
+        return String(firestoreSnapshot && firestoreSnapshot.snapshotHash || "").trim() || buildSnapshotHash(firestoreSnapshot);
+      }
+      return null;
+    }
+
+    async function buildDistinctBackupItems(items) {
+      var safeItems = Array.isArray(items) ? items.slice(0) : [];
+      var kept = [];
+      var duplicates = [];
+      var seenHashes = Object.create(null);
+      for (var i = 0; i < safeItems.length; i += 1) {
+        var item = safeItems[i];
+        var resolvedHash = await readSnapshotHashFromItem(item).catch(function onReadHashError() {
+          return null;
+        });
+        if (resolvedHash) {
+          item.snapshotHash = resolvedHash;
+        }
+        var key = resolvedHash
+          ? ("hash:" + resolvedHash)
+          : ("path:" + String(item && item.fullPath || "").trim());
+        if (seenHashes[key]) {
+          duplicates.push(item);
+          continue;
+        }
+        seenHashes[key] = true;
+        kept.push(item);
+      }
+      return {
+        kept: kept,
+        duplicates: duplicates
+      };
+    }
+
+    async function buildVisibleBackupItems(items) {
+      var distinct = await buildDistinctBackupItems(items);
+      return Array.isArray(distinct && distinct.kept) ? distinct.kept : [];
+    }
+
+    async function deleteStorageBackupItem(item) {
+      if (!item || !item.providerPath) return;
+      await withStorageTimeout(deleteObject(refFn(storage, item.providerPath)), "borrar copia antigua");
+    }
+
+    async function deleteFirestoreBackupItem(item) {
+      if (!item || !item.providerPath || !hasFirestoreProvider) return;
+      var backupId = sanitizeSegment(item.providerPath);
+      var chunksSnap = await getDocsFn(buildFirestoreFallbackCollection());
+      var batch = writeBatchFn(firestore);
+      chunksSnap.forEach(function each(docSnap) {
+        if (!docSnap || !docSnap.ref || typeof docSnap.data !== "function") return;
+        var data = docSnap.data() || {};
+        if (String(data.backupKind || "").trim() !== FIRESTORE_BACKUP_CHUNK_KIND) return;
+        if (String(data.backupRefId || "").trim() !== backupId) return;
+        batch.delete(docSnap.ref);
+      });
+      batch.delete(buildFirestoreBackupDoc(backupId));
+      await batch.commit();
+    }
+
+    async function deleteBackupItem(item) {
+      if (!item || !item.providerKind) return;
+      if (item.providerKind === "firestore") {
+        await deleteFirestoreBackupItem(item);
+        return;
+      }
+      await deleteStorageBackupItem(item);
+    }
+
+    async function trimBackups(store, listedItems) {
+      try {
+        var items = Array.isArray(listedItems) ? listedItems.slice(0) : [];
+        if (!items.length) {
+          var listed = await listAllBackupItems();
+          if (!listed || listed.ok !== true) return { ok: false, items: [] };
+          items = Array.isArray(listed.items) ? listed.items.slice(0) : [];
+        }
+
+        var distinct = await buildDistinctBackupItems(items);
+        var kept = Array.isArray(distinct && distinct.kept) ? distinct.kept.slice(0) : [];
+        var duplicates = Array.isArray(distinct && distinct.duplicates) ? distinct.duplicates.slice(0) : [];
+        var toDelete = duplicates.concat(kept.slice(MAX_BACKUPS));
+        var deleteMap = Object.create(null);
+
+        for (var i = 0; i < toDelete.length; i += 1) {
+          var deleteKey = String(toDelete[i] && toDelete[i].fullPath || "").trim();
+          if (!deleteKey || deleteMap[deleteKey]) continue;
+          deleteMap[deleteKey] = true;
+          await deleteBackupItem(toDelete[i]).catch(function onDeleteError() {
+            return null;
+          });
+        }
+
+        var visibleItems = kept.slice(0, MAX_BACKUPS);
+        if (store) {
+          await cleanupVisualAssets(store, visibleItems);
+        }
+        return {
+          ok: true,
+          items: visibleItems
+        };
+      } catch (errTrim) {
+        return {
+          ok: false,
+          items: []
+        };
+      }
+    }
+
+    async function exportStorageBackup(snapshot) {
+      var ts = Date.now();
+      var fileName = ts + ".json";
+      var objectRef = refFn(storage, rootPath + "/" + userId + "/" + fileName);
+      await withStorageTimeout(uploadString(objectRef, JSON.stringify(snapshot), "raw", {
+        contentType: "application/json"
+      }), "guardar copia");
+      return {
+        ok: true,
+        providerKind: "storage",
+        fileName: fileName,
+        exportedAt: snapshot.exportedAt,
+        countProducts: snapshot.products.length,
+        countDrafts: snapshot.drafts.length,
+        visualAssets: countVisualAssets(snapshot)
+      };
+    }
+
+    async function exportFirestoreBackup(snapshot, snapshotHash) {
+      return writeFirestoreBackupSnapshot(snapshot, snapshotHash);
+    }
+
+    function chooseBackupError(errors) {
+      if (!Array.isArray(errors) || !errors.length) {
+        return {
+          ok: false,
+          errorCode: "SYNC_BACKUP_EXPORT_FAILED",
+          message: "No se pudo crear la copia."
+        };
+      }
+      var picked = errors[0];
+      for (var i = 0; i < errors.length; i += 1) {
+        if (errors[i] && errors[i].providerKind === "firestore") {
+          picked = errors[i];
+          break;
+        }
+      }
+      return {
+        ok: false,
+        errorCode: safeCode(picked && picked.error, "SYNC_BACKUP_EXPORT_FAILED"),
+        message: safeMessage(picked && picked.error, "No se pudo crear la copia.")
+      };
     }
 
     async function exportarBackup(sessionToken, store) {
@@ -580,23 +1039,52 @@
 
       ensureMode("backup");
       try {
-        var snapshot = await buildSnapshot(store);
-        var ts = Date.now();
-        var fileName = ts + ".json";
-        var objectRef = refFn(storage, rootPath + "/" + userId + "/" + fileName);
-        await uploadString(objectRef, JSON.stringify(snapshot), "raw", {
-          contentType: "application/json"
-        });
+        var snapshot = await buildSnapshot(store, { persistInlineAssets: false });
+        var snapshotHash = buildSnapshotHash(snapshot);
+        snapshot.snapshotHash = snapshotHash;
+        var latestListed = await listAllBackupItems();
+        var latestItem = latestListed && latestListed.ok === true && Array.isArray(latestListed.items) && latestListed.items.length
+          ? latestListed.items[0]
+          : null;
+        if (latestItem) {
+          var latestHash = await readSnapshotHashFromItem(latestItem);
+          if (latestHash && latestHash === snapshotHash) {
+            await trimBackups(store, latestListed && latestListed.items ? latestListed.items : []);
+            return {
+              ok: true,
+              skipped: true,
+              providerKind: latestItem.providerKind,
+              fileName: latestItem.name,
+              exportedAt: latestItem.updated || null,
+              countProducts: snapshot.products.length,
+              countDrafts: snapshot.drafts.length,
+              visualAssets: countVisualAssets(snapshot)
+            };
+          }
+        }
+
+        var errors = [];
+        var exported = null;
+
+        if (hasStorageProvider) {
+          try {
+            exported = await exportStorageBackup(snapshot);
+          } catch (errStorageExport) {
+            errors.push({ providerKind: "storage", error: errStorageExport });
+          }
+        }
+        if ((!exported || exported.ok !== true) && hasFirestoreProvider) {
+          try {
+            exported = await exportFirestoreBackup(snapshot, snapshotHash);
+          } catch (errFirestoreExport) {
+            errors.push({ providerKind: "firestore", error: errFirestoreExport });
+          }
+        }
+        if (!exported || exported.ok !== true) {
+          return chooseBackupError(errors);
+        }
         await trimBackups(store);
-        return {
-          ok: true,
-          fileName: fileName,
-          exportedAt: snapshot.exportedAt,
-          countProducts: snapshot.products.length,
-          countDrafts: snapshot.drafts.length,
-          visualAssets: Object.keys((snapshot.visualManifest && snapshot.visualManifest.products) || {}).length +
-            Object.keys((snapshot.visualManifest && snapshot.visualManifest.drafts) || {}).length
-        };
+        return exported;
       } catch (err) {
         return {
           ok: false,
@@ -608,7 +1096,7 @@
       }
     }
 
-    async function listarBackups(sessionToken) {
+    async function listarBackups(sessionToken, store) {
       if (!ensureValidToken(sessionToken)) {
         return {
           ok: false,
@@ -620,9 +1108,25 @@
       if (!authReady || authReady.ok !== true) return authReady;
 
       try {
+        var listed = await listAllBackupItems();
+        if (listed && listed.ok === true) {
+          var compacted = await trimBackups(store, listed.items || []);
+          var visibleItems = compacted && compacted.ok === true
+            ? (Array.isArray(compacted.items) ? compacted.items : [])
+            : await buildVisibleBackupItems(listed.items || []);
+          return {
+            ok: true,
+            items: visibleItems.slice(0, MAX_BACKUPS)
+          };
+        }
+        var providerResults = listed && Array.isArray(listed.providerResults) ? listed.providerResults : [];
+        var firstFailure = providerResults.find(function findFailure(item) {
+          return item && item.ok !== true;
+        });
         return {
-          ok: true,
-          items: await listBackupItemsInternal()
+          ok: false,
+          errorCode: safeCode(firstFailure, "SYNC_BACKUP_LIST_FAILED"),
+          message: safeMessage(firstFailure, "No se pudo listar backups.")
         };
       } catch (err) {
         return {
@@ -662,7 +1166,10 @@
 
       ensureMode("restore");
       try {
-        var parsed = await readJsonObject(path);
+        var parsedPath = decodeBackupPath(path);
+        var parsed = parsedPath.kind === "firestore"
+          ? await readFirestoreSnapshot(parsedPath.path)
+          : await readStorageJsonObject(parsedPath.path);
         var products = Array.isArray(parsed && parsed.products) ? clone(parsed.products) : [];
         var drafts = Array.isArray(parsed && parsed.drafts) ? clone(parsed.drafts) : [];
         var visualManifest = parsed && parsed.visualManifest && typeof parsed.visualManifest === "object"

@@ -949,10 +949,11 @@
     if (state.backupController && state.backupControllerOwnerKey === ownerKey) return state.backupController;
     if (!globalScope.Fase8SyncBackup || typeof globalScope.Fase8SyncBackup.createSyncBackup !== "function") return null;
     var runtime = getFirebaseRuntime();
-    if (!runtime || runtime.ok !== true || !runtime.storageModule) return null;
+    if (!runtime || runtime.ok !== true || (!runtime.storageModule && !runtime.firestoreModule)) return null;
     var syncManager = getSyncManager(state);
     state.backupController = globalScope.Fase8SyncBackup.createSyncBackup({
       storageModule: runtime.storageModule,
+      firestoreModule: runtime.firestoreModule,
       firebaseApp: runtime.app,
       rootPath: "fase8_backups",
       userId: ownerKey,
@@ -1083,7 +1084,7 @@
     var listed = null;
     try {
       listed = await runWithTimeout(
-        controller.listarBackups(token),
+        controller.listarBackups(token, getOrCreateStore(state)),
         BACKUP_LIST_TIMEOUT_MS,
         "La consulta de copias tardo demasiado."
       );
