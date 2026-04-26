@@ -106,6 +106,64 @@
     return value == null ? value : JSON.parse(JSON.stringify(value));
   }
 
+  function getAnalysisRuntime() {
+    return globalScope.AnalysisExclusiveRuntime || null;
+  }
+
+  function getDeferredVisualQueue() {
+    return globalScope.DeferredVisualQueue || null;
+  }
+
+  function traceAnalysisEvent(name, data, meta) {
+    var runtime = getAnalysisRuntime();
+    if (!runtime || typeof runtime.trace !== "function") return;
+    runtime.trace(name, data || null, Object.assign({ source: "gestion_registros" }, meta || {}));
+  }
+
+  function requestAnalysisExclusive(meta) {
+    var runtime = getAnalysisRuntime();
+    if (!runtime || typeof runtime.requestExclusive !== "function") return;
+    runtime.requestExclusive(Object.assign({ source: "gestion_registros" }, meta || {}));
+  }
+
+  function attachAnalysisMeta(meta) {
+    var runtime = getAnalysisRuntime();
+    if (!runtime || typeof runtime.attachMeta !== "function") return;
+    runtime.attachMeta(Object.assign({ source: "gestion_registros" }, meta || {}));
+  }
+
+  function markAnalysisStarted(meta) {
+    var runtime = getAnalysisRuntime();
+    if (!runtime || typeof runtime.markAnalysisStarted !== "function") return;
+    runtime.markAnalysisStarted(Object.assign({ source: "gestion_registros" }, meta || {}));
+  }
+
+  function markAnalysisResultVisible(data, meta) {
+    var runtime = getAnalysisRuntime();
+    if (!runtime || typeof runtime.markResultVisible !== "function") return;
+    runtime.markResultVisible(data || null, Object.assign({ source: "gestion_registros" }, meta || {}));
+  }
+
+  function resumeAnalysisExclusive(meta) {
+    var runtime = getAnalysisRuntime();
+    if (!runtime || typeof runtime.resumeProgressively !== "function") return;
+    runtime.resumeProgressively(Object.assign({ source: "gestion_registros" }, meta || {}));
+  }
+
+  function cancelAnalysisExclusive(meta) {
+    var runtime = getAnalysisRuntime();
+    if (!runtime || typeof runtime.cancelExclusive !== "function") return;
+    runtime.cancelExclusive(Object.assign({ source: "gestion_registros" }, meta || {}));
+  }
+
+  function runDeferredNonessential(taskName, options, run) {
+    var runtime = getAnalysisRuntime();
+    if (!runtime || typeof runtime.runOrDefer !== "function") {
+      return Promise.resolve(typeof run === "function" ? run() : null);
+    }
+    return runtime.runOrDefer(taskName, Object.assign({ source: "gestion_registros" }, options || {}), run);
+  }
+
   function makeFase11Id(prefix) {
     return String(prefix || "fase11") + "_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 7);
   }
@@ -890,6 +948,16 @@
 
   function refreshVisibleList(state, options) {
     var safeOptions = options || {};
+    if (!safeOptions.allowDuringExclusive && getAnalysisRuntime() && getAnalysisRuntime().isExclusiveBlocking && getAnalysisRuntime().isExclusiveBlocking()) {
+      runDeferredNonessential("refresh_visible_list", {
+        key: "refresh_visible_list",
+        priority: 80,
+        phase: "list"
+      }, function rerunVisibleList() {
+        refreshVisibleList(state, { skipAssetReload: !!safeOptions.skipAssetReload, allowDuringExclusive: true });
+      });
+      return;
+    }
     var respuesta = deriveVisibleRows(state);
     var datos = respuesta && respuesta.resultado ? respuesta.resultado.datos : null;
     if (!datos) {
@@ -936,6 +1004,15 @@
   }
 
   async function loadVisibleAssetVisuals(state, products) {
+    if (getAnalysisRuntime() && getAnalysisRuntime().isExclusiveBlocking && getAnalysisRuntime().isExclusiveBlocking()) {
+      return runDeferredNonessential("asset_visual_load", {
+        key: "asset_visual_load",
+        priority: 85,
+        phase: "assets"
+      }, function rerunAssetLoad() {
+        return loadVisibleAssetVisuals(state, products);
+      });
+    }
     var safeProducts = Array.isArray(products) ? products : [];
     var productIds = safeProducts
       .map(function mapId(item) { return String(item && item.id || "").trim(); })
@@ -988,6 +1065,15 @@
     var safeOptions = options || {};
     if (state.loadProductsPromise) {
       return state.loadProductsPromise;
+    }
+    if (!safeOptions.allowDuringExclusive && getAnalysisRuntime() && getAnalysisRuntime().isExclusiveBlocking && getAnalysisRuntime().isExclusiveBlocking()) {
+      return runDeferredNonessential("cloud_load", {
+        key: "cloud_load",
+        priority: 78,
+        phase: "cloud_load"
+      }, function rerunCloudLoad() {
+        return loadProducts(state, Object.assign({}, safeOptions, { allowDuringExclusive: true }));
+      });
     }
     if (!safeOptions.force && state.hasLoadedProducts === true) {
       return { ok: true, skipped: true };
@@ -1055,6 +1141,24 @@
     }
     state.lastSyncTriggerAt = now;
 
+    if (getAnalysisRuntime() && getAnalysisRuntime().isExclusiveBlocking && getAnalysisRuntime().isExclusiveBlocking()) {
+      return runDeferredNonessential("sync_deferred", {
+        key: "sync_" + safeLabel,
+        priority: 70,
+        phase: "sync"
+      }, function rerunSyncLater() {
+        traceAnalysisEvent("sync_deferred_start", { trigger: safeLabel }, { phase: "sync" });
+        return triggerSync(state, safeLabel).then(function afterDeferredSync(out) {
+          traceAnalysisEvent("sync_deferred_done", {
+            trigger: safeLabel,
+            ok: !!(out && out.ok === true),
+            skipped: !!(out && out.skipped === true)
+          }, { phase: "sync" });
+          return out;
+        });
+      });
+    }
+
     var manager = resolveSyncManager(state);
     if (!manager) {
       renderSyncStatus(state, "Sync no disponible");
@@ -1067,9 +1171,14 @@
       return;
     }
 
+    traceAnalysisEvent("sync_deferred_start", { trigger: safeLabel }, { phase: "sync" });
     var out = await manager.iniciarSync(token);
     if (!out || out.ok !== true) {
       renderSyncStatus(state, "Sync fallido");
+      traceAnalysisEvent("sync_deferred_done", {
+        trigger: safeLabel,
+        ok: false
+      }, { phase: "sync" });
       return;
     }
 
@@ -1079,6 +1188,10 @@
 
     refreshVisibleList(state);
     renderSyncStatus(state, "Sync OK");
+    traceAnalysisEvent("sync_deferred_done", {
+      trigger: safeLabel,
+      ok: true
+    }, { phase: "sync" });
   }
 
   async function deleteProduct(state, productId, productName) {
@@ -1266,18 +1379,32 @@
   }
 
   function resetAddModalState(state) {
+    if (state && state.ui && state.ui.add) {
+      if (state.ui.add.photoPickerFocusHandler) {
+        globalScope.removeEventListener("focus", state.ui.add.photoPickerFocusHandler, true);
+      }
+      if (state.ui.add.photoPickerCancelTimerId) {
+        globalScope.clearTimeout(state.ui.add.photoPickerCancelTimerId);
+      }
+    }
     state.ui.add = {
       open: false,
       busy: false,
       nombre: "",
       selectedAllergenIds: [],
       photoResultReady: false,
+      visualPending: false,
       photoRefs: [],
       photoVisuales: [],
       photoStatus: "",
       photoStatusKind: "",
       photoSummary: "Todavía no has elegido fotos.",
       photoTarget: "envase",
+      analysisId: "",
+      traceId: "",
+      batchId: "",
+      photoPickerFocusHandler: null,
+      photoPickerCancelTimerId: null,
       envasePreviewUrl: "",
       etiquetaPreviewUrl: ""
     };
@@ -1374,7 +1501,16 @@
   }
 
   function closeAddModal(state) {
+    var safeOptions = arguments.length > 1 && arguments[1] ? arguments[1] : {};
+    var analysisId = state && state.ui && state.ui.add ? String(state.ui.add.analysisId || "").trim() : "";
     closePhotoOriginModal(state);
+    if (!safeOptions.preserveVisualJob && analysisId) {
+      var queue = getDeferredVisualQueue();
+      if (queue && typeof queue.cancel === "function") {
+        queue.cancel(analysisId, safeOptions.reason || "add_modal_closed");
+      }
+    }
+    cancelAnalysisExclusive({ reason: safeOptions.reason || "add_modal_closed" });
     resetAddModalState(state);
     renderAddModal(state);
     globalScope.requestAnimationFrame(function restoreListFocus() {
@@ -1428,6 +1564,31 @@
     state.el.photoOriginModal.setAttribute("aria-hidden", "false");
   }
 
+  function schedulePhotoPickerCancelCheck(state) {
+    if (!state || !state.ui || !state.ui.add) return;
+    if (state.ui.add.photoPickerFocusHandler) {
+      globalScope.removeEventListener("focus", state.ui.add.photoPickerFocusHandler, true);
+      state.ui.add.photoPickerFocusHandler = null;
+    }
+    if (state.ui.add.photoPickerCancelTimerId) {
+      globalScope.clearTimeout(state.ui.add.photoPickerCancelTimerId);
+      state.ui.add.photoPickerCancelTimerId = null;
+    }
+    state.ui.add.photoPickerFocusHandler = function onPickerFocusBack() {
+      globalScope.removeEventListener("focus", state.ui.add.photoPickerFocusHandler, true);
+      state.ui.add.photoPickerFocusHandler = null;
+      state.ui.add.photoPickerCancelTimerId = globalScope.setTimeout(function verifyPickerResult() {
+        state.ui.add.photoPickerCancelTimerId = null;
+        var hasEnvase = !!(state.el.addPhotoFile1 && state.el.addPhotoFile1.files && state.el.addPhotoFile1.files[0]);
+        var hasEtiqueta = !!(state.el.addPhotoFile2 && state.el.addPhotoFile2.files && state.el.addPhotoFile2.files[0]);
+        if (hasEnvase || hasEtiqueta) return;
+        if (state.ui.add.photoResultReady || state.ui.add.busy) return;
+        cancelAnalysisExclusive({ reason: "photo_picker_cancelled" });
+      }, 260);
+    };
+    globalScope.addEventListener("focus", state.ui.add.photoPickerFocusHandler, true);
+  }
+
   function closePhotoOriginModal(state) {
     if (!state.el.photoOriginModal) return;
     state.el.photoOriginModal.hidden = true;
@@ -1440,11 +1601,17 @@
       ? state.el.addPhotoFile2
       : state.el.addPhotoFile1;
     if (!targetInput) return;
+    requestAnalysisExclusive({
+      reason: isCamera ? "camera_opened" : "gallery_requested",
+      phase: "photo_origin",
+      taskName: state.ui.add.photoTarget
+    });
     if (isCamera) {
       targetInput.setAttribute("capture", "environment");
     } else {
       targetInput.removeAttribute("capture");
     }
+    schedulePhotoPickerCancelCheck(state);
     closePhotoOriginModal(state);
     targetInput.click();
   }
@@ -1455,6 +1622,24 @@
     state.ui.add[prop] = file && globalScope.URL && typeof globalScope.URL.createObjectURL === "function"
       ? globalScope.URL.createObjectURL(file)
       : "";
+    if (file) {
+      requestAnalysisExclusive({
+        reason: "photo_selected",
+        phase: "photo_input",
+        taskName: safeSlot
+      });
+      traceAnalysisEvent("photo_input_started", {
+        slot: safeSlot,
+        fileName: String(file.name || "").trim() || null,
+        sizeBytes: Number(file.size || 0) || null
+      }, { phase: "photo_input" });
+      return;
+    }
+    var hasEnvase = !!(state.el.addPhotoFile1 && state.el.addPhotoFile1.files && state.el.addPhotoFile1.files[0]);
+    var hasEtiqueta = !!(state.el.addPhotoFile2 && state.el.addPhotoFile2.files && state.el.addPhotoFile2.files[0]);
+    if (!hasEnvase && !hasEtiqueta && !state.ui.add.photoResultReady && !state.ui.add.busy) {
+      cancelAnalysisExclusive({ reason: "photo_removed" });
+    }
   }
 
   function readFileAsDataUrl(file) {
@@ -1495,11 +1680,12 @@
     for (var i = 0; i < refs.length && i < 2; i += 1) {
       var raw = rawVisuales[i] && typeof rawVisuales[i] === "object" ? rawVisuales[i] : {};
       var src = String(refs[i] || "").trim();
+      var visualRef = String(raw.ref || src || "").trim();
       var thumbSrc = String(raw.thumbSrc || raw.viewerSrc || src || "").trim();
       var viewerSrc = String(raw.viewerSrc || raw.thumbSrc || src || "").trim();
-      if (!thumbSrc && !viewerSrc) continue;
+      if (!visualRef || (!thumbSrc && !viewerSrc)) continue;
       out.push({
-        ref: "alta_foto_normal_" + (i + 1),
+        ref: visualRef,
         thumbSrc: thumbSrc || viewerSrc,
         viewerSrc: viewerSrc || thumbSrc,
         profileKey: String(raw.profileKey || "").trim() || null,
@@ -1523,6 +1709,70 @@
       visuales = [];
     }
     return buildProductPhotoVisuales(refs, visuales);
+  }
+
+  function refreshSingleVisibleCard(state, productId) {
+    var safeId = String(productId || "").trim();
+    if (!safeId) return;
+    var list = byId("productos-list");
+    if (!list || !state.store || typeof state.store.getProductById !== "function") {
+      refreshVisibleList(state, { skipAssetReload: true });
+      return;
+    }
+    var currentCard = list.querySelector('[data-product-id="' + safeId.replace(/"/g, '\\"') + '"]');
+    if (!currentCard) {
+      refreshVisibleList(state, { skipAssetReload: true });
+      return;
+    }
+    var product = state.store.getProductById(safeId);
+    if (!product) {
+      refreshVisibleList(state, { skipAssetReload: true });
+      return;
+    }
+    var html = renderCard(resolveCardModel(state, product));
+    if (!html) return;
+    var holder = document.createElement("div");
+    holder.innerHTML = html;
+    if (holder.firstElementChild) {
+      currentCard.replaceWith(holder.firstElementChild);
+    }
+  }
+
+  function scheduleDeferredAddVisuals(state, response, fotoRefs) {
+    var finalData = getPhotoAnalysisFinalData(response);
+    var analysisId = finalData && finalData.analysisId ? String(finalData.analysisId).trim() : "";
+    var traceId = finalData && finalData.traceId ? String(finalData.traceId).trim() : "";
+    var refs = cloneArray(fotoRefs);
+    var queue = getDeferredVisualQueue();
+    if (!analysisId || !refs.length || !queue || typeof queue.enqueueAnalysisJob !== "function") return;
+
+    queue.enqueueAnalysisJob({
+      analysisId: analysisId,
+      traceId: traceId,
+      fotoRefs: refs,
+      buildVisuals: buildPhotoVisualesForAdd
+    });
+
+    if (typeof queue.attachModalTarget === "function") {
+      queue.attachModalTarget(analysisId, {
+        isStillValid: function isStillValid() {
+          return !!(
+            state &&
+            state.ui &&
+            state.ui.add &&
+            state.ui.add.open === true &&
+            state.ui.add.photoResultReady === true &&
+            String(state.ui.add.analysisId || "").trim() === analysisId
+          );
+        },
+        apply: function applyToModal(visuales, rawRefs) {
+          state.ui.add.photoVisuales = cloneVisuales(visuales);
+          state.ui.add.photoRefs = cloneArray(rawRefs);
+          state.ui.add.visualPending = false;
+          renderAddModal(state);
+        }
+      });
+    }
   }
 
   async function ensurePhotoRuntimeReady(state) {
@@ -1676,16 +1926,33 @@
     var propuesta = finalData.propuestaFinal || {};
     var passport = resolvePhotoPassport(finalData, outcome);
     var safePayload = photoPayload || {};
+    var safeFotoRefs = cloneArray(safePayload.fotoRefs);
     var photoVisuales = cloneVisuales(safePayload.visuales);
     state.ui.add.nombre = String(propuesta.nombre || "").trim();
     state.ui.add.selectedAllergenIds = normalizeAllergenList(propuesta.alergenos || []);
     state.ui.add.photoResultReady = true;
+    state.ui.add.visualPending = !!safePayload.visualPending;
     state.ui.add.photoVisuales = photoVisuales;
-    state.ui.add.photoRefs = photoVisuales.map(function mapRef(item) {
-      return String(item && item.ref || "").trim();
-    }).filter(Boolean).slice(0, 2);
+    state.ui.add.photoRefs = safeFotoRefs.length
+      ? safeFotoRefs
+      : photoVisuales.map(function mapRef(item) {
+        return String(item && item.ref || "").trim();
+      }).filter(Boolean).slice(0, 2);
+    state.ui.add.analysisId = String(finalData.analysisId || safePayload.analysisId || "").trim();
+    state.ui.add.traceId = String(finalData.traceId || safePayload.traceId || "").trim();
+    state.ui.add.batchId = String(safePayload.batchId || "").trim();
     state.ui.add.photoStatus = buildPhotoAnalysisStatus(response, outcome);
     state.ui.add.photoStatusKind = getPhotoPassportStatusKind(passport);
+    if (photoVisuales.length) {
+      traceAnalysisEvent("visual_link_done", {
+        target: "modal",
+        totalVisuales: photoVisuales.length
+      }, {
+        analysisId: state.ui.add.analysisId,
+        traceId: state.ui.add.traceId,
+        phase: "modal"
+      });
+    }
   }
 
   function isDataImageUrl(value) {
@@ -1831,6 +2098,8 @@
     var photoResultReady = !!state.ui.add.photoResultReady;
     var photoRefs = cloneArray(state.ui.add.photoRefs);
     var photoVisuales = cloneVisuales(state.ui.add.photoVisuales);
+    var analysisId = String(state.ui.add.analysisId || "").trim();
+    var traceId = String(state.ui.add.traceId || "").trim();
     var out = globalScope.Fase3OperativaAltaManual.ejecutarAltaManual(
       {
         nombre: state.ui.add.nombre,
@@ -1861,7 +2130,39 @@
         out && out.resultado && out.resultado.datos ? out.resultado.datos.historyEventId : null
       );
     }
-    closeAddModal(state);
+    if (photoResultReady && savedProduct && photoRefs.length && analysisId && !photoVisuales.length) {
+      var queue = getDeferredVisualQueue();
+      if (queue && typeof queue.attachProductTarget === "function") {
+        queue.attachProductTarget(analysisId, {
+          productId: savedProduct.id,
+          isStillValid: function isStillValid() {
+            return !!(
+              state &&
+              state.store &&
+              typeof state.store.getProductById === "function" &&
+              state.store.getProductById(savedProduct.id)
+            );
+          },
+          apply: function applyProductVisuals(visuales, rawRefs) {
+            var finalVisuales = buildProductPhotoVisuales(rawRefs, visuales);
+            if (!finalVisuales.length) return;
+            if (state.store && typeof state.store.updateProductById === "function") {
+              state.store.updateProductById({
+                productId: savedProduct.id,
+                fotoRefs: cloneArray(rawRefs),
+                visuales: cloneVisuales(finalVisuales)
+              });
+            }
+            seedProductVisualAsset(state, savedProduct.id, finalVisuales);
+            refreshSingleVisibleCard(state, savedProduct.id);
+            persistPhotoAssetForProduct(state, savedProduct, finalVisuales).catch(function onAssetDeferredError() {
+              // La subida remota va despues del resultado visible.
+            });
+          }
+        });
+      }
+    }
+    closeAddModal(state, { preserveVisualJob: true, reason: "manual_save" });
     if (photoResultReady && savedProduct && photoVisuales.length) {
       seedProductVisualAsset(state, savedProduct.id, photoVisuales);
     }
@@ -1886,14 +2187,28 @@
       var fase11CaseOpened = false;
       state.ui.add.busy = true;
       state.ui.add.photoResultReady = false;
+      state.ui.add.visualPending = false;
       state.ui.add.photoStatus = "Preparando analisis...";
       state.ui.add.photoStatusKind = "";
+      traceAnalysisEvent("analysis_button_clicked", {
+        from: "gestion_registros"
+      }, { phase: "submit" });
+      traceAnalysisEvent("nonessential_pause_requested", {
+        from: "gestion_registros"
+      }, { phase: "pause" });
+      requestAnalysisExclusive({
+        reason: "analyze_clicked",
+        phase: "submit"
+      });
       renderAddModal(state);
       var fotoRefs = await readPhotoRefsFromInputs(state);
       openFase11PhotoCase(fase11CaseId, fotoRefs);
       fase11CaseOpened = true;
       addFase11DiagnosticEvent("INFO", "Alta foto", "foto leida", "Foto leida: " + fotoRefs.length + " foto(s).", { totalFotos: fotoRefs.length }, null);
       await ensurePhotoRuntimeReady(state);
+      traceAnalysisEvent("nonessential_pause_done", {
+        totalFotos: fotoRefs.length
+      }, { phase: "pause" });
       state.ui.add.photoStatus = "Analizando foto...";
       addFase11DiagnosticEvent("INFO", "Alta foto", "motores", "Analisis enviado a motores de la app.", null, null);
       renderAddModal(state);
@@ -1901,6 +2216,7 @@
       if (state.runtime && typeof state.runtime.getBackendUrl === "function") {
         backendUrl = String(state.runtime.getBackendUrl() || backendUrl).trim() || backendUrl;
       }
+      markAnalysisStarted({ phase: "analysis" });
       var response = await globalScope.Fase3AltaFotoVisibleApp.ejecutarAnalisisVisible(
         {
           fotoRefs: fotoRefs,
@@ -1918,20 +2234,47 @@
       var outcome = typeof globalScope.Fase3AltaFotoVisibleApp.classifyVisibleOutcome === "function"
         ? globalScope.Fase3AltaFotoVisibleApp.classifyVisibleOutcome(response)
         : "revision";
-      var photoVisuales = hasPhotoAnalysisResult(response)
-        ? await buildPhotoVisualesForAdd(fotoRefs)
-        : [];
+      var finalData = hasPhotoAnalysisResult(response) ? getPhotoAnalysisFinalData(response) : null;
+      var analysisId = finalData && finalData.analysisId ? String(finalData.analysisId).trim() : "";
+      var traceId = finalData && finalData.traceId ? String(finalData.traceId).trim() : "";
+      if (analysisId || traceId) {
+        attachAnalysisMeta({
+          analysisId: analysisId,
+          traceId: traceId,
+          phase: "analysis_response"
+        });
+      }
       var passport = hasPhotoAnalysisResult(response)
-        ? resolvePhotoPassport(getPhotoAnalysisFinalData(response), outcome)
+        ? resolvePhotoPassport(finalData, outcome)
         : "";
       recordPhotoAnalysisDiagnostics(response, outcome);
       state.ui.add.busy = false;
       if (!response || response.ok !== true) {
         if (hasPhotoAnalysisResult(response)) {
-          applyPhotoAnalysisToAddModal(state, response, outcome, { visuales: photoVisuales });
+          applyPhotoAnalysisToAddModal(state, response, outcome, {
+            fotoRefs: fotoRefs,
+            visuales: [],
+            visualPending: true,
+            analysisId: analysisId,
+            traceId: traceId
+          });
           closeFase11PhotoCase(true, "Analisis recibido con datos aprovechables. Pasaporte " + passport + ".", Date.now() - photoStartedAt, response);
           renderAddModal(state);
           showFeedback(state, "photo_ready");
+          markAnalysisResultVisible({
+            outcome: outcome,
+            passport: passport
+          }, {
+            analysisId: analysisId,
+            traceId: traceId,
+            phase: "result"
+          });
+          scheduleDeferredAddVisuals(state, response, fotoRefs);
+          resumeAnalysisExclusive({
+            analysisId: analysisId,
+            traceId: traceId,
+            reason: "result_visible"
+          });
           return;
         }
         state.ui.add.photoStatus = response && response.error && response.error.message
@@ -1942,12 +2285,33 @@
         closeFase11PhotoCase(false, state.ui.add.photoStatus, Date.now() - photoStartedAt, response);
         renderAddModal(state);
         showFeedback(state, "error", { message: state.ui.add.photoStatus });
+        cancelAnalysisExclusive({ reason: "analysis_failed" });
         return;
       }
-      applyPhotoAnalysisToAddModal(state, response, outcome, { visuales: photoVisuales });
+      applyPhotoAnalysisToAddModal(state, response, outcome, {
+        fotoRefs: fotoRefs,
+        visuales: [],
+        visualPending: true,
+        analysisId: analysisId,
+        traceId: traceId
+      });
       closeFase11PhotoCase(true, "Analisis completado. Pasaporte " + passport + ".", Date.now() - photoStartedAt, response);
       renderAddModal(state);
       showFeedback(state, "photo_ready");
+      markAnalysisResultVisible({
+        outcome: outcome,
+        passport: passport
+      }, {
+        analysisId: analysisId,
+        traceId: traceId,
+        phase: "result"
+      });
+      scheduleDeferredAddVisuals(state, response, fotoRefs);
+      resumeAnalysisExclusive({
+        analysisId: analysisId,
+        traceId: traceId,
+        reason: "result_visible"
+      });
     } catch (errPhoto) {
       state.ui.add.busy = false;
       state.ui.add.photoResultReady = false;
@@ -1960,6 +2324,7 @@
       });
       renderAddModal(state);
       showFeedback(state, "error", { message: state.ui.add.photoStatus });
+      cancelAnalysisExclusive({ reason: "analysis_exception" });
     }
   }
 

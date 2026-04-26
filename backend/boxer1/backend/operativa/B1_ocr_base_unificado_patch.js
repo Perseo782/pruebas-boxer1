@@ -1,6 +1,16 @@
 /**
  * BOXER 1 · OCR base adaptado a GAS unificado + OCR rico completo.
  */
+function B1_emitVisionCallTrace(name, data) {
+  try {
+    if (typeof globalThis === 'undefined') return;
+    if (!globalThis.AnalysisExclusiveRuntime || typeof globalThis.AnalysisExclusiveRuntime.trace !== 'function') return;
+    globalThis.AnalysisExclusiveRuntime.trace(name, data || null, { source: 'boxer1_ocr', phase: 'vision_call' });
+  } catch (errTrace) {
+    // No-op.
+  }
+}
+
 async function B1_llamarVisionOCR(canvas, sendMode, sessionToken, urlTrastienda) {
   const t0 = Date.now();
   const tData = Date.now();
@@ -25,6 +35,13 @@ async function B1_llamarVisionOCR(canvas, sendMode, sessionToken, urlTrastienda)
   const controller = (typeof AbortController === 'function') ? new AbortController() : null;
   const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   let response;
+  B1_emitVisionCallTrace('vision_call_start', {
+    timeoutMs,
+    sendModeSolicitado: sendMode || B1_SEND_MODE.BASE64,
+    sendModeAplicado: 'base64',
+    t_toDataURL_ms,
+    t_build_payload_vision_ms
+  });
   try {
     response = await fetch(urlTrastienda, {
       method: 'POST',
@@ -41,6 +58,12 @@ async function B1_llamarVisionOCR(canvas, sendMode, sessionToken, urlTrastienda)
         raw: null
       });
     }
+    B1_emitVisionCallTrace('vision_call_end', {
+      ok: false,
+      aborted: !!(controller && fetchErr && fetchErr.name === 'AbortError'),
+      message: fetchErr && fetchErr.message ? fetchErr.message : String(fetchErr || ''),
+      t_fetch_vision_total_ms: Date.now() - tFetch
+    });
     throw fetchErr;
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
@@ -51,6 +74,12 @@ async function B1_llamarVisionOCR(canvas, sendMode, sessionToken, urlTrastienda)
   let respuesta = null;
   try { respuesta = await response.json(); } catch (_) { respuesta = null; }
   const t_parse_respuesta_vision_cliente_ms = Date.now() - tParse;
+  B1_emitVisionCallTrace('vision_call_end', {
+    ok: !!(response.ok && respuesta && respuesta.ok === true),
+    status: response.status || null,
+    t_fetch_vision_total_ms,
+    t_parse_respuesta_vision_cliente_ms
+  });
 
   if (!response.ok || !respuesta || respuesta.ok !== true) {
     const err = (respuesta && respuesta.error) || {};

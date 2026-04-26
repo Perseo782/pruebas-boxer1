@@ -77,6 +77,13 @@
     }
   }
 
+  function traceAnalysisEvent(name, data, meta) {
+    if (!globalScope || !globalScope.AnalysisExclusiveRuntime || typeof globalScope.AnalysisExclusiveRuntime.trace !== "function") {
+      return;
+    }
+    globalScope.AnalysisExclusiveRuntime.trace(name, data || null, Object.assign({ source: "cerebro" }, meta || {}));
+  }
+
   function cleanupRouteIdempotencyCache(nowMs) {
     var keys = Object.keys(routeIdempotencyCache);
     for (var i = 0; i < keys.length; i += 1) {
@@ -881,6 +888,13 @@
 
     var normalizedRequest = validation.normalized;
     var meta = buildMeta(normalizedRequest);
+    traceAnalysisEvent("cerebro_start", {
+      contextoAlta: normalizedRequest && normalizedRequest.datos ? normalizedRequest.datos.contextoAlta || null : null
+    }, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "cerebro"
+    });
     var gateway = deps && deps.gateway ? deps.gateway : defaultGateway;
     var repositoryResolution = ensureResolvedProductRepository(deps || {});
     if (!gateway || typeof gateway.invokeBoxer !== "function") {
@@ -1103,6 +1117,15 @@
       passport: decision.passport,
       decisionFlujo: decision.decisionFlow,
       posibleDuplicado: finalData.duplicados.posibleDuplicado
+    });
+    traceAnalysisEvent("cerebro_decision_done", {
+      passport: decision.passport,
+      decisionFlujo: decision.decisionFlow,
+      elapsedMs: metricas.elapsedSince(meta.startedAt)
+    }, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "cerebro"
     });
 
     if (isTimeBudgetExpired(meta, normalizedRequest)) {

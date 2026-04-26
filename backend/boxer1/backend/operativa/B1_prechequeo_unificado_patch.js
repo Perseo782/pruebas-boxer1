@@ -4,6 +4,16 @@
  * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  */
 
+function B1_emitAnalysisTrace(name, data) {
+  try {
+    if (typeof globalThis === 'undefined') return;
+    if (!globalThis.AnalysisExclusiveRuntime || typeof globalThis.AnalysisExclusiveRuntime.trace !== 'function') return;
+    globalThis.AnalysisExclusiveRuntime.trace(name, data || null, { source: 'boxer1_prechequeo', phase: 'vision_prepare' });
+  } catch (errTrace) {
+    // No-op.
+  }
+}
+
 async function B1_redimensionarImagen(imageSrc) {
   let bitmap;
   let cerrarBitmap = false;
@@ -177,11 +187,13 @@ function _detectarRecorteRoto(data, w, h) {
 
 async function B1_prechequeo(imageSrc, cronometro) {
   const startedAt = Date.now();
+  B1_emitAnalysisTrace('vision_prepare_start', null);
   try {
     const tResize = Date.now();
     const { canvas, width, height } = await B1_redimensionarImagen(imageSrc);
     const t_redimensionar_ms = Date.now() - tResize;
     if (cronometro.expired()) {
+      B1_emitAnalysisTrace('vision_prepare_end', { ok: false, reason: 'presupuesto_agotado_en_prechequeo' });
       return {
         ok: false,
         canvas: null,
@@ -197,6 +209,10 @@ async function B1_prechequeo(imageSrc, cronometro) {
     const chequeo = B1_chequeoRapido(canvas);
     const t_chequeo_rapido_ms = Date.now() - tCheck;
     if (!chequeo.viable) {
+      B1_emitAnalysisTrace('vision_prepare_end', {
+        ok: false,
+        reason: chequeo.problemas && chequeo.problemas.length ? chequeo.problemas[0] : 'prechequeo_no_viable'
+      });
       return {
         ok: false,
         canvas: null,
@@ -209,6 +225,11 @@ async function B1_prechequeo(imageSrc, cronometro) {
       };
     }
 
+    B1_emitAnalysisTrace('vision_prepare_end', {
+      ok: true,
+      width,
+      height
+    });
     return {
       ok: true,
       canvas,
@@ -220,6 +241,10 @@ async function B1_prechequeo(imageSrc, cronometro) {
       abortReason: null
     };
   } catch (err) {
+    B1_emitAnalysisTrace('vision_prepare_end', {
+      ok: false,
+      reason: err && err.message ? err.message : 'error_interno_prechequeo'
+    });
     return {
       ok: false,
       canvas: null,

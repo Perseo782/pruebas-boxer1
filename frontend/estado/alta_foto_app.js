@@ -84,6 +84,52 @@
     }
   }
 
+  function getAnalysisRuntime() {
+    return globalScope.AnalysisExclusiveRuntime || null;
+  }
+
+  function traceAnalysisEvent(name, data, meta) {
+    var runtime = getAnalysisRuntime();
+    if (!runtime || typeof runtime.trace !== "function") return;
+    runtime.trace(name, data || null, Object.assign({ source: "alta_foto" }, meta || {}));
+  }
+
+  function requestAnalysisExclusive(meta) {
+    var runtime = getAnalysisRuntime();
+    if (!runtime || typeof runtime.requestExclusive !== "function") return;
+    runtime.requestExclusive(Object.assign({ source: "alta_foto" }, meta || {}));
+  }
+
+  function markAnalysisStarted(meta) {
+    var runtime = getAnalysisRuntime();
+    if (!runtime || typeof runtime.markAnalysisStarted !== "function") return;
+    runtime.markAnalysisStarted(Object.assign({ source: "alta_foto" }, meta || {}));
+  }
+
+  function markResultVisible(data, meta) {
+    var runtime = getAnalysisRuntime();
+    if (!runtime || typeof runtime.markResultVisible !== "function") return;
+    runtime.markResultVisible(data || null, Object.assign({ source: "alta_foto" }, meta || {}));
+  }
+
+  function attachAnalysisMeta(meta) {
+    var runtime = getAnalysisRuntime();
+    if (!runtime || typeof runtime.attachMeta !== "function") return;
+    runtime.attachMeta(Object.assign({ source: "alta_foto" }, meta || {}));
+  }
+
+  function resumeAnalysisExclusive(meta) {
+    var runtime = getAnalysisRuntime();
+    if (!runtime || typeof runtime.resumeProgressively !== "function") return;
+    runtime.resumeProgressively(Object.assign({ source: "alta_foto" }, meta || {}));
+  }
+
+  function cancelAnalysisExclusive(meta) {
+    var runtime = getAnalysisRuntime();
+    if (!runtime || typeof runtime.cancelExclusive !== "function") return;
+    runtime.cancelExclusive(Object.assign({ source: "alta_foto" }, meta || {}));
+  }
+
   function writeFase11DiagnosticoFallback(snapshot) {
     try {
       if (!globalScope.localStorage) return;
@@ -309,16 +355,28 @@
       if (!ref || !src) continue;
       try {
         var image = await loadImageFromSrc(src);
+        traceAnalysisEvent("thumb_start", {
+          ref: ref
+        }, { phase: "visuals" });
         var thumbSrc = await encodeVariantFromImage(image, {
           mimeType: THUMBNAIL_MIME,
           qualityPct: THUMBNAIL_QUALITY_PCT,
           maxSidePx: THUMBNAIL_MAX_SIDE_PX
         });
+        traceAnalysisEvent("thumb_done", {
+          ref: ref
+        }, { phase: "visuals" });
+        traceAnalysisEvent("viewer_image_start", {
+          ref: ref
+        }, { phase: "visuals" });
         var viewerSrc = await encodeVariantFromImage(image, {
           mimeType: profileToMime(settings.profileKey),
           qualityPct: settings.qualityPct,
           maxSidePx: settings.resolutionMaxPx
         });
+        traceAnalysisEvent("viewer_image_done", {
+          ref: ref
+        }, { phase: "visuals" });
         output.push({
           ref: ref,
           thumbSrc: thumbSrc || src,
@@ -975,7 +1033,7 @@
     if (typeof destination !== "function") return response;
     var routePayload = buildRoutePayloadFromResponse(response, safeParams.operationIds || {}, safeParams.modeOrigin || "normal");
     if (!routePayload) return response;
-    routePayload.draftVisuales = await buildDraftVisuales(safeParams.fotoRefs || []);
+    routePayload.draftVisuales = [];
     var idempotencyKey = [
       flow || "revision",
       routePayload.analysisId || "sin_analysis",
@@ -1057,6 +1115,26 @@
       visibleRuntime.noteActivity("alta_foto_ejecutar");
     }
     markOperationMemo(sessionToken, backendUrl, fotoRefs, operationIds, "pending", null);
+    attachAnalysisMeta({
+      analysisId: operationIds.analysisId,
+      traceId: operationIds.traceId,
+      batchId: operationIds.batchId,
+      phase: "analysis_prepare"
+    });
+    traceAnalysisEvent("analysis_real_started", {
+      totalFotos: fotoRefs.length
+    }, {
+      analysisId: operationIds.analysisId,
+      traceId: operationIds.traceId,
+      batchId: operationIds.batchId,
+      phase: "analysis"
+    });
+    markAnalysisStarted({
+      analysisId: operationIds.analysisId,
+      traceId: operationIds.traceId,
+      batchId: operationIds.batchId,
+      phase: "analysis"
+    });
 
     var request = buildCerebroRequest({
       fotoRefs: fotoRefs,
@@ -1108,6 +1186,23 @@
           operationIds: operationIds,
           modeOrigin: modeOrigin,
           fotoRefs: fotoRefs
+        });
+        var finalData = getFinalDataFromResponse(finalResponse);
+        attachAnalysisMeta({
+          analysisId: finalData && finalData.analysisId ? finalData.analysisId : operationIds.analysisId,
+          traceId: finalData && finalData.traceId ? finalData.traceId : operationIds.traceId,
+          batchId: operationIds.batchId,
+          phase: "analysis_response"
+        });
+        traceAnalysisEvent("ui_result_received", {
+          ok: !!(finalResponse && finalResponse.ok),
+          passport: finalResponse && finalResponse.resultado ? finalResponse.resultado.estadoPasaporteModulo : null,
+          elapsedMs: finalResponse && finalResponse.resultado ? finalResponse.resultado.elapsedMs : null
+        }, {
+          analysisId: finalData && finalData.analysisId ? finalData.analysisId : operationIds.analysisId,
+          traceId: finalData && finalData.traceId ? finalData.traceId : operationIds.traceId,
+          batchId: operationIds.batchId,
+          phase: "analysis_response"
         });
         if (finalResponse && finalResponse.ok === true) {
           clearOperationMemo(sessionToken, backendUrl, fotoRefs);
@@ -1172,6 +1267,36 @@
 
     renderDrafts(store, draftList);
 
+    function requestExclusiveFromStandalone(slotName, value) {
+      var ref = String(value || "").trim();
+      if (!ref) return;
+      requestAnalysisExclusive({
+        reason: "photo_selected",
+        phase: "photo_input",
+        taskName: String(slotName || "foto")
+      });
+      traceAnalysisEvent("photo_input_started", {
+        slot: String(slotName || "foto"),
+        refPreview: ref.slice(0, 96)
+      }, { phase: "photo_input" });
+    }
+
+    function clearExclusiveIfNoRefs() {
+      if (String(fotoRef1.value || "").trim()) return;
+      if (String(fotoRef2.value || "").trim()) return;
+      cancelAnalysisExclusive({ reason: "photo_input_cleared" });
+    }
+
+    fotoRef1.addEventListener("change", function onFoto1Changed() {
+      requestExclusiveFromStandalone("foto_1", fotoRef1.value);
+      clearExclusiveIfNoRefs();
+    });
+
+    fotoRef2.addEventListener("change", function onFoto2Changed() {
+      requestExclusiveFromStandalone("foto_2", fotoRef2.value);
+      clearExclusiveIfNoRefs();
+    });
+
     form.addEventListener("submit", async function onSubmit(ev) {
       ev.preventDefault();
       if (runState.inFlight) {
@@ -1193,6 +1318,19 @@
       if (visibleRuntime && typeof visibleRuntime.noteFirstPhotoIntent === "function") {
         visibleRuntime.noteFirstPhotoIntent();
       }
+      traceAnalysisEvent("analysis_button_clicked", {
+        from: "alta_foto"
+      }, { phase: "submit" });
+      traceAnalysisEvent("nonessential_pause_requested", {
+        from: "alta_foto"
+      }, { phase: "pause" });
+      requestAnalysisExclusive({
+        reason: "analyze_clicked",
+        phase: "submit"
+      });
+      traceAnalysisEvent("nonessential_pause_done", {
+        totalFotos: fotoRefs.length
+      }, { phase: "pause" });
 
       var lockExecution = await runWithGlobalAnalyzeLock(runId, async function executeLocked() {
         runState.inFlight = true;
@@ -1216,6 +1354,21 @@
           out.textContent = JSON.stringify(respuesta, null, 2);
           renderVisibleStatus(statusBox, respuesta);
           var finalData = getFinalDataFromResponse(respuesta) || {};
+          markResultVisible({
+            outcome: classifyVisibleOutcome(respuesta),
+            passport: respuesta && respuesta.resultado ? respuesta.resultado.estadoPasaporteModulo : null
+          }, {
+            analysisId: finalData.analysisId || null,
+            traceId: finalData.traceId || null,
+            batchId: finalData.batchId || null,
+            phase: "result"
+          });
+          resumeAnalysisExclusive({
+            analysisId: finalData.analysisId || null,
+            traceId: finalData.traceId || null,
+            batchId: finalData.batchId || null,
+            reason: "result_visible"
+          });
           var generatedDraftId = finalData &&
             finalData.revision &&
             String(finalData.revision.draftIdGenerado || "").trim();
@@ -1255,6 +1408,7 @@
           if (visibleRuntime && typeof visibleRuntime.noteActivity === "function") {
             visibleRuntime.noteActivity("analisis_visible_error");
           }
+          cancelAnalysisExclusive({ reason: "analysis_failed" });
         } finally {
           if (runState.activeRunId === runId) {
             runState.inFlight = false;
@@ -1275,6 +1429,7 @@
       fotoRef2.value = "";
       out.textContent = "";
       statusBox.textContent = "";
+      cancelAnalysisExclusive({ reason: "manual_clear" });
       if (visibleRuntime && typeof visibleRuntime.noteActivity === "function") {
         visibleRuntime.noteActivity("alta_foto_limpiar");
       }

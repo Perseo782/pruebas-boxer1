@@ -1223,6 +1223,9 @@
     var getSessionToken = typeof safeOptions.getSessionToken === "function"
       ? safeOptions.getSessionToken
       : function defaultGetSessionToken() { return ""; };
+    var shouldPause = typeof safeOptions.shouldPause === "function"
+      ? safeOptions.shouldPause
+      : function defaultShouldPause() { return false; };
     var debounceMs = Math.max(500, toPositiveInt(safeOptions.debounceMs, AUTO_BACKUP_DEBOUNCE_MS));
     var onStatus = typeof safeOptions.onStatus === "function" ? safeOptions.onStatus : null;
     var timerId = null;
@@ -1254,6 +1257,11 @@
       if (running) {
         pendingReason = pendingReason || reason || "queued";
         return { ok: true, queued: true };
+      }
+      if (shouldPause()) {
+        schedule(reason || "analysis_busy");
+        notify("delayed", { reason: reason || "analysis_busy" });
+        return { ok: true, delayed: true };
       }
       if (shouldDelayForSync()) {
         schedule(reason || "sync_busy");

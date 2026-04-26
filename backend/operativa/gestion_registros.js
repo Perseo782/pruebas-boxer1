@@ -176,6 +176,12 @@
         viewerUrl: record.visual.visuales[0].viewerSrc || record.visual.visuales[0].thumbSrc || ""
       };
     }
+    if (!candidate && record && record.visual && Array.isArray(record.visual.fotoRefs) && record.visual.fotoRefs.length) {
+      candidate = {
+        thumbUrl: record.visual.fotoRefs[0] || "",
+        viewerUrl: record.visual.fotoRefs[0] || ""
+      };
+    }
     return {
       thumbUrl: candidate && candidate.thumbUrl ? String(candidate.thumbUrl).trim() : "",
       viewerUrl: candidate && candidate.viewerUrl ? String(candidate.viewerUrl).trim() : ""

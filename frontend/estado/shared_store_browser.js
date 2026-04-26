@@ -70,6 +70,15 @@
     };
   }
 
+  function isAnalysisExclusiveBlocking() {
+    return !!(
+      globalScope &&
+      globalScope.AnalysisExclusiveRuntime &&
+      typeof globalScope.AnalysisExclusiveRuntime.isExclusiveBlocking === "function" &&
+      globalScope.AnalysisExclusiveRuntime.isExclusiveBlocking()
+    );
+  }
+
   function attachAutoBackupBridge(store) {
     if (!store || store.__fase8AutoBackupBridge) return;
     if (!globalScope || !globalScope.Fase8SyncBackup || typeof globalScope.Fase8SyncBackup.createAutoBackupBridge !== "function") return;
@@ -99,7 +108,8 @@
     var bridge = globalScope.Fase8SyncBackup.createAutoBackupBridge({
       store: store,
       getController: resolveController,
-      getSessionToken: readSessionToken
+      getSessionToken: readSessionToken,
+      shouldPause: isAnalysisExclusiveBlocking
     });
     if (!bridge || bridge.ok !== true || typeof bridge.connect !== "function") return;
     bridge.connect();
