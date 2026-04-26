@@ -7,6 +7,7 @@
   var LOCAL_PRODUCT_HISTORY_KEY = "appv2_product_history_local_v1";
   var BACKUP_OWNER_KEY = "alergenos_backup_owner_key";
   var BACKUP_LIST_TIMEOUT_MS = 12000;
+  var DETAIL_AUTO_HIDE_MS = 4000;
   var DEFAULT_VISUAL_SETTINGS = {
     profileKey: "EQUILIBRADO_WEBP",
     qualityPct: 40,
@@ -481,18 +482,52 @@
     return out.length ? out : ["Cambio registrado sin detalle legible."];
   }
 
-  function renderDetail(state, item) {
-    if (!item) {
-      state.el.detail.innerHTML = "<p class=\"empty\">Pulsa una tarjeta para ver el detalle.</p>";
+  function updateHistoryCardSelection(state) {
+    Array.prototype.forEach.call(state.el.list.querySelectorAll(".event-card"), function each(btn) {
+      var idx = Number(btn.getAttribute("data-idx"));
+      var active = Number.isFinite(idx) && idx === state.selectedIndex;
+      btn.classList.toggle("is-active", active);
+      btn.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+  }
+
+  function clearDetailAutoHide(state) {
+    if (!state.detailHideTimer) return;
+    globalScope.clearTimeout(state.detailHideTimer);
+    state.detailHideTimer = 0;
+  }
+
+  function hideDetailPopover(state) {
+    clearDetailAutoHide(state);
+    state.selectedIndex = -1;
+    if (state.el.detailPopover) {
+      state.el.detailPopover.classList.add("is-hidden");
+      state.el.detailPopover.innerHTML = "";
+    }
+    updateHistoryCardSelection(state);
+  }
+
+  function scheduleDetailAutoHide(state) {
+    clearDetailAutoHide(state);
+    state.detailHideTimer = globalScope.setTimeout(function onHideTimer() {
+      hideDetailPopover(state);
+    }, DETAIL_AUTO_HIDE_MS);
+  }
+
+  function renderDetailPopover(state, item) {
+    if (!item || !state.el.detailPopover) {
+      hideDetailPopover(state);
       return;
     }
     var lines = buildDetailLines(item);
-    state.el.detail.innerHTML =
-      "<h3>" + (item.productLabel || "(sin nombre)") + "</h3>" +
-      "<p class=\"meta\">" + formatDateTime(item.occurredAt) + "</p>" +
+    state.el.detailPopover.innerHTML =
+      "<h3>" + escapeHtml(item.productLabel || "(sin nombre)") + "</h3>" +
+      "<p class=\"meta\">" + escapeHtml(formatDateTime(item.occurredAt)) + "</p>" +
       "<ul>" + lines.map(function toRow(line) {
-        return "<li>" + line + "</li>";
+        return "<li>" + escapeHtml(line) + "</li>";
       }).join("") + "</ul>";
+    state.el.detailPopover.classList.remove("is-hidden");
+    scheduleDetailAutoHide(state);
   }
 
   function toVisibleType(eventType) {
@@ -507,13 +542,13 @@
 
   function renderHistoryList(state) {
     var items = Array.isArray(state.items) ? state.items : [];
-    if (!Number.isFinite(state.selectedIndex) || state.selectedIndex < 0) state.selectedIndex = 0;
-    if (state.selectedIndex >= items.length) state.selectedIndex = 0;
+    if (!Number.isFinite(state.selectedIndex) || state.selectedIndex < 0) state.selectedIndex = -1;
+    if (state.selectedIndex >= items.length) state.selectedIndex = -1;
     state.el.count.textContent = "Registros: " + items.length + " / 30";
 
     if (!items.length) {
       state.el.list.innerHTML = "<p class=\"empty\">Sin movimientos todavia.</p>";
-      renderDetail(state, null);
+      hideDetailPopover(state);
       return;
     }
 
@@ -531,12 +566,12 @@
     Array.prototype.forEach.call(state.el.list.querySelectorAll(".event-card"), function bind(btn) {
       btn.addEventListener("click", function onClick() {
         var idx = Number(btn.getAttribute("data-idx"));
-        state.selectedIndex = Number.isFinite(idx) ? idx : 0;
-        renderDetail(state, state.items[state.selectedIndex] || null);
+        state.selectedIndex = Number.isFinite(idx) ? idx : -1;
+        updateHistoryCardSelection(state);
+        renderDetailPopover(state, state.items[state.selectedIndex] || null);
       });
     });
-
-    renderDetail(state, state.items[state.selectedIndex] || state.items[0]);
+    updateHistoryCardSelection(state);
   }
 
   function renderPhotoSettings(state, message) {
@@ -1120,10 +1155,12 @@
 
   function wireEvents(state) {
     state.el.back.addEventListener("click", function onBack() {
+      hideDetailPopover(state);
       goBack();
     });
 
     state.el.reloadHistory.addEventListener("click", function onReloadHistory() {
+      hideDetailPopover(state);
       loadHistory(state);
     });
 
@@ -1206,12 +1243,23 @@
       renderSyncResumen(state, "Conexion recuperada.");
       refreshFase11Estado(state, "Conexion recuperada.");
     });
+
+    globalScope.document.addEventListener("click", function onDocumentClick(event) {
+      if (!state.el.detailPopover || state.el.detailPopover.classList.contains("is-hidden")) return;
+      var target = event && event.target ? event.target : null;
+      if (target && target.closest) {
+        if (target.closest("#historial-list .event-card")) return;
+        if (target.closest("#historial-detail-popover")) return;
+      }
+      hideDetailPopover(state);
+    });
   }
 
   function init() {
     var state = {
       items: [],
-      selectedIndex: 0,
+      selectedIndex: -1,
+      detailHideTimer: 0,
       historyRepairBusy: false,
       store: null,
       syncManager: null,
@@ -1236,7 +1284,7 @@
         count: byId("historial-count"),
         historyStatus: byId("historial-status"),
         list: byId("historial-list"),
-        detail: byId("historial-detail"),
+        detailPopover: byId("historial-detail-popover"),
         reloadHistory: byId("historial-reload"),
         syncResumen: byId("sync-resumen"),
         syncStatus: byId("sync-status"),

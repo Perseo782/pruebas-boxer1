@@ -299,18 +299,40 @@
       line-height: 12px;
       white-space: nowrap;
     }
-    .detail-box {
-      min-height: 220px;
+    .detail-popover {
+      position: fixed;
+      left: 50%;
+      bottom: 16px;
+      z-index: 40;
+      width: min(calc(100vw - 24px), 320px);
+      max-height: 180px;
+      overflow: auto;
+      transform: translateX(-50%);
       border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 14px;
+      border-radius: 16px;
+      padding: 12px 14px;
       background: var(--bg-surface);
+      box-shadow: var(--shadow-soft);
       overflow-wrap: anywhere;
       word-break: break-word;
     }
-    .detail-box ul {
-      margin: 12px 0 0;
-      padding-left: 20px;
+    .detail-popover.is-hidden {
+      display: none;
+    }
+    .detail-popover h3 {
+      margin: 0 0 4px;
+      font-size: 13px;
+      line-height: 16px;
+    }
+    .detail-popover .meta {
+      font-size: 11px;
+      line-height: 14px;
+    }
+    .detail-popover ul {
+      margin: 8px 0 0;
+      padding-left: 18px;
+      font-size: 12px;
+      line-height: 16px;
     }
     .empty { color: var(--muted); }
     .fase11-checks {
@@ -506,15 +528,9 @@
         </div>
         <div id="historial-list" class="list"></div>
       </section>
-
-      <section class="panel">
-        <h2>Detalle</h2>
-        <div id="historial-detail" class="detail-box">
-          <p class="empty">Pulsa una tarjeta para ver el detalle.</p>
-        </div>
-      </section>
     </section>
   </div>
+  <div id="historial-detail-popover" class="detail-popover is-hidden" aria-live="polite"></div>
 
   <script src="../../shared/alergenos_oficiales.js"></script>
   <script src="../../backend/persistencia/data_store_local.js"></script>
