@@ -19,6 +19,7 @@
   var SESSION_TOKEN_KEY = "alergenos_session_token";
   var RUNTIME_TOKEN_KEY = "fase5_visible_session_token";
   var RUNTIME_BACKEND_KEY = "fase5_visible_backend_url";
+  var BACKUP_OWNER_KEY = "alergenos_backup_owner_key";
   var lockTimer = 0;
 
   if (!form || !userInput || !passwordInput || !submitButton || !toggleButton) {
@@ -83,6 +84,25 @@
       window.sessionStorage.setItem(SESSION_TOKEN_KEY, safeToken);
       window.localStorage.setItem(RUNTIME_TOKEN_KEY, safeToken);
       window.localStorage.setItem(RUNTIME_BACKEND_KEY, BACKEND_URL);
+    } catch (error) {
+      return false;
+    }
+    return true;
+  }
+
+  function normalizeBackupOwner(user) {
+    return String(user || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9_-]+/g, "-")
+      .replace(/-{2,}/g, "-")
+      .replace(/^[-_]+|[-_]+$/g, "") || "local";
+  }
+
+  function persistBackupOwner(user) {
+    try {
+      window.localStorage.setItem(BACKUP_OWNER_KEY, "usuario_" + normalizeBackupOwner(user));
     } catch (error) {
       return false;
     }
@@ -287,6 +307,7 @@
       clearAccessGuard();
       window.sessionStorage.setItem("alergenos_access_ok", "1");
       window.sessionStorage.setItem("alergenos_access_user", getUserValue());
+      persistBackupOwner(getUserValue());
       persistSessionToken(payload.token || "");
     } catch (error) {
       setMessage("No se pudo comprobar el acceso con Firebase: " + (error && error.message ? error.message : "error desconocido"), "error");

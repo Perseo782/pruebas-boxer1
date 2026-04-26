@@ -191,6 +191,20 @@
       gap: 10px;
       margin-top: 12px;
     }
+    #backup-list {
+      min-height: 220px;
+      max-height: 220px;
+      overflow-y: auto;
+      padding-right: 4px;
+      align-content: start;
+    }
+    #backup-list::-webkit-scrollbar {
+      width: 8px;
+    }
+    #backup-list::-webkit-scrollbar-thumb {
+      background: var(--border-medium);
+      border-radius: 999px;
+    }
     #historial-list {
       height: 320px;
       overflow-y: auto;
@@ -214,6 +228,29 @@
       background: var(--bg-surface);
       border: 1px solid var(--line);
       border-radius: 12px;
+    }
+    #backup-list .backup-card {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px 10px;
+      min-height: 74px;
+      max-height: 74px;
+      padding: 8px 10px;
+      overflow: hidden;
+    }
+    #backup-list .backup-card .event-name,
+    #backup-list .backup-card .event-date {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #backup-list .backup-card .toolbar {
+      margin-top: 0;
+      justify-self: end;
+      align-self: center;
+    }
+    #backup-list .backup-card .toolbar button {
+      min-width: 100px;
     }
     #historial-list .event-card {
       grid-template-columns: auto minmax(0, 1fr) auto;

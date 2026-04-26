@@ -5,6 +5,7 @@
   var ALLERGEN_DISPLAY_SETTINGS_KEY = "appv2_allergen_card_display_v1";
   var LOCAL_IMPORT_HISTORY_KEY = "fase10_import_history_local_v1";
   var LOCAL_PRODUCT_HISTORY_KEY = "appv2_product_history_local_v1";
+  var BACKUP_OWNER_KEY = "alergenos_backup_owner_key";
   var BACKUP_LIST_TIMEOUT_MS = 12000;
   var DEFAULT_VISUAL_SETTINGS = {
     profileKey: "EQUILIBRADO_WEBP",
@@ -119,6 +120,32 @@
     } catch (errToken) {
       return "";
     }
+  }
+
+  function normalizeBackupOwner(user) {
+    return String(user || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9_-]+/g, "-")
+      .replace(/-{2,}/g, "-")
+      .replace(/^[-_]+|[-_]+$/g, "") || "local";
+  }
+
+  function readBackupOwnerKey() {
+    try {
+      if (globalScope.localStorage) {
+        var storedOwner = String(globalScope.localStorage.getItem(BACKUP_OWNER_KEY) || "").trim();
+        if (storedOwner) return storedOwner;
+      }
+      if (globalScope.sessionStorage) {
+        var sessionUser = String(globalScope.sessionStorage.getItem("alergenos_access_user") || "").trim();
+        if (sessionUser) return "usuario_" + normalizeBackupOwner(sessionUser);
+      }
+    } catch (errOwner) {
+      // No-op.
+    }
+    return "sesion_" + (readSessionToken().slice(0, 8) || "local");
   }
 
   function getStoredVisualSettings() {
@@ -563,19 +590,21 @@
     }
 
     state.el.backupList.innerHTML = safeItems.map(function each(item, index) {
+      var updatedRaw = String(item && item.updated || "").trim();
+      var updatedLabel = updatedRaw ? formatDateTime(updatedRaw) : "Fecha sin leer";
       return (
-        "<div class=\"event-card\">" +
+        "<div class=\"event-card backup-card\">" +
           "<span class=\"event-type\">Copia " + (index + 1) + "</span>" +
-          "<strong>" + String(item.name || "(sin nombre)") + "</strong>" +
-          "<span class=\"event-date\">Guardada: " + formatDateTime(item.updated) + "</span>" +
-          "<div class=\"toolbar\"><button type=\"button\" class=\"ok js-restore-backup\" data-path=\"" + String(item.fullPath || "") + "\">Restaurar</button></div>" +
+          "<strong class=\"event-name\">Guardada: " + escapeHtml(updatedLabel) + "</strong>" +
+          "<span class=\"event-date\">Pulsa restaurar para volver a ese momento.</span>" +
+          "<div class=\"toolbar\"><button type=\"button\" class=\"ok js-restore-backup\" data-path=\"" + escapeHtml(String(item.fullPath || "")) + "\" data-updated=\"" + escapeHtml(updatedRaw) + "\">Restaurar</button></div>" +
         "</div>"
       );
     }).join("");
 
     Array.prototype.forEach.call(state.el.backupList.querySelectorAll(".js-restore-backup"), function bind(btn) {
       btn.addEventListener("click", function onClick() {
-        restoreBackup(state, btn.getAttribute("data-path"));
+        restoreBackup(state, btn.getAttribute("data-path"), btn.getAttribute("data-updated"));
       });
     });
   }
@@ -881,7 +910,8 @@
   }
 
   function getBackupController(state) {
-    if (state.backupController) return state.backupController;
+    var ownerKey = readBackupOwnerKey();
+    if (state.backupController && state.backupControllerOwnerKey === ownerKey) return state.backupController;
     if (!globalScope.Fase8SyncBackup || typeof globalScope.Fase8SyncBackup.createSyncBackup !== "function") return null;
     var runtime = getFirebaseRuntime();
     if (!runtime || runtime.ok !== true || !runtime.storageModule) return null;
@@ -890,10 +920,92 @@
       storageModule: runtime.storageModule,
       firebaseApp: runtime.app,
       rootPath: "fase8_backups",
-      userId: "sesion_" + (readSessionToken().slice(0, 8) || "local"),
-      modeApi: syncManager
+      userId: ownerKey,
+      modeApi: syncManager,
+      ensureAuth: typeof runtime.waitForAuth === "function"
+        ? function ensureAuth(token) { return runtime.waitForAuth(token || null); }
+        : null
     });
+    state.backupControllerOwnerKey = ownerKey;
     return state.backupController;
+  }
+
+  async function replaceCloudProductsWithStore(state, records, token) {
+    var resolved = resolveRemoteIndex();
+    if (!resolved.ok) return resolved;
+    var remoteIndex = resolved.remoteIndex || null;
+    if (!remoteIndex || typeof remoteIndex.upsertProductRecordsBatch !== "function" || typeof remoteIndex.listProductRecords !== "function") {
+      return {
+        ok: false,
+        errorCode: "SYNC_RESTORE_REMOTE_NO_DISPONIBLE",
+        message: "La nube no esta disponible ahora."
+      };
+    }
+
+    var remoteListed = await remoteIndex.listProductRecords({
+      maxItems: 5000,
+      sessionToken: token
+    });
+    if (!remoteListed || remoteListed.ok !== true) {
+      return {
+        ok: false,
+        errorCode: (remoteListed && remoteListed.errorCode) || "SYNC_RESTORE_REMOTE_LIST_FAILED",
+        message: "No se pudo leer la base actual antes de restaurar."
+      };
+    }
+
+    var pushed = await remoteIndex.upsertProductRecordsBatch({
+      products: records,
+      chunkSize: 300,
+      sessionToken: token
+    });
+    if (!pushed || pushed.ok !== true) {
+      return {
+        ok: false,
+        errorCode: (pushed && pushed.errorCode) || "SYNC_RESTORE_REMOTE_UPSERT_FAILED",
+        message: "No se pudo actualizar la nube con la copia elegida."
+      };
+    }
+
+    if (typeof remoteIndex.deleteProductRecord !== "function") {
+      return {
+        ok: false,
+        errorCode: "SYNC_RESTORE_REMOTE_DELETE_NO_DISPONIBLE",
+        message: "La nube no permite limpiar los productos sobrantes."
+      };
+    }
+
+    var keepMap = Object.create(null);
+    records.forEach(function each(record) {
+      var id = String(record && record.id || "").trim();
+      if (id) keepMap[id] = true;
+    });
+    var remoteItems = Array.isArray(remoteListed.items) ? remoteListed.items : [];
+    var staleIds = remoteItems
+      .map(function mapId(item) { return String(item && item.id || "").trim(); })
+      .filter(function filterId(id) { return !!id && !keepMap[id]; });
+
+    for (var start = 0; start < staleIds.length; start += 25) {
+      var chunk = staleIds.slice(start, start + 25);
+      for (var i = 0; i < chunk.length; i += 1) {
+        var deleted = await remoteIndex.deleteProductRecord({
+          productId: chunk[i],
+          sessionToken: token
+        });
+        if (!deleted || deleted.ok !== true) {
+          return {
+            ok: false,
+            errorCode: (deleted && deleted.errorCode) || "SYNC_RESTORE_REMOTE_DELETE_FAILED",
+            message: "La copia subio, pero no se pudo limpiar la base actual completa."
+          };
+        }
+      }
+    }
+
+    return {
+      ok: true,
+      removed: staleIds.length
+    };
   }
 
   async function runSyncNow(state) {
@@ -957,14 +1069,15 @@
     }
     renderBackupList(state, listed.items || []);
     state.el.syncStatus.textContent = (listed.items || []).length
-      ? "Copias cargadas."
+      ? "Elige una copia para restaurar."
       : "No hay copias guardadas.";
   }
 
-  async function restoreBackup(state, path) {
+  async function restoreBackup(state, path, updatedAt) {
     var fullPath = String(path || "").trim();
     if (!fullPath) return;
-    if (!globalScope.confirm("Se va a restaurar una copia y sustituir el estado local. Continuar?")) return;
+    var restoreDate = updatedAt ? formatDate(updatedAt) : "fecha desconocida";
+    if (!globalScope.confirm("Se va a eliminar la base de datos actual y recuperar una anterior con fecha " + restoreDate + ". Continuar?")) return;
 
     var controller = getBackupController(state);
     if (!controller || controller.ok !== true) {
@@ -993,21 +1106,11 @@
       return;
     }
 
-    var resolved = resolveRemoteIndex();
-    if (!resolved.ok) {
+    var records = typeof store.list === "function" ? store.list() : [];
+    var replaced = await replaceCloudProductsWithStore(state, records, token);
+    if (!replaced || replaced.ok !== true) {
       state.el.syncStatus.textContent = "Copia restaurada. Falta terminar de guardarla en la nube.";
       renderSyncResumen(state, "Queda un paso pendiente.");
-      return;
-    }
-
-    var records = typeof store.list === "function" ? store.list() : [];
-    var pushed = await resolved.remoteIndex.upsertProductRecordsBatch({
-      products: records,
-      chunkSize: 300,
-      sessionToken: token
-    });
-    if (!pushed || pushed.ok !== true) {
-      state.el.syncStatus.textContent = "Copia restaurada, pero la nube no pudo actualizarse ahora.";
       return;
     }
 

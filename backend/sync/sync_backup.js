@@ -179,6 +179,7 @@
     var rootPath = sanitizeSegment(safeOptions.rootPath || DEFAULT_PATH);
     var userId = sanitizeSegment(safeOptions.userId || "usuario_local");
     var modeApi = safeOptions.modeApi || null;
+    var ensureAuth = typeof safeOptions.ensureAuth === "function" ? safeOptions.ensureAuth : null;
 
     if (!storageModule || typeof storageModule.getStorage !== "function") {
       return {
@@ -191,18 +192,14 @@
     var getStorage = storageModule.getStorage;
     var refFn = storageModule.ref;
     var uploadString = storageModule.uploadString;
-    var getDownloadURL = storageModule.getDownloadURL;
     var listAll = storageModule.listAll;
-    var getMetadata = storageModule.getMetadata;
     var getBlob = storageModule.getBlob;
     var deleteObject = storageModule.deleteObject;
 
     if (
       typeof refFn !== "function" ||
       typeof uploadString !== "function" ||
-      typeof getDownloadURL !== "function" ||
       typeof listAll !== "function" ||
-      typeof getMetadata !== "function" ||
       typeof getBlob !== "function" ||
       typeof deleteObject !== "function"
     ) {
@@ -233,6 +230,39 @@
       }
     }
 
+    async function ensureStorageAuth(sessionToken) {
+      if (!ensureAuth) return { ok: true };
+      try {
+        var out = await ensureAuth(sessionToken);
+        if (!out || out.ok !== true) {
+          return out || {
+            ok: false,
+            errorCode: "SYNC_BACKUP_AUTH_FAILED",
+            message: "No se pudo preparar acceso a la nube para las copias."
+          };
+        }
+        return out;
+      } catch (errAuth) {
+        return {
+          ok: false,
+          errorCode: safeCode(errAuth, "SYNC_BACKUP_AUTH_FAILED"),
+          message: safeMessage(errAuth, "No se pudo preparar acceso a la nube para las copias.")
+        };
+      }
+    }
+
+    function parseBackupUpdated(fileName) {
+      var match = String(fileName || "").trim().match(/^(\d{10,17})\.json$/i);
+      if (!match) return null;
+      var ms = Number(match[1]);
+      if (!Number.isFinite(ms) || ms <= 0) return null;
+      try {
+        return new Date(ms).toISOString();
+      } catch (errDate) {
+        return null;
+      }
+    }
+
     async function listBackupItemsInternal() {
       var rootRef = buildRootRef();
       var listed = await listAll(rootRef);
@@ -240,14 +270,11 @@
       for (var i = 0; i < listed.items.length; i += 1) {
         var itemRef = listed.items[i];
         if (itemRef.fullPath.indexOf("/" + VISUAL_ASSET_DIR + "/") >= 0) continue;
-        var meta = await getMetadata(itemRef).catch(function onMetaErr() {
-          return { updated: null, size: 0 };
-        });
         items.push({
           fullPath: itemRef.fullPath,
           name: itemRef.name,
-          updated: meta && meta.updated ? meta.updated : null,
-          size: meta && Number.isFinite(Number(meta.size)) ? Number(meta.size) : 0
+          updated: parseBackupUpdated(itemRef.name),
+          size: 0
         });
       }
       items.sort(function byDate(a, b) {
@@ -548,6 +575,8 @@
           message: "Falta sessionToken valido para backup."
         };
       }
+      var authReady = await ensureStorageAuth(sessionToken);
+      if (!authReady || authReady.ok !== true) return authReady;
 
       ensureMode("backup");
       try {
@@ -558,12 +587,10 @@
         await uploadString(objectRef, JSON.stringify(snapshot), "raw", {
           contentType: "application/json"
         });
-        var downloadURL = await getDownloadURL(objectRef);
         await trimBackups(store);
         return {
           ok: true,
           fileName: fileName,
-          downloadURL: downloadURL,
           exportedAt: snapshot.exportedAt,
           countProducts: snapshot.products.length,
           countDrafts: snapshot.drafts.length,
@@ -589,6 +616,8 @@
           message: "Falta sessionToken valido para listar backups."
         };
       }
+      var authReady = await ensureStorageAuth(sessionToken);
+      if (!authReady || authReady.ok !== true) return authReady;
 
       try {
         return {
@@ -612,6 +641,8 @@
           message: "Falta sessionToken valido para restaurar backup."
         };
       }
+      var authReady = await ensureStorageAuth(sessionToken);
+      if (!authReady || authReady.ok !== true) return authReady;
       if (!store || typeof store.replaceAllProducts !== "function" || typeof store.replaceRevisionDrafts !== "function") {
         return {
           ok: false,

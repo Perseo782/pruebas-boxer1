@@ -2,6 +2,7 @@
   "use strict";
 
   var DEFAULT_STORAGE_KEY = "fase3_shared_browser_store_v1";
+  var BACKUP_OWNER_KEY = "alergenos_backup_owner_key";
   var singletonCache = Object.create(null);
 
   function safeClone(value) {
@@ -33,6 +34,33 @@
     return "";
   }
 
+  function normalizeBackupOwner(user) {
+    return String(user || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9_-]+/g, "-")
+      .replace(/-{2,}/g, "-")
+      .replace(/^[-_]+|[-_]+$/g, "") || "local";
+  }
+
+  function readBackupOwnerKey() {
+    try {
+      if (globalScope && globalScope.localStorage) {
+        var storedOwner = String(globalScope.localStorage.getItem(BACKUP_OWNER_KEY) || "").trim();
+        if (storedOwner) return storedOwner;
+      }
+      if (globalScope && globalScope.sessionStorage) {
+        var sessionUser = String(globalScope.sessionStorage.getItem("alergenos_access_user") || "").trim();
+        if (sessionUser) return "usuario_" + normalizeBackupOwner(sessionUser);
+      }
+    } catch (errOwner) {
+      // No-op.
+    }
+    var token = readSessionToken();
+    return "sesion_" + (token.slice(0, 8) || "local");
+  }
+
   function buildModeApi() {
     return {
       setModoControlado: function setModoControlado(mode) {
@@ -49,19 +77,21 @@
     function resolveController() {
       var runtime = globalScope.Fase3FirebaseRuntime || null;
       if (!runtime || runtime.ok !== true || !runtime.storageModule) return null;
-      var token = readSessionToken();
-      var userKey = (token.slice(0, 8) || "local");
-      if (store.__fase8BackupController && store.__fase8BackupControllerUserKey === userKey) {
+      var ownerKey = readBackupOwnerKey();
+      if (store.__fase8BackupController && store.__fase8BackupControllerUserKey === ownerKey) {
         return store.__fase8BackupController;
       }
       store.__fase8BackupController = globalScope.Fase8SyncBackup.createSyncBackup({
         storageModule: runtime.storageModule,
         firebaseApp: runtime.app,
         rootPath: "fase8_backups",
-        userId: "sesion_" + userKey,
-        modeApi: buildModeApi()
+        userId: ownerKey,
+        modeApi: buildModeApi(),
+        ensureAuth: typeof runtime.waitForAuth === "function"
+          ? function ensureAuth(token) { return runtime.waitForAuth(token || null); }
+          : null
       });
-      store.__fase8BackupControllerUserKey = userKey;
+      store.__fase8BackupControllerUserKey = ownerKey;
       return store.__fase8BackupController;
     }
 
