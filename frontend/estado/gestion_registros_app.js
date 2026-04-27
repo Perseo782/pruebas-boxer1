@@ -35,6 +35,8 @@
   var SESSION_TOKEN_STORAGE_KEY = "fase5_visible_session_token";
   var ACCESS_SCREEN_PATH = "./acceso.html";
   var SESSION_REQUIRED_MESSAGE = "Sesion requerida. Inicia sesion.";
+  var SESSION_EXPIRED_MESSAGE = "Sesion caducada. Inicia sesion.";
+  var CLOUD_READ_FAILED_MESSAGE = "No se pudo actualizar nube, mostrando datos locales.";
   var ALLERGEN_DISPLAY_SETTINGS_KEY = "appv2_allergen_card_display_v1";
   var LOCAL_PRODUCT_HISTORY_KEY = "appv2_product_history_local_v1";
   var FASE11_DIAGNOSTICO_STORAGE_KEY = "fase11_diagnostico_actual_v1";
@@ -135,6 +137,10 @@
 
   function getDeferredVisualQueue() {
     return globalScope.DeferredVisualQueue || null;
+  }
+
+  function getAppStateGuard() {
+    return globalScope.AppStateGuard || null;
   }
 
   function traceAnalysisEvent(name, data, meta) {
@@ -414,54 +420,164 @@
 
   function readSessionToken(state) {
     if (state && state.runtime && typeof state.runtime.getSessionToken === "function") {
-      return String(state.runtime.getSessionToken() || "").trim();
+      var runtimeStateToken = String(state.runtime.getSessionToken() || "").trim();
+      if (runtimeStateToken) return runtimeStateToken;
     }
     var runtime = getFirebaseRuntime();
     if (runtime && typeof runtime.getSessionToken === "function") {
-      return String(runtime.getSessionToken() || "").trim();
+      var firebaseRuntimeToken = String(runtime.getSessionToken() || "").trim();
+      if (firebaseRuntimeToken) return firebaseRuntimeToken;
     }
     try {
-      return globalScope.localStorage ? String(globalScope.localStorage.getItem(SESSION_TOKEN_STORAGE_KEY) || "").trim() : "";
+      if (globalScope.localStorage) {
+        var localToken = String(globalScope.localStorage.getItem(SESSION_TOKEN_STORAGE_KEY) || "").trim();
+        if (localToken) return localToken;
+      }
+      if (globalScope.sessionStorage) {
+        return String(globalScope.sessionStorage.getItem("alergenos_session_token") || "").trim();
+      }
+      return "";
     } catch (errToken) {
       return "";
     }
+  }
+
+  function buildCurrentReturnUrl() {
+    if (!globalScope || !globalScope.location) return "./gestion_registros.html";
+    var pathname = String(globalScope.location.pathname || "").trim();
+    var search = String(globalScope.location.search || "");
+    var hash = String(globalScope.location.hash || "");
+    return (pathname || "./gestion_registros.html") + search + hash;
   }
 
   function markSessionRequiredState(state, enabled) {
     if (!state) return;
     state.sessionRequired = !!enabled;
     if (enabled) {
+      state.cloudReadConfirmed = false;
       state.lastCloudCount = null;
       state.lastCloudLoadedAt = null;
     }
   }
 
   function buildAccessUrl() {
-    return ACCESS_SCREEN_PATH;
+    var guard = getAppStateGuard();
+    if (guard && typeof guard.buildAccessUrl === "function") {
+      return guard.buildAccessUrl({
+        accessPath: ACCESS_SCREEN_PATH,
+        returnUrl: buildCurrentReturnUrl()
+      });
+    }
+    return ACCESS_SCREEN_PATH + "?returnUrl=" + encodeURIComponent(buildCurrentReturnUrl());
   }
 
   function redirectToAccess(state) {
     if (!globalScope || !globalScope.location) return false;
     if (state && state.sessionRedirecting) return false;
     if (state) state.sessionRedirecting = true;
-    globalScope.location.href = buildAccessUrl();
+    var guard = getAppStateGuard();
+    if (guard && typeof guard.redirectToAccess === "function") {
+      guard.redirectToAccess({
+        scope: globalScope,
+        accessPath: ACCESS_SCREEN_PATH,
+        returnUrl: buildCurrentReturnUrl()
+      });
+    } else {
+      globalScope.location.href = buildAccessUrl();
+    }
     return false;
   }
 
   function ensureSessionTokenOrRedirect(state, options) {
     var safeOptions = options || {};
     var token = readSessionToken(state);
+    var guard = getAppStateGuard();
+    if (guard && typeof guard.requireSessionOrRedirect === "function") {
+      var guardOut = guard.requireSessionOrRedirect({
+        sessionToken: token,
+        redirect: safeOptions.redirect !== false,
+        scope: globalScope,
+        accessPath: ACCESS_SCREEN_PATH,
+        returnUrl: buildCurrentReturnUrl()
+      });
+      if (guardOut && guardOut.ok === true) {
+        markSessionRequiredState(state, false);
+        state.cloudStateName = guardOut.status || "LOCAL_ONLY";
+        return guardOut.token || token;
+      }
+      markSessionRequiredState(state, true);
+      state.cloudStateName = guardOut && guardOut.status ? guardOut.status : "AUTH_REQUIRED";
+      renderSyncStatus(state, SESSION_REQUIRED_MESSAGE);
+      renderCloudChip(state);
+      return "";
+    }
     if (token) {
       markSessionRequiredState(state, false);
+      state.cloudStateName = "LOCAL_ONLY";
       return token;
     }
     markSessionRequiredState(state, true);
+    state.cloudStateName = "AUTH_REQUIRED";
     renderSyncStatus(state, SESSION_REQUIRED_MESSAGE);
     renderCloudChip(state);
     if (safeOptions.redirect !== false) {
       redirectToAccess(state);
     }
     return "";
+  }
+
+  function applyCloudFailureState(state, out) {
+    var guard = getAppStateGuard();
+    var status = "CLOUD_READ_FAILED";
+    if (guard && typeof guard.classifyCloudReadFailure === "function") {
+      status = guard.classifyCloudReadFailure(out || {});
+    }
+    state.cloudReadConfirmed = false;
+    state.cloudStateName = status;
+
+    if (guard && typeof guard.markCloudReadFailed === "function") {
+      guard.markCloudReadFailed(out || {});
+    } else if (guard && typeof guard.markState === "function") {
+      guard.markState(status, out || {});
+    }
+
+    if (status === "AUTH_REQUIRED" || status === "SESSION_EXPIRED") {
+      markSessionRequiredState(state, true);
+      renderSyncStatus(state, status === "SESSION_EXPIRED" ? SESSION_EXPIRED_MESSAGE : SESSION_REQUIRED_MESSAGE);
+      renderCloudChip(state);
+      redirectToAccess(state);
+      return status;
+    }
+
+    renderSyncStatus(state, CLOUD_READ_FAILED_MESSAGE);
+    renderCloudChip(state);
+    return status;
+  }
+
+  function applyCloudReadSuccessState(state, remoteCount) {
+    var safeCount = Number(remoteCount);
+    state.cloudReadConfirmed = true;
+    state.cloudStateName = Number.isFinite(safeCount) && safeCount === 0 ? "REMOTE_EMPTY_CONFIRMED" : "SYNC_OK";
+    var guard = getAppStateGuard();
+    if (guard && typeof guard.markCloudReadSuccess === "function") {
+      guard.markCloudReadSuccess(Number.isFinite(safeCount) ? safeCount : null);
+    } else if (guard && typeof guard.markState === "function") {
+      guard.markState(state.cloudStateName, { remoteCount: Number.isFinite(safeCount) ? safeCount : null });
+    }
+  }
+
+  function noteLastKnownGoodFromSharedSnapshot(origin, remoteConfirmed) {
+    var guard = getAppStateGuard();
+    if (!guard || typeof guard.noteLastKnownGoodSnapshot !== "function") return;
+    var shared = globalScope.Fase3SharedBrowserStore;
+    if (!shared || typeof shared.readSharedSnapshot !== "function") return;
+    var snapshot = shared.readSharedSnapshot({ storageKey: SHARED_BROWSER_STORE_KEY });
+    if (!snapshot) return;
+    guard.noteLastKnownGoodSnapshot({
+      snapshot: snapshot,
+      origin: String(origin || "local"),
+      remoteConfirmed: remoteConfirmed === true
+    });
   }
 
   function normalizeHistoryName(value) {
@@ -962,11 +1078,38 @@
   function renderCloudChip(state) {
     if (state && state.sessionRequired === true) {
       setText("cloud-count", "-");
-      setText("cloud-count-label", "Sesion requerida");
+      setText("cloud-count-label", state.cloudStateName === "SESSION_EXPIRED" ? "Sesion caducada" : "Sesion requerida");
       setText("cloud-time", "Inicia sesion");
       return;
     }
-    setText("cloud-count", String(Number(state.lastCloudCount || 0)));
+    if (!state || state.cloudReadConfirmed !== true) {
+      setText("cloud-count", "-");
+      setText("cloud-count-label", state && state.cloudStateName === "CLOUD_READ_FAILED" ? "Nube no disponible" : "Sin lectura");
+      setText("cloud-time", "Sin hora");
+      return;
+    }
+
+    var count = Number(state.lastCloudCount);
+    if (!Number.isFinite(count)) count = 0;
+    if (count === 0) {
+      var guard = getAppStateGuard();
+      var canShowZero = guard && typeof guard.canShowCloudZero === "function"
+        ? guard.canShowCloudZero({
+            hasSession: readSessionToken(state).length > 0,
+            remoteReadExecuted: state.cloudReadConfirmed === true,
+            remoteReadOk: true,
+            remoteCount: 0
+          })
+        : false;
+      if (!canShowZero) {
+        setText("cloud-count", "-");
+        setText("cloud-count-label", "Sin lectura");
+        setText("cloud-time", "Sin hora");
+        return;
+      }
+    }
+
+    setText("cloud-count", String(count));
     setText("cloud-count-label", "En la nube");
     setText("cloud-time", state.lastCloudLoadedAt ? formatTimeLabel(state.lastCloudLoadedAt) : "Sin hora");
   }
@@ -1203,20 +1346,22 @@
 
       var resolved = resolveRemoteIndex(state);
       if (!resolved.ok) {
-        renderSyncStatus(state, resolved.message);
+        applyCloudFailureState(state, resolved);
         return resolved;
       }
 
       renderSyncStatus(state, "Cargando nube");
       var out = await resolved.remoteIndex.listProductRecords({ maxItems: 5000, sessionToken: token });
       if (!out || out.ok !== true) {
-        renderSyncStatus(state, out && out.message ? out.message : "No se pudo leer la nube.");
+        applyCloudFailureState(state, out || { ok: false, message: "No se pudo leer la nube." });
         return out || { ok: false };
       }
 
       var syncOut = syncStoreFromRemote(state, out.items || []);
       state.lastCloudCount = Array.isArray(out.items) ? out.items.length : 0;
       state.lastCloudLoadedAt = new Date();
+      applyCloudReadSuccessState(state, state.lastCloudCount);
+      noteLastKnownGoodFromSharedSnapshot("nube", true);
       if (syncOut && syncOut.skipped === true) {
         renderCloudChip(state);
         return Object.assign({}, out, syncOut);
@@ -1291,9 +1436,13 @@
 
     var token = ensureSessionTokenOrRedirect(state, { redirect: true });
     if (!token) {
+      var guard = getAppStateGuard();
+      if (guard && typeof guard.markSyncAuthRequired === "function") {
+        guard.markSyncAuthRequired();
+      }
       return {
         ok: false,
-        errorCode: "SESSION_REQUIRED",
+        errorCode: "SYNC_AUTH_REQUIRED",
         message: SESSION_REQUIRED_MESSAGE
       };
     }
@@ -1301,6 +1450,20 @@
     traceAnalysisEvent("sync_deferred_start", { trigger: safeLabel }, { phase: "sync" });
     var out = await manager.iniciarSync(token);
     if (!out || out.ok !== true) {
+      var guardFail = getAppStateGuard();
+      var failStateName = "";
+      if (guardFail && typeof guardFail.markSyncFailed === "function") {
+        var failState = guardFail.markSyncFailed(out || { errorCode: "SYNC_FAILED", message: "Sync fallido" });
+        failStateName = String(failState && failState.name || "").trim().toUpperCase();
+      }
+      if (failStateName === "AUTH_REQUIRED" || failStateName === "SESSION_EXPIRED" || failStateName === "SYNC_AUTH_REQUIRED") {
+        markSessionRequiredState(state, true);
+        state.cloudStateName = failStateName === "SESSION_EXPIRED" ? "SESSION_EXPIRED" : "AUTH_REQUIRED";
+        renderSyncStatus(state, failStateName === "SESSION_EXPIRED" ? SESSION_EXPIRED_MESSAGE : SESSION_REQUIRED_MESSAGE);
+        renderCloudChip(state);
+        redirectToAccess(state);
+        return out || { ok: false };
+      }
       renderSyncStatus(state, "Sync fallido");
       traceAnalysisEvent("sync_deferred_done", {
         trigger: safeLabel,
@@ -1315,6 +1478,10 @@
 
     refreshVisibleList(state);
     renderSyncStatus(state, "Sync OK");
+    var guardOk = getAppStateGuard();
+    if (guardOk && typeof guardOk.markState === "function") {
+      guardOk.markState("SYNC_OK", { trigger: safeLabel });
+    }
     traceAnalysisEvent("sync_deferred_done", {
       trigger: safeLabel,
       ok: true
@@ -3130,8 +3297,10 @@
       lastDerivedData: null,
       hasLoadedProducts: false,
       loadProductsPromise: null,
-      lastCloudCount: 0,
+      lastCloudCount: null,
       lastCloudLoadedAt: null,
+      cloudReadConfirmed: false,
+      cloudStateName: "LOCAL_ONLY",
       sessionRequired: false,
       sessionRedirecting: false,
       initialProductsLoaded: false,

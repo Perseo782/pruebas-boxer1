@@ -12,7 +12,7 @@ const BASE_URL = `http://127.0.0.1:${PORT}`;
 const PAGES = [
   { path: "/index.html", expectUrl: "acceso.html", selector: "#access-form" },
   { path: "/frontend/pantallas/acceso.html", selector: "#access-form" },
-  { path: "/frontend/pantallas/gestion_registros.html", selector: "#abrir-ajustes" },
+  { path: "/frontend/pantallas/gestion_registros.html", expectUrl: "acceso.html", selector: "#access-form" },
   { path: "/frontend/pantallas/ajustes.html", selector: "#fase11-refresh" },
   { path: "/frontend/pantallas/alta_manual.html", selector: "#alta-manual-form" },
   { path: "/frontend/pantallas/alta_foto.html", selector: "body" },

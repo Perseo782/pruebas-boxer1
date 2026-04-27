@@ -11,7 +11,8 @@
   var formMessage = document.getElementById("form-message");
   var toast = document.getElementById("access-toast");
   var BACKEND_URL = "https://europe-west1-project-a6f6b968-a591-4b1f-823.cloudfunctions.net/api";
-  var APP_TARGET = "./gestion_registros.html";
+  var DEFAULT_APP_TARGET = "./gestion_registros.html";
+  var RETURN_URL_PARAM = "returnUrl";
   var MAX_FAILED_ATTEMPTS = 3;
   var LOCK_MS = 5 * 60 * 1000;
   var FAILS_KEY = "alergenos_access_failed_attempts";
@@ -24,6 +25,22 @@
 
   if (!form || !userInput || !passwordInput || !submitButton || !toggleButton) {
     return;
+  }
+
+  function readReturnTarget() {
+    var fallback = DEFAULT_APP_TARGET;
+    try {
+      if (!window || !window.location) return fallback;
+      var currentUrl = new URL(window.location.href);
+      var raw = String(currentUrl.searchParams.get(RETURN_URL_PARAM) || "").trim();
+      if (!raw) return fallback;
+      if (raw.indexOf("javascript:") === 0 || raw.indexOf("data:") === 0) return fallback;
+      var resolved = new URL(raw, window.location.href);
+      if (resolved.origin !== currentUrl.origin) return fallback;
+      return resolved.pathname + resolved.search + resolved.hash;
+    } catch (errReturn) {
+      return fallback;
+    }
   }
 
   function setHelp(el, text, kind) {
@@ -318,7 +335,7 @@
 
     setMessage("Acceso correcto. Abriendo Gestion de alergenos.", "");
     showToast("Acceso correcto. Abriendo Gestion de alergenos.", "");
-    window.location.href = APP_TARGET;
+    window.location.href = readReturnTarget();
   });
 
   setLockedState();

@@ -23,15 +23,24 @@
     try {
       var runtime = globalScope && globalScope.Fase3FirebaseRuntime;
       if (runtime && typeof runtime.getSessionToken === "function") {
-        return String(runtime.getSessionToken() || "").trim();
+        var runtimeToken = String(runtime.getSessionToken() || "").trim();
+        if (runtimeToken) return runtimeToken;
       }
       if (globalScope && globalScope.localStorage) {
-        return String(globalScope.localStorage.getItem("fase5_visible_session_token") || "").trim();
+        var localToken = String(globalScope.localStorage.getItem("fase5_visible_session_token") || "").trim();
+        if (localToken) return localToken;
+      }
+      if (globalScope && globalScope.sessionStorage) {
+        return String(globalScope.sessionStorage.getItem("alergenos_session_token") || "").trim();
       }
     } catch (errToken) {
       return "";
     }
     return "";
+  }
+
+  function getAppStateGuard() {
+    return globalScope && globalScope.AppStateGuard ? globalScope.AppStateGuard : null;
   }
 
   function normalizeBackupOwner(user) {
@@ -241,8 +250,67 @@
     return store;
   }
 
-  function persistStore(store, storage, storageKey) {
-    return writeSnapshot(storage, storageKey, buildSnapshot(store));
+  function resolveGuardStateName(storage) {
+    var guard = getAppStateGuard();
+    if (!guard || typeof guard.getCurrentState !== "function") return "";
+    var state = guard.getCurrentState({ storage: storage });
+    return String(state && state.name || "").trim();
+  }
+
+  function resolveSnapshotCounts(snapshot) {
+    var safeSnapshot = snapshot && typeof snapshot === "object" ? snapshot : {};
+    var products = Array.isArray(safeSnapshot.products) ? safeSnapshot.products : [];
+    var drafts = Array.isArray(safeSnapshot.drafts) ? safeSnapshot.drafts : [];
+    return {
+      products: products.length,
+      drafts: drafts.length
+    };
+  }
+
+  function resolvePersistOrigin(storage, explicitOrigin) {
+    var preferred = String(explicitOrigin || "").trim();
+    if (preferred) return preferred;
+    var stateName = resolveGuardStateName(storage).toUpperCase();
+    if (stateName === "SYNC_OK" || stateName === "REMOTE_EMPTY_CONFIRMED") return "nube";
+    return "local";
+  }
+
+  function persistStore(store, storage, storageKey, options) {
+    var safeOptions = options || {};
+    var snapshot = buildSnapshot(store);
+    var guard = getAppStateGuard();
+    var hasSession = readSessionToken().length > 0;
+    var stateName = resolveGuardStateName(storage);
+    if (guard && typeof guard.canPersistSnapshot === "function") {
+      var canPersist = guard.canPersistSnapshot({
+        snapshot: snapshot,
+        hasSession: hasSession,
+        stateName: stateName,
+        forceAllowEmpty: safeOptions.forceAllowEmpty === true
+      });
+      if (canPersist && canPersist.ok === true && canPersist.allowed === false) {
+        return {
+          ok: true,
+          skipped: true,
+          blocked: true,
+          reason: canPersist.reason || "EMPTY_SNAPSHOT_BLOCKED"
+        };
+      }
+    }
+
+    var out = writeSnapshot(storage, storageKey, snapshot);
+    if (out && out.ok === true && guard && typeof guard.noteLastKnownGoodSnapshot === "function") {
+      var counts = resolveSnapshotCounts(snapshot);
+      if (counts.products > 0 || counts.drafts > 0) {
+        guard.noteLastKnownGoodSnapshot({
+          storage: storage,
+          snapshot: snapshot,
+          origin: resolvePersistOrigin(storage, safeOptions.origin),
+          remoteConfirmed: safeOptions.remoteConfirmed === true
+        });
+      }
+    }
+    return out;
   }
 
   function hasPersistableLocalData(store) {
@@ -266,7 +334,10 @@
       var result = original.apply(store, arguments);
       var shouldPersist = !result || typeof result !== "object" || result.ok !== false;
       if (shouldPersist) {
-        var persistOut = persistStore(store, storage, storageKey);
+        var persistOut = persistStore(store, storage, storageKey, {
+          origin: "local",
+          remoteConfirmed: false
+        });
         store.__lastPersistResult = persistOut;
         if (!persistOut || persistOut.ok !== true) {
           store.__lastPersistError = persistOut || { ok: false, errorCode: "BROWSER_STORAGE_WRITE_FAILED" };
@@ -324,7 +395,10 @@
     });
 
     if (shouldPersistInitialSnapshot(store, hadSnapshot)) {
-      persistStore(store, storage, storageKey);
+      persistStore(store, storage, storageKey, {
+        origin: "local",
+        remoteConfirmed: false
+      });
     }
     attachAutoBackupBridge(store);
     singletonCache[storageKey] = store;
