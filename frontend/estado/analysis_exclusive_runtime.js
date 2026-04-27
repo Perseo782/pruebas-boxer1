@@ -11,6 +11,7 @@
   var deferredTaskSeq = 0;
   var drainTimerId = null;
   var drainVersion = 0;
+  var lateVisualTraceTarget = null;
   var emergencyDisabled = false;
 
   function cloneValue(value) {
@@ -86,6 +87,158 @@
     return session;
   }
 
+  function trimCompletedSessions() {
+    if (completedSessions.length > COMPLETED_LIMIT) {
+      completedSessions = completedSessions.slice(0, COMPLETED_LIMIT);
+    }
+  }
+
+  function sameSessionIdentity(session, meta) {
+    var safeMeta = normalizeMeta(meta);
+    if (!session) return false;
+    if (safeMeta.analysisId && session.analysisId && safeMeta.analysisId === session.analysisId) return true;
+    if (safeMeta.traceId && session.traceId && safeMeta.traceId === session.traceId) return true;
+    return false;
+  }
+
+  function findCompletedSessionByMeta(meta) {
+    var safeMeta = normalizeMeta(meta);
+    if (!safeMeta.analysisId && !safeMeta.traceId) return null;
+    for (var index = 0; index < completedSessions.length; index += 1) {
+      if (sameSessionIdentity(completedSessions[index], safeMeta)) {
+        return completedSessions[index];
+      }
+    }
+    return null;
+  }
+
+  function findAnonymousLateTraceSession() {
+    for (var index = 0; index < completedSessions.length; index += 1) {
+      var session = completedSessions[index];
+      if (session && session.phase === "late_trace" && !session.analysisId && !session.traceId) {
+        return session;
+      }
+    }
+    return null;
+  }
+
+  function createLateTraceSession(meta) {
+    var safeMeta = normalizeMeta(meta);
+    if (!safeMeta.analysisId && !safeMeta.traceId) {
+      var existingAnonymous = findAnonymousLateTraceSession();
+      if (existingAnonymous) return existingAnonymous;
+    }
+    var session = createSession(meta);
+    session.active = false;
+    session.phase = "late_trace";
+    session.resumeStartedAtMs = session.requestedAtMs;
+    session.resumeFinishedAtMs = session.requestedAtMs;
+    completedSessions.unshift(session);
+    trimCompletedSessions();
+    return session;
+  }
+
+  function isLateTraceName(name) {
+    var safeName = String(name || "").trim();
+    return safeName === "sync_deferred_start" ||
+      safeName === "sync_deferred_done" ||
+      safeName === "thumb_start" ||
+      safeName === "thumb_done" ||
+      safeName === "viewer_image_start" ||
+      safeName === "viewer_image_done" ||
+      safeName === "visual_queue_start" ||
+      safeName === "visual_link_done" ||
+      safeName === "visual_queue_cancelled" ||
+      safeName === "visual_queue_error" ||
+      safeName === "nonessential_task_deferred" ||
+      safeName === "deferred_task_error";
+  }
+
+  function isDerivativeVisualTrace(name) {
+    var safeName = String(name || "").trim();
+    return safeName === "thumb_start" ||
+      safeName === "thumb_done" ||
+      safeName === "viewer_image_start" ||
+      safeName === "viewer_image_done";
+  }
+
+  function getLateVisualTraceMeta(name) {
+    if (!isDerivativeVisualTrace(name) || !lateVisualTraceTarget) return null;
+    if (lateVisualTraceTarget.expiresAtMs && lateVisualTraceTarget.expiresAtMs < nowMs()) {
+      lateVisualTraceTarget = null;
+      return null;
+    }
+    return {
+      analysisId: lateVisualTraceTarget.analysisId || null,
+      traceId: lateVisualTraceTarget.traceId || null,
+      phase: "visual_queue"
+    };
+  }
+
+  function resolveTraceSession(name, meta) {
+    var safeMeta = normalizeMeta(meta);
+    var hasStableId = !!(safeMeta.analysisId || safeMeta.traceId);
+    if (!hasStableId) {
+      if (currentSession) return ensureCurrentSession(safeMeta);
+      if (isLateTraceName(name)) return createLateTraceSession(safeMeta);
+      return ensureCurrentSession(safeMeta);
+    }
+    if (currentSession && sameSessionIdentity(currentSession, safeMeta)) {
+      return attachMetaToSession(currentSession, safeMeta);
+    }
+    if (currentSession && !currentSession.analysisId && !currentSession.traceId) {
+      return attachMetaToSession(currentSession, safeMeta);
+    }
+    var completedSession = findCompletedSessionByMeta(safeMeta);
+    if (completedSession) {
+      return attachMetaToSession(completedSession, safeMeta);
+    }
+    if (currentSession && (currentSession.analysisId || currentSession.traceId)) {
+      return createLateTraceSession(safeMeta);
+    }
+    return ensureCurrentSession(safeMeta);
+  }
+
+  function isFreshPhotoRequest(meta) {
+    var safeMeta = normalizeMeta(meta);
+    return safeMeta.reason === "photo_selected" ||
+      safeMeta.reason === "camera_opened" ||
+      safeMeta.reason === "gallery_requested";
+  }
+
+  function sessionHasPhotoLifecycle(session) {
+    if (!session || !Array.isArray(session.events)) return false;
+    return session.events.some(function hasPhotoEvent(event) {
+      if (!event || !event.trace) return false;
+      return event.trace === "photo_input_started" ||
+        event.trace === "analysis_button_clicked" ||
+        event.trace === "analysis_real_started" ||
+        (event.trace === "analysis_exclusive_requested" && event.data && event.data.reason === "photo_selected");
+    });
+  }
+
+  function shouldStartFreshSession(meta) {
+    if (!currentSession || !isFreshPhotoRequest(meta)) return false;
+    if ((currentSession.phase === "requested" || currentSession.phase === "analysis") && sessionHasPhotoLifecycle(currentSession)) return false;
+    return true;
+  }
+
+  function finishCurrentSessionBeforeFreshStart() {
+    if (!currentSession) return;
+    drainVersion += 1;
+    if (drainTimerId) {
+      globalScope.clearTimeout(drainTimerId);
+      drainTimerId = null;
+    }
+    currentSession.active = false;
+    currentSession.phase = "idle";
+    if (!currentSession.resumeFinishedAtMs) {
+      currentSession.resumeFinishedAtMs = nowMs();
+    }
+    archiveCurrentSession();
+    currentSession = null;
+  }
+
   function ensureCurrentSession(meta) {
     if (!currentSession) {
       currentSession = createSession(meta);
@@ -145,7 +298,10 @@
     var safeName = String(name || "").trim();
     if (!safeName) return null;
     var safeMeta = normalizeMeta(meta);
-    var session = ensureCurrentSession(safeMeta);
+    if (!safeMeta.analysisId && !safeMeta.traceId) {
+      safeMeta = normalizeMeta(getLateVisualTraceMeta(safeName) || safeMeta);
+    }
+    var session = resolveTraceSession(safeName, safeMeta);
     var currentNow = nowMs();
     var entry = {
       trace: safeName,
@@ -162,6 +318,16 @@
     if (session.events.length > TRACE_LIMIT) {
       session.events = session.events.slice(session.events.length - TRACE_LIMIT);
     }
+    if (safeName === "visual_queue_start" && session.analysisId) {
+      lateVisualTraceTarget = {
+        analysisId: session.analysisId,
+        traceId: session.traceId || null,
+        expiresAtMs: currentNow + 15000
+      };
+    }
+    if (safeName === "visual_link_done" && safeMeta.analysisId && lateVisualTraceTarget && lateVisualTraceTarget.analysisId === safeMeta.analysisId) {
+      lateVisualTraceTarget = null;
+    }
     persistSnapshot();
     return entry;
   }
@@ -169,16 +335,18 @@
   function archiveCurrentSession() {
     if (!currentSession) return;
     completedSessions.unshift(cloneSession(currentSession));
-    if (completedSessions.length > COMPLETED_LIMIT) {
-      completedSessions = completedSessions.slice(0, COMPLETED_LIMIT);
-    }
+    trimCompletedSessions();
   }
 
   function requestExclusive(meta) {
-    var session = ensureCurrentSession(meta);
+    var safeMeta = normalizeMeta(meta);
+    if (shouldStartFreshSession(safeMeta)) {
+      finishCurrentSessionBeforeFreshStart();
+    }
+    var session = ensureCurrentSession(safeMeta);
     session.phase = "requested";
     session.active = true;
-    recordTrace("analysis_exclusive_requested", normalizeMeta(meta), meta);
+    recordTrace("analysis_exclusive_requested", safeMeta, safeMeta);
     return cloneSession(session);
   }
 
@@ -308,6 +476,7 @@
       return;
     }
     attachMetaToSession(currentSession, meta);
+    var sessionId = currentSession.sessionId;
     currentSession.phase = "resuming";
     currentSession.resumeStartedAtMs = nowMs();
     currentSession.active = false;
@@ -317,6 +486,7 @@
     globalScope.setTimeout(async function runResume() {
       await drainDeferredQueue(version);
       if (version !== drainVersion) return;
+      if (!currentSession || currentSession.sessionId !== sessionId) return;
       if (currentSession) {
         currentSession.phase = "idle";
         currentSession.resumeFinishedAtMs = nowMs();
@@ -340,6 +510,7 @@
     completedSessions = [];
     deferredTasks = [];
     deferredTaskSeq = 0;
+    lateVisualTraceTarget = null;
     drainVersion += 1;
     if (drainTimerId) {
       globalScope.clearTimeout(drainTimerId);
