@@ -131,6 +131,7 @@
   });
 
   var ACCENT_FIXES = Object.freeze({
+    bunuelos: "buñuelos",
     pate: "paté",
     iberico: "ibérico",
     clasico: "clásico",
@@ -138,6 +139,24 @@
     organico: "orgánico",
     alinadas: "aliñadas",
     aliniadas: "aliñadas"
+  });
+
+  var SPANISH_LOWERCASE_WORDS = Object.freeze({
+    a: true,
+    al: true,
+    con: true,
+    de: true,
+    del: true,
+    e: true,
+    el: true,
+    en: true,
+    la: true,
+    las: true,
+    los: true,
+    para: true,
+    por: true,
+    sin: true,
+    y: true
   });
 
   var WEIGHT_PATTERN = /\b\d{1,4}(?:[.,]\d{1,2})?\s?(?:kg|g|mg|l|ml|cl|ud|uds|unidades|capsulas|capsules|pack|x)\b/i;
@@ -641,11 +660,13 @@
 
     for (i = 0; i < words.length; i += 1) {
       var originalWord = words[i];
-      var word = fixSpanishToken(stripMarks(originalWord));
+      var word = fixSpanishToken(originalWord);
       var compare = normalizeCompareText(word);
       if (brandCompare && compare === brandCompare) {
         out.push(brandName);
-      } else if (/^[A-Z0-9]{2,4}$/.test(originalWord) && !Object.prototype.hasOwnProperty.call(ACCENT_FIXES, normalizeCompareText(originalWord))) {
+      } else if (i > 0 && SPANISH_LOWERCASE_WORDS[compare]) {
+        out.push(word.toLowerCase());
+      } else if (/^[A-Z0-9]{2,4}$/.test(originalWord) && !Object.prototype.hasOwnProperty.call(ACCENT_FIXES, normalizeCompareText(originalWord)) && !SPANISH_LOWERCASE_WORDS[compare]) {
         out.push(originalWord);
       } else {
         var lower = word.toLowerCase();

@@ -1057,6 +1057,16 @@
         globalScope.Fase8SyncTombstone.isDeleted(productId)
       );
     });
+    var pendingCount = state.store && typeof state.store.countPendingUploadProducts === "function"
+      ? state.store.countPendingUploadProducts({ includeDeleted: false })
+      : 0;
+    if (pendingCount > 0 && state.store && typeof state.store.fusionarRemotoCambios === "function") {
+      state.store.fusionarRemotoCambios(filteredItems, {
+        tombstoneApi: globalScope.Fase8SyncTombstone || null
+      });
+      refreshVisibleList(state);
+      return;
+    }
     state.store.replaceAllProducts(filteredItems);
     refreshVisibleList(state);
   }
@@ -1179,7 +1189,7 @@
         trigger: safeLabel,
         ok: false
       }, { phase: "sync" });
-      return;
+      return out || { ok: false };
     }
 
     if (typeof manager.ensureListener === "function") {
@@ -1192,6 +1202,7 @@
       trigger: safeLabel,
       ok: true
     }, { phase: "sync" });
+    return out;
   }
 
   async function deleteProduct(state, productId, productName) {
@@ -2734,9 +2745,7 @@
     }
 
     byId("recargar").addEventListener("click", function onReload() {
-      loadProducts(state, { force: true }).then(function afterLoad() {
-        return triggerSync(state, "manual");
-      });
+      triggerSync(state, "manual");
     });
 
     byId("revision-pending-button").addEventListener("click", function onRevision() {
