@@ -245,6 +245,19 @@
     return writeSnapshot(storage, storageKey, buildSnapshot(store));
   }
 
+  function hasPersistableLocalData(store) {
+    var products = typeof store.list === "function" ? store.list() : [];
+    if (Array.isArray(products) && products.length > 0) return true;
+    var drafts = typeof store.listRevisionDrafts === "function" ? store.listRevisionDrafts() : [];
+    return Array.isArray(drafts) && drafts.length > 0;
+  }
+
+  function shouldPersistInitialSnapshot(store, hadSnapshot) {
+    if (hadSnapshot) return true;
+    if (hasPersistableLocalData(store)) return true;
+    return readSessionToken().length > 0;
+  }
+
   function patchMutator(store, methodName, storage, storageKey) {
     var original = store[methodName];
     if (typeof original !== "function") return;
@@ -291,6 +304,7 @@
     var storage = getStorageCandidate(safeOptions.storage);
     var store = safeOptions.store || storeApi.createMemoryProductStore();
     var snapshot = readSnapshot(storage, storageKey);
+    var hadSnapshot = !!snapshot;
     if (snapshot) {
       hydrateStore(store, snapshot);
     }
@@ -309,7 +323,9 @@
       patchMutator(store, methodName, storage, storageKey);
     });
 
-    persistStore(store, storage, storageKey);
+    if (shouldPersistInitialSnapshot(store, hadSnapshot)) {
+      persistStore(store, storage, storageKey);
+    }
     attachAutoBackupBridge(store);
     singletonCache[storageKey] = store;
     return store;

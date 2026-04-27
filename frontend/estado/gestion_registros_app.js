@@ -32,6 +32,9 @@
     lastSyncTriggerAt: 0
   });
   var SHARED_BROWSER_STORE_KEY = "fase3_shared_browser_store_v1";
+  var SESSION_TOKEN_STORAGE_KEY = "fase5_visible_session_token";
+  var ACCESS_SCREEN_PATH = "./acceso.html";
+  var SESSION_REQUIRED_MESSAGE = "Sesion requerida. Inicia sesion.";
   var ALLERGEN_DISPLAY_SETTINGS_KEY = "appv2_allergen_card_display_v1";
   var LOCAL_PRODUCT_HISTORY_KEY = "appv2_product_history_local_v1";
   var FASE11_DIAGNOSTICO_STORAGE_KEY = "fase11_diagnostico_actual_v1";
@@ -418,10 +421,47 @@
       return String(runtime.getSessionToken() || "").trim();
     }
     try {
-      return globalScope.localStorage ? String(globalScope.localStorage.getItem("fase5_visible_session_token") || "").trim() : "";
+      return globalScope.localStorage ? String(globalScope.localStorage.getItem(SESSION_TOKEN_STORAGE_KEY) || "").trim() : "";
     } catch (errToken) {
       return "";
     }
+  }
+
+  function markSessionRequiredState(state, enabled) {
+    if (!state) return;
+    state.sessionRequired = !!enabled;
+    if (enabled) {
+      state.lastCloudCount = null;
+      state.lastCloudLoadedAt = null;
+    }
+  }
+
+  function buildAccessUrl() {
+    return ACCESS_SCREEN_PATH;
+  }
+
+  function redirectToAccess(state) {
+    if (!globalScope || !globalScope.location) return false;
+    if (state && state.sessionRedirecting) return false;
+    if (state) state.sessionRedirecting = true;
+    globalScope.location.href = buildAccessUrl();
+    return false;
+  }
+
+  function ensureSessionTokenOrRedirect(state, options) {
+    var safeOptions = options || {};
+    var token = readSessionToken(state);
+    if (token) {
+      markSessionRequiredState(state, false);
+      return token;
+    }
+    markSessionRequiredState(state, true);
+    renderSyncStatus(state, SESSION_REQUIRED_MESSAGE);
+    renderCloudChip(state);
+    if (safeOptions.redirect !== false) {
+      redirectToAccess(state);
+    }
+    return "";
   }
 
   function normalizeHistoryName(value) {
@@ -920,6 +960,12 @@
   }
 
   function renderCloudChip(state) {
+    if (state && state.sessionRequired === true) {
+      setText("cloud-count", "-");
+      setText("cloud-count-label", "Sesion requerida");
+      setText("cloud-time", "Inicia sesion");
+      return;
+    }
     setText("cloud-count", String(Number(state.lastCloudCount || 0)));
     setText("cloud-count-label", "En la nube");
     setText("cloud-time", state.lastCloudLoadedAt ? formatTimeLabel(state.lastCloudLoadedAt) : "Sin hora");
@@ -1144,15 +1190,25 @@
     }
 
     state.loadProductsPromise = (async function runLoadProducts() {
+      var token = ensureSessionTokenOrRedirect(state, {
+        redirect: safeOptions.redirectOnMissingSession !== false
+      });
+      if (!token) {
+        return {
+          ok: false,
+          errorCode: "SESSION_REQUIRED",
+          message: SESSION_REQUIRED_MESSAGE
+        };
+      }
+
       var resolved = resolveRemoteIndex(state);
       if (!resolved.ok) {
         renderSyncStatus(state, resolved.message);
         return resolved;
       }
 
-      var token = readSessionToken(state);
       renderSyncStatus(state, "Cargando nube");
-      var out = await resolved.remoteIndex.listProductRecords({ maxItems: 5000, sessionToken: token || null });
+      var out = await resolved.remoteIndex.listProductRecords({ maxItems: 5000, sessionToken: token });
       if (!out || out.ok !== true) {
         renderSyncStatus(state, out && out.message ? out.message : "No se pudo leer la nube.");
         return out || { ok: false };
@@ -1233,10 +1289,13 @@
       return;
     }
 
-    var token = readSessionToken(state);
+    var token = ensureSessionTokenOrRedirect(state, { redirect: true });
     if (!token) {
-      renderSyncStatus(state, "Sin acceso valido para sync");
-      return;
+      return {
+        ok: false,
+        errorCode: "SESSION_REQUIRED",
+        message: SESSION_REQUIRED_MESSAGE
+      };
     }
 
     traceAnalysisEvent("sync_deferred_start", { trigger: safeLabel }, { phase: "sync" });
@@ -1299,6 +1358,14 @@
   }
 
   async function initialProductsLoad(state, triggerLabel) {
+    var sessionToken = ensureSessionTokenOrRedirect(state, { redirect: true });
+    if (!sessionToken) {
+      return {
+        ok: false,
+        errorCode: "SESSION_REQUIRED",
+        message: SESSION_REQUIRED_MESSAGE
+      };
+    }
     if (state.initialProductsLoadPromise) {
       return state.initialProductsLoadPromise;
     }
@@ -3065,6 +3132,8 @@
       loadProductsPromise: null,
       lastCloudCount: 0,
       lastCloudLoadedAt: null,
+      sessionRequired: false,
+      sessionRedirecting: false,
       initialProductsLoaded: false,
       initialProductsLoadPromise: null,
       searchTimerId: null,
@@ -3157,6 +3226,9 @@
     bindViewer(state);
     bindListActions(state);
     wireEvents(state);
+    if (!ensureSessionTokenOrRedirect(state, { redirect: true })) {
+      return;
+    }
     refreshVisibleList(state);
     initialProductsLoad(state, "init");
     scheduleEntryCloudRecovery(state);
