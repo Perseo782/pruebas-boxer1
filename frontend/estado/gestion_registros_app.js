@@ -1076,6 +1076,11 @@
     return 0;
   }
 
+  function countPendingLocalUploads(state) {
+    if (!state || !state.store || typeof state.store.countPendingUploadProducts !== "function") return 0;
+    return state.store.countPendingUploadProducts({ includeDeleted: true });
+  }
+
   function syncStoreFromRemote(state, items) {
     var safeItems = Array.isArray(items) ? items : [];
     var filteredItems = safeItems.filter(function keepRemoteItem(item) {
@@ -1251,6 +1256,28 @@
       ok: true
     }, { phase: "sync" });
     return out;
+  }
+
+  async function manualSync(state) {
+    var localActiveCount = countActiveLocalProducts(state);
+    var pendingCount = countPendingLocalUploads(state);
+    if (localActiveCount === 0 && pendingCount === 0) {
+      renderSyncStatus(state, "Recuperando nube");
+      var loadOut = await loadProducts(state, { force: true });
+      if (!loadOut || loadOut.ok !== true) {
+        renderSyncStatus(state, loadOut && loadOut.message ? loadOut.message : "No se pudo recuperar la nube");
+        return loadOut || { ok: false };
+      }
+      if (countActiveLocalProducts(state) === 0) {
+        renderSyncStatus(state, "No se encontraron productos en la nube");
+        return Object.assign({}, loadOut, {
+          recovered: false,
+          localCount: 0
+        });
+      }
+      renderSyncStatus(state, "Nube recuperada");
+    }
+    return triggerSync(state, "manual");
   }
 
   async function deleteProduct(state, productId, productName) {
@@ -2807,7 +2834,7 @@
     }
 
     byId("recargar").addEventListener("click", function onReload() {
-      triggerSync(state, "manual");
+      manualSync(state);
     });
 
     byId("revision-pending-button").addEventListener("click", function onRevision() {
@@ -3051,6 +3078,7 @@
     countActiveLocalProducts: countActiveLocalProducts,
     loadProducts: loadProducts,
     listPendingRevisionDraftsFromStore: listPendingRevisionDraftsFromStore,
+    manualSync: manualSync,
     renderCard: renderCard,
     syncStoreFromRemote: syncStoreFromRemote
   };
