@@ -1040,6 +1040,14 @@
       ensureMode("backup");
       try {
         var snapshot = await buildSnapshot(store, { persistInlineAssets: false });
+        if (!Array.isArray(snapshot.products) || snapshot.products.length <= 0) {
+          return {
+            ok: false,
+            skipped: true,
+            errorCode: "SYNC_BACKUP_EMPTY_BLOCKED",
+            message: "Copia vacía bloqueada para no sustituir una copia válida."
+          };
+        }
         var snapshotHash = buildSnapshotHash(snapshot);
         snapshot.snapshotHash = snapshotHash;
         var latestListed = await listAllBackupItems();
@@ -1187,7 +1195,10 @@
           setVisual: setDraftVisualState
         });
 
-        var restoredProducts = store.replaceAllProducts(products);
+        var restoredProducts = store.replaceAllProducts(products, {
+          allowEmptyReplace: true,
+          reason: "backup_restore"
+        });
         var restoredDrafts = store.replaceRevisionDrafts(drafts);
 
         return {

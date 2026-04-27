@@ -923,7 +923,14 @@
         message: out && out.message ? out.message : "No se pudo cargar productos para backup."
       };
     }
-    store.replaceAllProducts(Array.isArray(out.items) ? out.items : []);
+    var replaced = store.replaceAllProducts(Array.isArray(out.items) ? out.items : []);
+    if (replaced && replaced.skipped === true) {
+      return {
+        ok: false,
+        errorCode: "REMOTE_EMPTY_REPLACE_BLOCKED",
+        message: "La nube devolvió cero productos y se conservó la lista local."
+      };
+    }
     if (typeof store.replaceRevisionDrafts === "function") {
       store.replaceRevisionDrafts([]);
     }

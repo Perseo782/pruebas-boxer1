@@ -670,15 +670,32 @@
       return queryProductsForUi(options).items;
     }
 
-    function replaceAllProducts(records) {
+    function replaceAllProducts(records, options) {
+      var safeOptions = options || {};
       var items = Array.isArray(records) ? records : [];
+      var hydrated = [];
+      for (var i = 0; i < items.length; i += 1) {
+        var record = buildHydratedProductRecord(items[i]);
+        if (!record) continue;
+        hydrated.push(record);
+      }
+
+      if (!hydrated.length && byId.size > 0 && safeOptions.allowEmptyReplace !== true) {
+        return {
+          ok: false,
+          skipped: true,
+          reason: "EMPTY_REPLACE_BLOCKED",
+          loaded: byId.size,
+          previous: byId.size
+        };
+      }
+
       byId.clear();
       byName.clear();
 
       var loaded = 0;
-      for (var i = 0; i < items.length; i += 1) {
-        var record = buildHydratedProductRecord(items[i]);
-        if (!record) continue;
+      for (var j = 0; j < hydrated.length; j += 1) {
+        var record = hydrated[j];
         byId.set(record.id, record);
         byName.set(record.identidad.nombreNormalizado, record.id);
         loaded += 1;

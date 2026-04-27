@@ -678,6 +678,18 @@
       }
 
       var replaced = state.store.replaceAllProducts(out.items || []);
+      if (replaced && replaced.skipped === true) {
+        state.remoteLoad.hydratedOnce = false;
+        state.remoteLoad.inFlight = false;
+        setLegacyStatus(state, "V1/Firebase: carga vacía bloqueada; se conserva la lista local.");
+        return {
+          ok: false,
+          error: {
+            code: "REMOTE_EMPTY_REPLACE_BLOCKED",
+            message: "La lectura remota vino vacía y se conservó la lista local."
+          }
+        };
+      }
       state.remoteLoad.hydratedOnce = true;
       state.remoteLoad.inFlight = false;
       setLegacyStatus(
