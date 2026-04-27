@@ -2,6 +2,7 @@
   "use strict";
 
   var SYNC_TRIGGER_COOLDOWN_MS = 1500;
+  var ENTRY_CLOUD_RECOVERY_RETRY_MS = Object.freeze([800, 2500, 6000]);
   var ICON_BASE_PATH = "../../assets/icons/";
   var TIPOGRAFIA_OFICIAL_APP_MELIA = Object.freeze({
     family: "\"Graphik\", Arial, sans-serif",
@@ -1081,6 +1082,10 @@
     return state.store.countPendingUploadProducts({ includeDeleted: true });
   }
 
+  function shouldRecoverCloudWhenEmpty(state) {
+    return countActiveLocalProducts(state) === 0 && countPendingLocalUploads(state) === 0;
+  }
+
   function syncStoreFromRemote(state, items) {
     var safeItems = Array.isArray(items) ? items : [];
     var filteredItems = safeItems.filter(function keepRemoteItem(item) {
@@ -1258,26 +1263,73 @@
     return out;
   }
 
-  async function manualSync(state) {
+  async function recoverCloudProductsWhenEmpty(state) {
+    if (!shouldRecoverCloudWhenEmpty(state)) {
+      return { ok: true, skipped: true, reason: "LOCAL_NOT_EMPTY_OR_PENDING" };
+    }
+    renderSyncStatus(state, "Recuperando nube");
+    var loadOut = await loadProducts(state, { force: true });
     var localActiveCount = countActiveLocalProducts(state);
-    var pendingCount = countPendingLocalUploads(state);
-    if (localActiveCount === 0 && pendingCount === 0) {
-      renderSyncStatus(state, "Recuperando nube");
-      var loadOut = await loadProducts(state, { force: true });
-      if (!loadOut || loadOut.ok !== true) {
-        renderSyncStatus(state, loadOut && loadOut.message ? loadOut.message : "No se pudo recuperar la nube");
-        return loadOut || { ok: false };
+    if (!loadOut || loadOut.ok !== true) {
+      renderSyncStatus(state, loadOut && loadOut.message ? loadOut.message : "No se pudo recuperar la nube");
+      return loadOut || { ok: false };
+    }
+    if (localActiveCount === 0) {
+      renderSyncStatus(state, "No se encontraron productos en la nube");
+      return Object.assign({}, loadOut, {
+        recovered: false,
+        localCount: 0
+      });
+    }
+    renderSyncStatus(state, "Nube recuperada");
+    return Object.assign({}, loadOut, {
+      recovered: true,
+      localCount: localActiveCount
+    });
+  }
+
+  async function manualSync(state) {
+    if (shouldRecoverCloudWhenEmpty(state)) {
+      var recovered = await recoverCloudProductsWhenEmpty(state);
+      if (!recovered || recovered.ok !== true || recovered.recovered === false) {
+        return recovered || { ok: false };
       }
-      if (countActiveLocalProducts(state) === 0) {
-        renderSyncStatus(state, "No se encontraron productos en la nube");
-        return Object.assign({}, loadOut, {
-          recovered: false,
-          localCount: 0
-        });
-      }
-      renderSyncStatus(state, "Nube recuperada");
     }
     return triggerSync(state, "manual");
+  }
+
+  async function initialProductsLoad(state, triggerLabel) {
+    if (state.initialProductsLoadPromise) {
+      return state.initialProductsLoadPromise;
+    }
+    state.initialProductsLoadPromise = (async function runInitialProductsLoad() {
+      var out = shouldRecoverCloudWhenEmpty(state)
+        ? await recoverCloudProductsWhenEmpty(state)
+        : await loadProducts(state);
+      if (countActiveLocalProducts(state) > 0) {
+        state.initialProductsLoaded = true;
+      }
+      if (out && out.ok === false && shouldRecoverCloudWhenEmpty(state)) {
+        return out;
+      }
+      return triggerSync(state, triggerLabel || "init");
+    })();
+    try {
+      return await state.initialProductsLoadPromise;
+    } finally {
+      state.initialProductsLoadPromise = null;
+    }
+  }
+
+  function scheduleEntryCloudRecovery(state) {
+    if (!globalScope.setTimeout) return;
+    ENTRY_CLOUD_RECOVERY_RETRY_MS.forEach(function eachDelay(delayMs, index) {
+      globalScope.setTimeout(function retryEntryCloudRecovery() {
+        if (state.initialProductsLoaded === true) return;
+        if (!shouldRecoverCloudWhenEmpty(state)) return;
+        initialProductsLoad(state, "init_retry_" + String(index + 1));
+      }, delayMs);
+    });
   }
 
   async function deleteProduct(state, productId, productName) {
@@ -2883,9 +2935,7 @@
     });
 
     globalScope.addEventListener("fase3-firebase-ready", function onFirebaseReady() {
-      loadProducts(state).then(function afterLoad() {
-        return triggerSync(state, "firebase_ready");
-      });
+      initialProductsLoad(state, "firebase_ready");
     });
 
     globalScope.addEventListener("online", function onOnline() {
@@ -2973,6 +3023,8 @@
       loadProductsPromise: null,
       lastCloudCount: 0,
       lastCloudLoadedAt: null,
+      initialProductsLoaded: false,
+      initialProductsLoadPromise: null,
       searchTimerId: null,
       unsubscribeStore: null,
       lastDraftSignature: "",
@@ -3064,9 +3116,8 @@
     bindListActions(state);
     wireEvents(state);
     refreshVisibleList(state);
-    loadProducts(state).then(function afterLoad() {
-      return triggerSync(state, "init");
-    });
+    initialProductsLoad(state, "init");
+    scheduleEntryCloudRecovery(state);
   }
 
   var testApi = {
@@ -3076,9 +3127,11 @@
     buildRevisionUrl: buildRevisionUrl,
     countPendingRevisionDraftsFromStore: countPendingRevisionDraftsFromStore,
     countActiveLocalProducts: countActiveLocalProducts,
+    initialProductsLoad: initialProductsLoad,
     loadProducts: loadProducts,
     listPendingRevisionDraftsFromStore: listPendingRevisionDraftsFromStore,
     manualSync: manualSync,
+    recoverCloudProductsWhenEmpty: recoverCloudProductsWhenEmpty,
     renderCard: renderCard,
     syncStoreFromRemote: syncStoreFromRemote
   };
