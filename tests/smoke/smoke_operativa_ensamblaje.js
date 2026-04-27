@@ -72,11 +72,19 @@ function testAltaGestion() {
   assert.equal(altaFotoConfirmada.resultado.datos.producto.analisis.origenAlta, "foto");
   assert.ok(altaFotoConfirmada.resultado.datos.producto.visual, "Producto desde foto debe conservar visual");
   assert.ok(
-    altaFotoConfirmada.resultado.datos.producto.visual.visuales[0].thumbSrc.indexOf("data:image/webp") === 0,
-    "Miniatura local debe quedar disponible"
+    JSON.stringify(altaFotoConfirmada.resultado.datos.producto).indexOf("data:image") < 0,
+    "Producto desde foto no debe guardar base64 pesado"
+  );
+  assert.ok(
+    altaFotoConfirmada.resultado.datos.producto.visual.fotoRefs[0].indexOf("alta_foto_normal_1") === 0,
+    "Producto desde foto debe conservar referencia visual ligera"
   );
   var modeloFoto = gestion.crearModeloTarjetaProductoFase9({
-    producto: altaFotoConfirmada.resultado.datos.producto
+    producto: altaFotoConfirmada.resultado.datos.producto,
+    visual: {
+      thumbUrl: "https://example.test/miniatura.webp",
+      viewerUrl: "https://example.test/visor.webp"
+    }
   });
   assert.equal(modeloFoto.tieneImagen, true, "Tarjeta debe quedar con miniatura clicable");
 }

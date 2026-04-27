@@ -67,6 +67,7 @@
   function sanitizeVisualEntryForRemote(input) {
     var safeInput = input || {};
     var ref = String(safeInput.ref || "").trim();
+    if (isInlineDataUrl(ref)) return null;
     if (!ref) return null;
     var out = {
       ref: ref,
@@ -98,7 +99,10 @@
       : [];
     if (!fotoRefs.length && !visuales.length) return null;
     if (!fotoRefs.length && visuales.length) {
-      fotoRefs = visuales.map(function mapVisual(item) { return String(item.ref || "").trim(); }).filter(Boolean).slice(0, 2);
+      fotoRefs = visuales
+        .map(function mapVisual(item) { return String(item.ref || "").trim(); })
+        .filter(function onlySafeRefs(ref) { return !!ref && !isInlineDataUrl(ref); })
+        .slice(0, 2);
     }
     return {
       fotoRefs: fotoRefs,

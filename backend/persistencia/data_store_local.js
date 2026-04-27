@@ -81,7 +81,16 @@
 
     function isAllowedVisualSrc(value) {
       var safe = String(value || "").trim();
-      return /^https?:\/\//i.test(safe) || /^data:image\//i.test(safe);
+      return /^https?:\/\//i.test(safe);
+    }
+
+    function isInlineDataUrl(value) {
+      return /^data:image\//i.test(String(value || "").trim());
+    }
+
+    function sanitizeVisualRef(value) {
+      var safe = String(value || "").trim();
+      return safe && !isInlineDataUrl(safe) ? safe : "";
     }
 
     function buildCommercialState(input) {
@@ -237,7 +246,9 @@
     }
 
     function toDraftVisualList(input, fotoRefs) {
-      var refs = Array.isArray(fotoRefs) ? fotoRefs.slice(0, 2) : [];
+      var refs = Array.isArray(fotoRefs)
+        ? fotoRefs.map(sanitizeVisualRef).filter(Boolean).slice(0, 2)
+        : [];
       var items = Array.isArray(input) ? input : [];
       var out = [];
       for (var i = 0; i < refs.length; i += 1) {
@@ -269,20 +280,22 @@
 
       for (i = 0; i < items.length && resolvedRefs.length < 2; i += 1) {
         var itemRef = items[i] && typeof items[i] === "object"
-          ? String(items[i].ref || "").trim()
+          ? sanitizeVisualRef(items[i].ref)
           : "";
         if (!itemRef || resolvedRefs.indexOf(itemRef) >= 0) continue;
         resolvedRefs.push(itemRef);
       }
 
       for (i = 0; i < resolvedRefs.length && i < 2; i += 1) {
-        var ref = String(resolvedRefs[i] || "").trim();
+        var ref = sanitizeVisualRef(resolvedRefs[i]);
         var raw = items[i] && typeof items[i] === "object" ? items[i] : {};
         if (!ref && !raw.ref) continue;
         var thumbSrc = String(raw.thumbSrc || "").trim();
         var viewerSrc = String(raw.viewerSrc || "").trim();
+        var visualRef = sanitizeVisualRef(raw.ref || ref);
+        if (!visualRef) continue;
         out.push({
-          ref: String(raw.ref || ref).trim() || ref,
+          ref: visualRef,
           thumbSrc: isAllowedVisualSrc(thumbSrc) ? thumbSrc : null,
           viewerSrc: isAllowedVisualSrc(viewerSrc) ? viewerSrc : null,
           profileKey: String(raw.profileKey || "").trim() || null,
@@ -299,7 +312,7 @@
       var safeInput = input || {};
       var fotoRefs = Array.isArray(safeInput.fotoRefs)
         ? safeInput.fotoRefs
-            .map(function mapRef(ref) { return String(ref || "").trim(); })
+            .map(sanitizeVisualRef)
             .filter(Boolean)
             .slice(0, 2)
         : [];
@@ -329,14 +342,14 @@
       var visualsByRef = Object.create(null);
 
       function pushRef(ref) {
-        var safeRef = String(ref || "").trim();
+        var safeRef = sanitizeVisualRef(ref);
         if (!safeRef || refs.indexOf(safeRef) >= 0 || refs.length >= 2) return;
         refs.push(safeRef);
       }
 
       function mergeVisual(raw) {
         if (!raw || typeof raw !== "object") return;
-        var ref = String(raw.ref || "").trim();
+        var ref = sanitizeVisualRef(raw.ref);
         if (!ref) return;
         var current = visualsByRef[ref] || { ref: ref };
         var thumbSrc = String(raw.thumbSrc || "").trim();

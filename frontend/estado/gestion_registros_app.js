@@ -2105,6 +2105,40 @@
     return /^data:image\//i.test(String(value || "").trim());
   }
 
+  function isRemoteImageUrl(value) {
+    return /^https?:\/\//i.test(String(value || "").trim());
+  }
+
+  function buildLightPhotoRefs(fotoRefs, analysisId, traceId) {
+    var refs = Array.isArray(fotoRefs) ? fotoRefs.filter(Boolean).slice(0, 2) : [];
+    if (!refs.length) return [];
+    var base = sanitizeAssetPart(analysisId || traceId || ("photo_" + Date.now().toString(36)));
+    return refs.map(function mapRef(_ref, index) {
+      return "photo_asset:" + base + ":" + String(index + 1);
+    });
+  }
+
+  function buildLightProductVisuales(rawVisuales, lightRefs) {
+    var refs = Array.isArray(lightRefs) ? lightRefs.filter(Boolean).slice(0, 2) : [];
+    var visuales = Array.isArray(rawVisuales) ? rawVisuales : [];
+    var out = [];
+    for (var i = 0; i < refs.length; i += 1) {
+      var raw = visuales[i] && typeof visuales[i] === "object" ? visuales[i] : {};
+      var thumbSrc = String(raw.thumbSrc || "").trim();
+      var viewerSrc = String(raw.viewerSrc || "").trim();
+      out.push({
+        ref: refs[i],
+        thumbSrc: isRemoteImageUrl(thumbSrc) ? thumbSrc : null,
+        viewerSrc: isRemoteImageUrl(viewerSrc) ? viewerSrc : null,
+        profileKey: String(raw.profileKey || "").trim() || null,
+        qualityPct: Number(raw.qualityPct) || null,
+        resolutionMaxPx: Number(raw.resolutionMaxPx) || null,
+        generatedAt: String(raw.generatedAt || "").trim() || new Date().toISOString()
+      });
+    }
+    return out;
+  }
+
   function dataUrlMime(value) {
     var match = String(value || "").match(/^data:([^;,]+)[;,]/i);
     return match && match[1] ? match[1].toLowerCase() : "image/webp";
@@ -2246,6 +2280,8 @@
     var photoVisuales = cloneVisuales(state.ui.add.photoVisuales);
     var analysisId = String(state.ui.add.analysisId || "").trim();
     var traceId = String(state.ui.add.traceId || "").trim();
+    var lightPhotoRefs = photoResultReady ? buildLightPhotoRefs(photoRefs, analysisId, traceId) : [];
+    var productVisuales = photoResultReady ? buildLightProductVisuales(photoVisuales, lightPhotoRefs) : [];
     var out = globalScope.Fase3OperativaAltaManual.ejecutarAltaManual(
       {
         nombre: state.ui.add.nombre,
@@ -2254,8 +2290,8 @@
         tipoFormato: state.ui.add.tipoFormato,
         alergenos: cloneArray(state.ui.add.selectedAllergenIds),
         origenAlta: photoResultReady ? "foto" : "manual",
-        fotoRefs: photoResultReady ? photoRefs : [],
-        visuales: photoResultReady ? photoVisuales : []
+        fotoRefs: lightPhotoRefs,
+        visuales: productVisuales
       },
       { store: state.store }
     );
@@ -2294,12 +2330,14 @@
           },
           apply: function applyProductVisuals(visuales, rawRefs) {
             var finalVisuales = buildProductPhotoVisuales(rawRefs, visuales);
+            var finalLightRefs = buildLightPhotoRefs(rawRefs, analysisId, traceId);
+            var finalProductVisuales = buildLightProductVisuales(finalVisuales, finalLightRefs);
             if (!finalVisuales.length) return;
             if (state.store && typeof state.store.updateProductById === "function") {
               state.store.updateProductById({
                 productId: savedProduct.id,
-                fotoRefs: cloneArray(rawRefs),
-                visuales: cloneVisuales(finalVisuales)
+                fotoRefs: finalLightRefs,
+                visuales: finalProductVisuales
               });
             }
             seedProductVisualAsset(state, savedProduct.id, finalVisuales);
@@ -2955,6 +2993,10 @@
       refreshVisibleList(state, { skipAssetReload: true });
     });
 
+    globalScope.addEventListener("fase3-local-persist-error", function onLocalPersistError() {
+      renderSyncStatus(state, "Copia local no guardada");
+    });
+
     if (document && typeof document.addEventListener === "function") {
       document.addEventListener("visibilitychange", function onVisibility() {
         var manager = resolveSyncManager(state);
@@ -3128,6 +3170,8 @@
     countPendingRevisionDraftsFromStore: countPendingRevisionDraftsFromStore,
     countActiveLocalProducts: countActiveLocalProducts,
     initialProductsLoad: initialProductsLoad,
+    buildLightPhotoRefs: buildLightPhotoRefs,
+    buildLightProductVisuales: buildLightProductVisuales,
     loadProducts: loadProducts,
     listPendingRevisionDraftsFromStore: listPendingRevisionDraftsFromStore,
     manualSync: manualSync,

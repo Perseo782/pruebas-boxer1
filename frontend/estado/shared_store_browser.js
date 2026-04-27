@@ -142,15 +142,24 @@
     return /^https?:\/\//i.test(String(value || "").trim());
   }
 
+  function isInlineDataUrl(value) {
+    return /^data:image\//i.test(String(value || "").trim());
+  }
+
+  function sanitizeVisualRef(value) {
+    var safe = String(value || "").trim();
+    return safe && !isInlineDataUrl(safe) ? safe : "";
+  }
+
   function sanitizeProductVisualState(visual) {
     if (!visual || typeof visual !== "object") return null;
     var fotoRefs = Array.isArray(visual.fotoRefs)
-      ? visual.fotoRefs.map(function mapRef(ref) { return String(ref || "").trim(); }).filter(Boolean).slice(0, 2)
+      ? visual.fotoRefs.map(sanitizeVisualRef).filter(Boolean).slice(0, 2)
       : [];
     var visuales = Array.isArray(visual.visuales)
       ? visual.visuales.map(function mapVisual(entry) {
           var safeEntry = entry || {};
-          var ref = String(safeEntry.ref || "").trim();
+          var ref = sanitizeVisualRef(safeEntry.ref);
           if (!ref) return null;
           var thumbSrc = String(safeEntry.thumbSrc || "").trim();
           var viewerSrc = String(safeEntry.viewerSrc || "").trim();
@@ -166,7 +175,7 @@
         }).filter(Boolean).slice(0, 2)
       : [];
     if (!fotoRefs.length && visuales.length) {
-      fotoRefs = visuales.map(function mapRef(item) { return String(item.ref || "").trim(); }).filter(Boolean).slice(0, 2);
+      fotoRefs = visuales.map(function mapRef(item) { return sanitizeVisualRef(item && item.ref); }).filter(Boolean).slice(0, 2);
     }
     if (!fotoRefs.length && !visuales.length) return null;
     return {
@@ -208,13 +217,15 @@
       };
     }
     try {
-      storage.setItem(storageKey, JSON.stringify(snapshot));
-      return { ok: true };
+      var serialized = JSON.stringify(snapshot);
+      storage.setItem(storageKey, serialized);
+      return { ok: true, bytesApprox: serialized.length };
     } catch (errWrite) {
       return {
         ok: false,
         errorCode: "BROWSER_STORAGE_WRITE_FAILED",
-        message: errWrite && errWrite.message ? errWrite.message : "No se pudo guardar el borrador local."
+        message: errWrite && errWrite.message ? errWrite.message : "No se pudo guardar el borrador local.",
+        bytesApprox: JSON.stringify(snapshot || {}).length
       };
     }
   }
@@ -242,7 +253,24 @@
       var result = original.apply(store, arguments);
       var shouldPersist = !result || typeof result !== "object" || result.ok !== false;
       if (shouldPersist) {
-        persistStore(store, storage, storageKey);
+        var persistOut = persistStore(store, storage, storageKey);
+        store.__lastPersistResult = persistOut;
+        if (!persistOut || persistOut.ok !== true) {
+          store.__lastPersistError = persistOut || { ok: false, errorCode: "BROWSER_STORAGE_WRITE_FAILED" };
+          if (result && typeof result === "object") {
+            result.localPersist = store.__lastPersistError;
+          }
+          if (globalScope && globalScope.console && typeof globalScope.console.warn === "function") {
+            globalScope.console.warn("[APP_ALERGENOS] No se pudo guardar la copia local.", store.__lastPersistError);
+          }
+          if (globalScope && typeof globalScope.dispatchEvent === "function" && typeof globalScope.CustomEvent === "function") {
+            globalScope.dispatchEvent(new globalScope.CustomEvent("fase3-local-persist-error", {
+              detail: Object.assign({ methodName: methodName }, store.__lastPersistError)
+            }));
+          }
+        } else if (store.__lastPersistError) {
+          store.__lastPersistError = null;
+        }
       }
       return result;
     };
