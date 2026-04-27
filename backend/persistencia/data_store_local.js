@@ -26,6 +26,17 @@
       .trim();
   }
 
+  function normalizeFormat(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/,/g, ".")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
   function nowIso() {
     return new Date().toISOString();
   }
@@ -73,6 +84,36 @@
       return /^https?:\/\//i.test(safe) || /^data:image\//i.test(safe);
     }
 
+    function buildCommercialState(input) {
+      var safeInput = input || {};
+      var comercialIn = safeInput.comercial && typeof safeInput.comercial === "object"
+        ? safeInput.comercial
+        : safeInput;
+      var formato = String(comercialIn.formato || safeInput.formato || "").trim();
+      var formatoNormalizado = String(
+        comercialIn.formatoNormalizado ||
+        comercialIn.formato_normalizado ||
+        safeInput.formatoNormalizado ||
+        safeInput.formato_normalizado ||
+        ""
+      ).trim();
+      if (!formatoNormalizado && formato) {
+        formatoNormalizado = normalizeFormat(formato);
+      }
+      if (!formato && !formatoNormalizado) return null;
+      return {
+        formato: formato || formatoNormalizado,
+        formatoNormalizado: formatoNormalizado || normalizeFormat(formato),
+        tipoFormato: String(
+          comercialIn.tipoFormato ||
+          comercialIn.tipo ||
+          safeInput.tipoFormato ||
+          safeInput.tipo ||
+          "desconocido"
+        ).trim() || "desconocido"
+      };
+    }
+
     function buildHydratedProductRecord(input) {
       var safeInput = input || {};
       var nombre = String(
@@ -90,6 +131,7 @@
       var now = nowIso();
       var sistemaIn = safeInput.sistema || {};
       var analisisIn = safeInput.analisis || {};
+      var comercial = buildCommercialState(safeInput);
       var record = {
         schemaVersion: toPositiveInt(safeInput.schemaVersion, 1),
         id: String(safeInput.id || "").trim() || makeId("prd"),
@@ -115,6 +157,9 @@
         }
       };
 
+      if (comercial) {
+        record.comercial = comercial;
+      }
       if (analisisIn.legacy) {
         record.analisis.legacy = cloneRecord(analisisIn.legacy);
       }
@@ -354,7 +399,10 @@
         ? String(record.identidad.nombreNormalizado || record.identidad.nombre || "")
         : "";
       var alergenos = Array.isArray(record && record.alergenos) ? record.alergenos.join(" ") : "";
-      var haystack = normalizeName(nombre + " " + alergenos);
+      var formato = record && record.comercial
+        ? String(record.comercial.formatoNormalizado || record.comercial.formato || "")
+        : "";
+      var haystack = normalizeName(nombre + " " + formato + " " + alergenos);
       return haystack.indexOf(searchText) >= 0;
     }
 
@@ -453,11 +501,15 @@
         visuales: input && input.visuales,
         updatedAt: now
       });
+      var nextCommercial = buildCommercialState(input);
 
       if (existingId) {
         var existing = byId.get(existingId);
         var mergedAllergens = toAllergenList((existing.alergenos || []).concat(allergens));
         existing.alergenos = mergedAllergens;
+        if (nextCommercial) {
+          existing.comercial = nextCommercial;
+        }
         if (nextVisual) {
           existing.visual = mergeProductVisualState(existing.visual || null, nextVisual);
         }
@@ -495,6 +547,9 @@
       };
       if (nextVisual) {
         record.visual = nextVisual;
+      }
+      if (nextCommercial) {
+        record.comercial = nextCommercial;
       }
 
       byId.set(record.id, record);
@@ -851,6 +906,7 @@
               updatedAt: now
             }
       );
+      var nextCommercial = buildCommercialState(safeInput);
 
       if (normalized !== record.identidad.nombreNormalizado) {
         byName.delete(record.identidad.nombreNormalizado);
@@ -860,6 +916,9 @@
       record.identidad.nombre = targetName;
       record.identidad.nombreNormalizado = normalized;
       record.alergenos = targetAllergens;
+      if (nextCommercial) {
+        record.comercial = nextCommercial;
+      }
       if (nextVisual) {
         record.visual = mergeProductVisualState(record.visual || null, nextVisual);
       }

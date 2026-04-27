@@ -72,6 +72,25 @@
       .trim();
   }
 
+  function normalizeFormat(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/,/g, ".")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function combineNameAndFormat(nombre, formato) {
+    var safeName = String(nombre || "").trim();
+    var safeFormat = String(formato || "").trim();
+    if (!safeFormat) return safeName;
+    if (normalizeName(safeName).indexOf(normalizeName(safeFormat)) >= 0) return safeName;
+    return String(safeName + " " + safeFormat).trim();
+  }
+
   function normalizeAllergenList(input) {
     if (allergenCatalog && typeof allergenCatalog.normalizeAllergenList === "function") {
       return allergenCatalog.normalizeAllergenList(input);
@@ -106,7 +125,10 @@
     var nombre = record && record.identidad
       ? String(record.identidad.nombreNormalizado || record.identidad.nombre || "")
       : "";
-    return normalizeName(nombre).indexOf(searchText) >= 0;
+    var formato = record && record.comercial
+      ? String(record.comercial.formatoNormalizado || record.comercial.formato || "")
+      : "";
+    return normalizeName(nombre + " " + formato).indexOf(searchText) >= 0;
   }
 
   function toHumanAllergenName(allergenId) {
@@ -325,10 +347,18 @@
     if (!product || !product.identidad || !product.sistema) return null;
     var visual = resolveVisualUrls(product, safePayload.visual || null);
     var nombre = String(product.identidad.nombre || "(sin nombre)").trim() || "(sin nombre)";
+    var formato = product.comercial ? String(product.comercial.formato || "").trim() : "";
+    var formatoNormalizado = product.comercial
+      ? String(product.comercial.formatoNormalizado || normalizeFormat(formato)).trim()
+      : "";
     var alergenosIds = normalizeAllergenList(product.alergenos);
     return {
       id: String(product.id || "").trim(),
       nombre: nombre,
+      nombreVisible: combineNameAndFormat(nombre, formato),
+      formato: formato,
+      formatoNormalizado: formatoNormalizado,
+      tipoFormato: product.comercial ? String(product.comercial.tipoFormato || "desconocido").trim() || "desconocido" : "desconocido",
       estado: formatStatusBadge(product),
       syncText: formatSyncText(product),
       alergenosIds: alergenosIds,
@@ -338,7 +368,7 @@
       tieneImagen: !!(visual.thumbUrl || visual.viewerUrl),
       thumbUrl: visual.thumbUrl || "",
       viewerUrl: visual.viewerUrl || visual.thumbUrl || "",
-      placeholderTexto: nombre
+      placeholderTexto: combineNameAndFormat(nombre, formato)
     };
   }
 

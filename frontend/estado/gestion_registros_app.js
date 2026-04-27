@@ -106,6 +106,25 @@
     return value == null ? value : JSON.parse(JSON.stringify(value));
   }
 
+  function normalizeTextKey(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9 ]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function combineNameAndFormat(nombre, formato) {
+    var safeName = String(nombre || "").trim();
+    var safeFormat = String(formato || "").trim();
+    if (!safeFormat) return safeName;
+    if (normalizeTextKey(safeName).indexOf(normalizeTextKey(safeFormat)) >= 0) return safeName;
+    return String(safeName + " " + safeFormat).trim();
+  }
+
   function getAnalysisRuntime() {
     return globalScope.AnalysisExclusiveRuntime || null;
   }
@@ -828,6 +847,7 @@
 
   function renderCard(model) {
     if (!model) return "";
+    var visibleName = String(model.nombreVisible || model.nombre || "").trim();
     var displayMode = getAllergenDisplayMode();
     var noAllergens = Number(model && model.alergenosCount || 0) === 0;
     var allergenBlock = displayMode === "iconos"
@@ -835,8 +855,8 @@
       : ("<p class=\"card-allergens" + (noAllergens ? " card-allergens-empty" : "") + "\"><span class=\"card-allergens-text\">" + escapeHtml(model.alergenosTexto) + "</span></p>");
     var thumbHtml = model.tieneImagen
       ? (
-          "<button type=\"button\" class=\"thumb-button js-open-photo\" data-id=\"" + escapeHtml(model.id) + "\" data-name=\"" + escapeHtml(model.nombre) + "\" data-viewer-src=\"" + escapeHtml(model.viewerUrl || model.thumbUrl) + "\">" +
-            "<img src=\"" + escapeHtml(model.thumbUrl) + "\" alt=\"" + escapeHtml(model.nombre) + "\">" +
+          "<button type=\"button\" class=\"thumb-button js-open-photo\" data-id=\"" + escapeHtml(model.id) + "\" data-name=\"" + escapeHtml(visibleName) + "\" data-viewer-src=\"" + escapeHtml(model.viewerUrl || model.thumbUrl) + "\">" +
+            "<img src=\"" + escapeHtml(model.thumbUrl) + "\" alt=\"" + escapeHtml(visibleName) + "\">" +
           "</button>"
         )
       : ("<div class=\"thumb-fallback\" aria-hidden=\"true\">Sin foto</div>");
@@ -845,7 +865,7 @@
       "<article class=\"card js-edit-card " + (displayMode === "iconos" ? "card--icon-mode" : "card--text-mode") + (noAllergens ? " card--empty-allergens" : "") + "\" data-product-id=\"" + escapeHtml(model.id) + "\">" +
         "<div class=\"card-head\">" +
           "<div class=\"card-copy\">" +
-            "<h3>" + escapeHtml(model.nombre) + "</h3>" +
+            "<h3>" + escapeHtml(visibleName || model.nombre) + "</h3>" +
             allergenBlock +
           "</div>" +
           "<div class=\"thumb-shell\">" + thumbHtml + "</div>" +
@@ -1045,6 +1065,17 @@
     refreshVisibleList(state, { skipAssetReload: true });
   }
 
+  function countActiveLocalProducts(state) {
+    if (!state || !state.store) return 0;
+    if (typeof state.store.countActiveProducts === "function") {
+      return state.store.countActiveProducts();
+    }
+    if (typeof state.store.listProductsForUi === "function") {
+      return state.store.listProductsForUi({ includeDeleted: false }).length;
+    }
+    return 0;
+  }
+
   function syncStoreFromRemote(state, items) {
     var safeItems = Array.isArray(items) ? items : [];
     var filteredItems = safeItems.filter(function keepRemoteItem(item) {
@@ -1065,10 +1096,23 @@
         tombstoneApi: globalScope.Fase8SyncTombstone || null
       });
       refreshVisibleList(state);
-      return;
+      return { ok: true, merged: true, remoteCount: filteredItems.length };
+    }
+    var localActiveCount = countActiveLocalProducts(state);
+    if (!filteredItems.length && localActiveCount > 0) {
+      renderSyncStatus(state, "Nube vacía; se conserva lista local");
+      refreshVisibleList(state);
+      return {
+        ok: true,
+        skipped: true,
+        reason: "REMOTE_EMPTY_PROTECTED",
+        localCount: localActiveCount,
+        remoteCount: 0
+      };
     }
     state.store.replaceAllProducts(filteredItems);
     refreshVisibleList(state);
+    return { ok: true, replaced: true, remoteCount: filteredItems.length };
   }
 
   async function loadProducts(state, options) {
@@ -1104,9 +1148,13 @@
         return out || { ok: false };
       }
 
-      syncStoreFromRemote(state, out.items || []);
+      var syncOut = syncStoreFromRemote(state, out.items || []);
       state.lastCloudCount = Array.isArray(out.items) ? out.items.length : 0;
       state.lastCloudLoadedAt = new Date();
+      if (syncOut && syncOut.skipped === true) {
+        renderCloudChip(state);
+        return Object.assign({}, out, syncOut);
+      }
       state.hasLoadedProducts = true;
       renderCloudChip(state);
       renderSyncStatus(state, "Nube lista | red " + (isOnline() ? "online" : "offline"));
@@ -1402,6 +1450,9 @@
       open: false,
       busy: false,
       nombre: "",
+      formato: "",
+      formatoNormalizado: "",
+      tipoFormato: "desconocido",
       selectedAllergenIds: [],
       photoResultReady: false,
       visualPending: false,
@@ -1839,12 +1890,14 @@
     var passport = resolvePhotoPassport(finalData, outcome);
     var propuesta = finalData.propuestaFinal || {};
     var nombre = String(propuesta.nombre || "").trim();
+    var formato = String(propuesta.formato || propuesta.formatoNormalizado || "").trim();
+    var visibleName = combineNameAndFormat(nombre, formato);
     var label = passport === "VERDE"
       ? "Pasaporte VERDE"
       : passport === "NARANJA"
         ? "Pasaporte NARANJA"
         : "Pasaporte ROJO";
-    return label + ". Revisa y confirma antes de guardar" + (nombre ? ": " + nombre : ".");
+    return label + ". Revisa y confirma antes de guardar" + (visibleName ? ": " + visibleName : ".");
   }
 
   function moduleLabel(moduleKey, moduleData) {
@@ -1940,6 +1993,9 @@
     var safeFotoRefs = cloneArray(safePayload.fotoRefs);
     var photoVisuales = cloneVisuales(safePayload.visuales);
     state.ui.add.nombre = String(propuesta.nombre || "").trim();
+    state.ui.add.formato = String(propuesta.formato || "").trim();
+    state.ui.add.formatoNormalizado = String(propuesta.formatoNormalizado || propuesta.formato || "").trim();
+    state.ui.add.tipoFormato = String(propuesta.tipoFormato || "desconocido").trim() || "desconocido";
     state.ui.add.selectedAllergenIds = normalizeAllergenList(propuesta.alergenos || []);
     state.ui.add.photoResultReady = true;
     state.ui.add.visualPending = !!safePayload.visualPending;
@@ -2114,6 +2170,9 @@
     var out = globalScope.Fase3OperativaAltaManual.ejecutarAltaManual(
       {
         nombre: state.ui.add.nombre,
+        formato: state.ui.add.formato,
+        formatoNormalizado: state.ui.add.formatoNormalizado,
+        tipoFormato: state.ui.add.tipoFormato,
         alergenos: cloneArray(state.ui.add.selectedAllergenIds),
         origenAlta: photoResultReady ? "foto" : "manual",
         fotoRefs: photoResultReady ? photoRefs : [],
@@ -2199,6 +2258,9 @@
       state.ui.add.busy = true;
       state.ui.add.photoResultReady = false;
       state.ui.add.visualPending = false;
+      state.ui.add.formato = "";
+      state.ui.add.formatoNormalizado = "";
+      state.ui.add.tipoFormato = "desconocido";
       state.ui.add.photoStatus = "Preparando analisis...";
       state.ui.add.photoStatusKind = "";
       traceAnalysisEvent("analysis_button_clicked", {
@@ -2986,8 +3048,11 @@
     buildRevisionPendingButtonState: buildRevisionPendingButtonState,
     buildRevisionUrl: buildRevisionUrl,
     countPendingRevisionDraftsFromStore: countPendingRevisionDraftsFromStore,
+    countActiveLocalProducts: countActiveLocalProducts,
+    loadProducts: loadProducts,
     listPendingRevisionDraftsFromStore: listPendingRevisionDraftsFromStore,
-    renderCard: renderCard
+    renderCard: renderCard,
+    syncStoreFromRemote: syncStoreFromRemote
   };
 
   if (typeof document === "undefined") {

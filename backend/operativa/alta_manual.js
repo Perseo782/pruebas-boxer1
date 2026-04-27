@@ -57,6 +57,11 @@
     try {
       var persist = store.createOrMergeByNormalizedName({
         nombre: nombre,
+        comercial: {
+          formato: String(safePayload.formato || "").trim(),
+          formatoNormalizado: String(safePayload.formatoNormalizado || "").trim(),
+          tipoFormato: String(safePayload.tipoFormato || "desconocido").trim() || "desconocido"
+        },
         alergenos: Array.isArray(safePayload.alergenos) ? safePayload.alergenos : [],
         origenAlta: String(safePayload.origenAlta || "manual"),
         fotoRefs: Array.isArray(safePayload.fotoRefs) ? safePayload.fotoRefs : [],
