@@ -64,6 +64,23 @@
     return /^data:image\//i.test(String(value || "").trim());
   }
 
+  function sanitizeVisualPath(value) {
+    var safe = String(value || "").trim();
+    if (!safe) return null;
+    if (isInlineDataUrl(safe) || /^blob:/i.test(safe)) return null;
+    return safe.slice(0, 420) || null;
+  }
+
+  function sanitizeVisualStateName(value, fallback) {
+    var safe = String(value || "").trim().toLowerCase();
+    if (!safe) return fallback || null;
+    if (safe === "pending" || safe === "uploading" || safe === "failed" || safe === "synced" || safe === "ok") {
+      return safe;
+    }
+    if (safe === "permission_denied" || safe === "not_found") return safe;
+    return fallback || null;
+  }
+
   function sanitizeVisualEntryForRemote(input) {
     var safeInput = input || {};
     var ref = String(safeInput.ref || "").trim();
@@ -97,18 +114,37 @@
           .filter(Boolean)
           .slice(0, 2)
       : [];
-    if (!fotoRefs.length && !visuales.length) return null;
+    var photoAssetId = String(safeInput.photoAssetId || "").trim();
+    if (isInlineDataUrl(photoAssetId) || /^blob:/i.test(photoAssetId)) {
+      photoAssetId = "";
+    }
+    var thumbPath = sanitizeVisualPath(safeInput.thumbPath);
+    var viewerPath = sanitizeVisualPath(safeInput.viewerPath);
+    var visualUploadState = sanitizeVisualStateName(safeInput.visualUploadState, null);
+    var visualReadState = sanitizeVisualStateName(safeInput.visualReadState, null);
+    var lastVisualError = String(safeInput.lastVisualError || "").trim().slice(0, 300) || null;
+
+    if (!fotoRefs.length && !visuales.length && !photoAssetId && !thumbPath && !viewerPath && !visualUploadState && !visualReadState && !lastVisualError) {
+      return null;
+    }
     if (!fotoRefs.length && visuales.length) {
       fotoRefs = visuales
         .map(function mapVisual(item) { return String(item.ref || "").trim(); })
         .filter(function onlySafeRefs(ref) { return !!ref && !isInlineDataUrl(ref); })
         .slice(0, 2);
     }
-    return {
+    var out = {
       fotoRefs: fotoRefs,
       visuales: visuales,
       updatedAt: toIso(safeInput.updatedAt)
     };
+    if (photoAssetId) out.photoAssetId = photoAssetId;
+    if (thumbPath) out.thumbPath = thumbPath;
+    if (viewerPath) out.viewerPath = viewerPath;
+    if (visualUploadState) out.visualUploadState = visualUploadState;
+    if (visualReadState) out.visualReadState = visualReadState;
+    if (lastVisualError) out.lastVisualError = lastVisualError;
+    return out;
   }
 
   function buildProductPayload(product, serverTimestamp) {

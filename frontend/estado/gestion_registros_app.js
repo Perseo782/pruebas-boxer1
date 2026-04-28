@@ -41,6 +41,7 @@
   var LOCAL_PRODUCT_HISTORY_KEY = "appv2_product_history_local_v1";
   var FASE11_DIAGNOSTICO_STORAGE_KEY = "fase11_diagnostico_actual_v1";
   var FEEDBACK_DURATION_MS = 2200;
+  var VISUAL_GATEWAY_THUMB_BATCH_LIMIT = 12;
   var DYNAMIC_SCRIPT_PROMISES = Object.create(null);
   var PHOTO_RUNTIME_SCRIPT_PATHS = Object.freeze([
     "../../backend/boxer1/backend/operativa/B1_enums.js",
@@ -141,6 +142,10 @@
 
   function getAppStateGuard() {
     return globalScope.AppStateGuard || null;
+  }
+
+  function getVisualGatewayClient() {
+    return globalScope.Fase4VisualGatewayClient || null;
   }
 
   function traceAnalysisEvent(name, data, meta) {
@@ -802,6 +807,24 @@
     return { ok: true, remoteIndex: remote };
   }
 
+  function resolveVisualGateway(state) {
+    if (state.visualGatewayClient) {
+      return { ok: true, client: state.visualGatewayClient };
+    }
+    var api = getVisualGatewayClient();
+    if (!api || typeof api.createVisualGatewayClient !== "function") {
+      return {
+        ok: false,
+        errorCode: "VISUAL_CLIENT_NOT_AVAILABLE",
+        message: "Falta cliente visual."
+      };
+    }
+    state.visualGatewayClient = api.createVisualGatewayClient({
+      runtime: state.runtime || null
+    });
+    return { ok: true, client: state.visualGatewayClient };
+  }
+
   function buildIdempotencyKey(productId) {
     return "fase7_delete_" + String(productId || "").trim() + "_" + Date.now();
   }
@@ -1036,9 +1059,35 @@
     return state.assetVisualsByProductId[safeId] || null;
   }
 
+  function getProductById(state, productId) {
+    var safeId = String(productId || "").trim();
+    if (!safeId || !state || !state.store || typeof state.store.getProductById !== "function") return null;
+    return state.store.getProductById(safeId) || null;
+  }
+
+  function getVisualAssetIdFromProduct(product) {
+    var visual = product && product.visual && typeof product.visual === "object" ? product.visual : null;
+    if (!visual) return "";
+    return String(visual.photoAssetId || "").trim();
+  }
+
+  function buildDataImageUrl(contentType, base64) {
+    var mime = String(contentType || "").trim() || "image/webp";
+    var payload = String(base64 || "").trim();
+    if (!payload) return "";
+    return "data:" + mime + ";base64," + payload;
+  }
+
   function hasPendingPhotoReference(product) {
     var visual = product && product.visual && typeof product.visual === "object" ? product.visual : null;
     if (!visual) return false;
+    if (String(visual.photoAssetId || "").trim()) return true;
+    var uploadState = String(visual.visualUploadState || "").trim().toLowerCase();
+    if (uploadState === "pending" || uploadState === "uploading" || uploadState === "failed") return true;
+    var readState = String(visual.visualReadState || "").trim().toLowerCase();
+    if (readState === "pending" || readState === "failed" || readState === "permission_denied" || readState === "not_found") {
+      return true;
+    }
     var refs = Array.isArray(visual.fotoRefs) ? visual.fotoRefs : [];
     for (var i = 0; i < refs.length; i += 1) {
       if (String(refs[i] || "").trim()) return true;
@@ -1286,6 +1335,7 @@
         return loadVisibleAssetVisuals(state, products);
       });
     }
+
     var safeProducts = Array.isArray(products) ? products : [];
     var productIds = safeProducts
       .map(function mapId(item) { return String(item && item.id || "").trim(); })
@@ -1300,26 +1350,144 @@
       return;
     }
 
-    var resolved = resolveRemoteAssetIndex(state);
-    if (!resolved.ok) return;
-
-    var requestId = (state.assetVisualRequestId || 0) + 1;
-    state.assetVisualRequestId = requestId;
+    var resolvedGateway = resolveVisualGateway(state);
+    if (!resolvedGateway.ok || !resolvedGateway.client) return;
     var token = readSessionToken(state);
-    var out = await resolved.remoteIndex.listAssetRecords({
-      onlyActive: true,
-      productIds: productIds,
-      sessionToken: token || null
-    });
-    if (state.assetVisualRequestId !== requestId) return;
-    if (!out || out.ok !== true) return;
-    state.assetVisualsByProductId = mergeRemoteVisualMapPreservingLocal(
-      state.assetVisualsByProductId,
-      buildVisualMap(out.items || []),
-      productIds
-    );
+    if (!token) return;
+
+    if (!state.assetVisualsInFlightByProductId) {
+      state.assetVisualsInFlightByProductId = Object.create(null);
+    }
+    if (!state.assetVisualLastErrorByProductId) {
+      state.assetVisualLastErrorByProductId = Object.create(null);
+    }
+
+    var candidates = [];
+    for (var i = 0; i < safeProducts.length; i += 1) {
+      var product = safeProducts[i] || null;
+      var productId = String(product && product.id || "").trim();
+      if (!productId) continue;
+      if (hasVisualAssetUrls(state.assetVisualsByProductId[productId])) continue;
+      if (state.assetVisualsInFlightByProductId[productId]) continue;
+      var visualAssetId = getVisualAssetIdFromProduct(product);
+      if (!visualAssetId) continue;
+      candidates.push({
+        productId: productId,
+        assetId: visualAssetId
+      });
+      if (candidates.length >= VISUAL_GATEWAY_THUMB_BATCH_LIMIT) break;
+    }
+    if (!candidates.length) {
+      state.assetVisualsLoaded = true;
+      return;
+    }
+
+    state.assetVisualsLoaded = false;
+    for (var c = 0; c < candidates.length; c += 1) {
+      var current = candidates[c];
+      if (!current || !current.productId || !current.assetId) continue;
+      state.assetVisualsInFlightByProductId[current.productId] = true;
+      try {
+        var out = await resolvedGateway.client.visualGetThumb(token, current.assetId);
+        if (!out || out.ok !== true || !out.result || !out.result.base64) {
+          state.assetVisualLastErrorByProductId[current.productId] = {
+            errorCode: out && out.errorCode ? out.errorCode : "VISUAL_CLIENT_READ_FAILED",
+            message: out && out.message ? out.message : "No se pudo leer miniatura remota."
+          };
+          continue;
+        }
+        var thumbDataUrl = buildDataImageUrl(out.result.contentType, out.result.base64);
+        if (!thumbDataUrl) continue;
+        state.assetVisualsByProductId[current.productId] = {
+          thumbUrl: thumbDataUrl,
+          viewerUrl: thumbDataUrl
+        };
+        delete state.assetVisualLastErrorByProductId[current.productId];
+        refreshSingleVisibleCard(state, current.productId);
+      } catch (errReadVisual) {
+        state.assetVisualLastErrorByProductId[current.productId] = {
+          errorCode: "VISUAL_CLIENT_READ_FAILED",
+          message: errReadVisual && errReadVisual.message ? errReadVisual.message : "No se pudo leer miniatura remota."
+        };
+      } finally {
+        delete state.assetVisualsInFlightByProductId[current.productId];
+      }
+    }
+
+    var hasMorePending = false;
+    for (var k = 0; k < safeProducts.length; k += 1) {
+      var pendingProduct = safeProducts[k] || null;
+      var pendingId = String(pendingProduct && pendingProduct.id || "").trim();
+      if (!pendingId) continue;
+      if (hasVisualAssetUrls(state.assetVisualsByProductId[pendingId])) continue;
+      if (state.assetVisualsInFlightByProductId[pendingId]) continue;
+      if (state.assetVisualLastErrorByProductId[pendingId]) continue;
+      if (!getVisualAssetIdFromProduct(pendingProduct)) continue;
+      hasMorePending = true;
+      break;
+    }
+
+    if (hasMorePending) {
+      state.assetVisualsLoaded = false;
+      setTimeout(function scheduleMoreAssetReads() {
+        loadVisibleAssetVisuals(state, safeProducts).catch(function swallowAssetErr() {
+          // La cola visual no debe romper la pantalla.
+        });
+      }, 80);
+      return;
+    }
+
     state.assetVisualsLoaded = true;
-    refreshVisibleList(state, { skipAssetReload: true });
+  }
+
+  async function ensureViewerVisualAsset(state, productId) {
+    var safeProductId = String(productId || "").trim();
+    if (!safeProductId) return "";
+    var currentAsset = pickVisualAssetForProduct(state, safeProductId);
+
+    var product = getProductById(state, safeProductId);
+    var assetId = getVisualAssetIdFromProduct(product);
+    if (
+      currentAsset &&
+      String(currentAsset.viewerUrl || "").trim() &&
+      String(currentAsset.viewerUrl || "").trim() !== String(currentAsset.thumbUrl || "").trim()
+    ) {
+      return String(currentAsset.viewerUrl || "").trim();
+    }
+    if (!assetId) {
+      return currentAsset && String(currentAsset.thumbUrl || "").trim()
+        ? String(currentAsset.thumbUrl || "").trim()
+        : "";
+    }
+
+    var resolvedGateway = resolveVisualGateway(state);
+    if (!resolvedGateway.ok || !resolvedGateway.client) return "";
+    var token = readSessionToken(state);
+    if (!token) return "";
+
+    var out = await resolvedGateway.client.visualGetViewer(token, assetId);
+    if (!out || out.ok !== true || !out.result || !out.result.base64) {
+      return currentAsset && String(currentAsset.thumbUrl || "").trim()
+        ? String(currentAsset.thumbUrl || "").trim()
+        : "";
+    }
+
+    var viewerDataUrl = buildDataImageUrl(out.result.contentType, out.result.base64);
+    if (!viewerDataUrl) {
+      return currentAsset && String(currentAsset.thumbUrl || "").trim()
+        ? String(currentAsset.thumbUrl || "").trim()
+        : "";
+    }
+
+    var nextAsset = {
+      thumbUrl: currentAsset && String(currentAsset.thumbUrl || "").trim()
+        ? String(currentAsset.thumbUrl || "").trim()
+        : viewerDataUrl,
+      viewerUrl: viewerDataUrl
+    };
+    state.assetVisualsByProductId[safeProductId] = nextAsset;
+    refreshSingleVisibleCard(state, safeProductId);
+    return viewerDataUrl;
   }
 
   function countActiveLocalProducts(state) {
@@ -2445,41 +2613,11 @@
     return match && match[1] ? match[1].toLowerCase() : "image/webp";
   }
 
-  function dataUrlBytes(value) {
-    var raw = String(value || "");
-    var comma = raw.indexOf(",");
-    if (comma < 0) return null;
-    var payload = raw.slice(comma + 1);
-    return Math.floor((payload.length * 3) / 4);
-  }
-
   function sanitizeAssetPart(value) {
     return String(value || "")
       .trim()
       .replace(/[^a-zA-Z0-9._-]+/g, "_")
       .slice(0, 120);
-  }
-
-  async function uploadDataImage(runtime, path, dataUrl) {
-    if (!runtime || !runtime.storageModule || !isDataImageUrl(dataUrl)) return null;
-    var storageModule = runtime.storageModule;
-    if (
-      typeof storageModule.getStorage !== "function" ||
-      typeof storageModule.ref !== "function" ||
-      typeof storageModule.uploadString !== "function" ||
-      typeof storageModule.getDownloadURL !== "function"
-    ) {
-      return null;
-    }
-    var storage = storageModule.getStorage(runtime.app || undefined);
-    var objectRef = storageModule.ref(storage, path);
-    await storageModule.uploadString(objectRef, dataUrl, "data_url", { contentType: dataUrlMime(dataUrl) });
-    return {
-      path: path,
-      downloadURL: await storageModule.getDownloadURL(objectRef),
-      mimeType: dataUrlMime(dataUrl),
-      bytes: dataUrlBytes(dataUrl)
-    };
   }
 
   async function persistPhotoAssetForProduct(state, product, visuales) {
@@ -2496,70 +2634,71 @@
 
     if (!isDataImageUrl(thumbSrc) && !isDataImageUrl(viewerSrc)) return;
 
-    var runtime = getFirebaseRuntime();
-    if (!runtime || runtime.ok !== true || !runtime.storageModule) return;
+    var resolvedGateway = resolveVisualGateway(state);
+    if (!resolvedGateway.ok || !resolvedGateway.client) return;
     var token = readSessionToken(state);
-    if (runtime && typeof runtime.waitForAuth === "function") {
-      await runtime.waitForAuth(token || null);
+    if (!token) return;
+
+    var existingProduct = getProductById(state, productId) || safeProduct;
+    var existingAssetId = getVisualAssetIdFromProduct(existingProduct);
+    var assetId = sanitizeAssetPart(existingAssetId || ("asset_" + productId + "_" + Date.now().toString(36)));
+    if (state.store && typeof state.store.updateProductById === "function") {
+      state.store.updateProductById({
+        productId: productId,
+        visual: {
+          photoAssetId: assetId,
+          visualUploadState: "uploading",
+          visualReadState: "pending",
+          lastVisualError: null
+        }
+      });
+    }
+    var uploadOut = await resolvedGateway.client.visualUploadAsset(
+      token,
+      productId,
+      assetId,
+      thumbSrc || viewerSrc,
+      viewerSrc || thumbSrc,
+      {
+        thumbContentType: dataUrlMime(thumbSrc || viewerSrc),
+        viewerContentType: dataUrlMime(viewerSrc || thumbSrc)
+      }
+    );
+    if (!uploadOut || uploadOut.ok !== true || !uploadOut.result) {
+      if (state.store && typeof state.store.updateProductById === "function") {
+        state.store.updateProductById({
+          productId: productId,
+          visual: {
+            photoAssetId: assetId,
+            visualUploadState: "failed",
+            visualReadState: "failed",
+            lastVisualError: uploadOut && uploadOut.errorCode ? uploadOut.errorCode : "VISUAL_CLIENT_UPLOAD_FAILED"
+          }
+        });
+      }
+      refreshSingleVisibleCard(state, productId);
+      return;
     }
 
-    var assetId = sanitizeAssetPart("asset_" + productId + "_" + Date.now().toString(36));
-    var root = "fase4_activos/" + sanitizeAssetPart(productId) + "/" + assetId;
-    var thumbUpload = await uploadDataImage(runtime, root + "_thumb.webp", thumbSrc || viewerSrc);
-    var viewerUpload = await uploadDataImage(runtime, root + "_viewer.webp", viewerSrc || thumbSrc);
-    if (!thumbUpload && !viewerUpload) return;
-
-    var resolved = resolveRemoteAssetIndex(state);
-    if (!resolved.ok || !resolved.remoteIndex || typeof resolved.remoteIndex.upsertAssetRecord !== "function") return;
-    var now = new Date().toISOString();
-    var asset = {
-      assetId: assetId,
-      schemaVersion: 1,
-      productId: productId,
-      origen: "alta_foto_normal",
-      contenedor: "firebase_storage",
-      archivo: {
-        fileName: assetId + ".webp",
-        mimeType: viewerUpload ? viewerUpload.mimeType : (thumbUpload ? thumbUpload.mimeType : "image/webp"),
-        bytes: viewerUpload ? viewerUpload.bytes : (thumbUpload ? thumbUpload.bytes : null)
-      },
-      derivados: {
-        thumbnailPath: thumbUpload ? thumbUpload.path : null,
-        compressedPath: viewerUpload ? viewerUpload.path : null,
-        miniaturaTarjeta: thumbUpload ? {
-          mimeType: thumbUpload.mimeType,
-          bytes: thumbUpload.bytes,
-          qualityPct: Number(visual.qualityPct) || null,
-          maxSidePx: 200,
-          downloadURL: thumbUpload.downloadURL
-        } : null,
-        imagenVisor: viewerUpload ? {
-          mimeType: viewerUpload.mimeType,
-          bytes: viewerUpload.bytes,
-          qualityPct: Number(visual.qualityPct) || null,
-          maxSidePx: Number(visual.resolutionMaxPx) || null,
-          compressionProfile: String(visual.profileKey || "").trim() || null,
-          downloadURL: viewerUpload.downloadURL
-        } : null
-      },
-      sistema: {
-        estadoRegistro: "ACTIVO",
-        syncState: "SYNCED",
-        rowVersion: 1,
-        dirty: false,
-        createdAt: now,
-        updatedAt: now,
-        deletedAt: null
-      }
-    };
-    var saved = await resolved.remoteIndex.upsertAssetRecord({ asset: asset, sessionToken: token || null });
-    if (!saved || saved.ok !== true) return;
-    state.assetVisualsByProductId[productId] = {
-      thumbUrl: thumbUpload && thumbUpload.downloadURL ? thumbUpload.downloadURL : (viewerUpload ? viewerUpload.downloadURL : ""),
-      viewerUrl: viewerUpload && viewerUpload.downloadURL ? viewerUpload.downloadURL : (thumbUpload ? thumbUpload.downloadURL : "")
-    };
-    state.assetVisualsLoaded = true;
-    refreshVisibleList(state, { skipAssetReload: true });
+    var uploadedAssetId = String(uploadOut.result.assetId || assetId).trim() || assetId;
+    var thumbPath = String(uploadOut.result.thumbPath || "").trim();
+    var viewerPath = String(uploadOut.result.viewerPath || "").trim();
+    if (state.store && typeof state.store.updateProductById === "function") {
+      state.store.updateProductById({
+        productId: productId,
+        visual: {
+          photoAssetId: uploadedAssetId,
+          thumbPath: thumbPath || null,
+          viewerPath: viewerPath || null,
+          visualUploadState: "synced",
+          visualReadState: "pending",
+          lastVisualError: null
+        }
+      });
+    }
+    state.assetVisualsLoaded = false;
+    refreshSingleVisibleCard(state, productId);
+    triggerSync(state, "visual_asset_ready");
   }
 
   function createManualConfirmationDestination() {
@@ -3084,12 +3223,35 @@
   function bindListActions(state) {
     var target = byId("productos-list");
     if (!target) return;
-    target.addEventListener("click", function onListClick(event) {
+    target.addEventListener("click", async function onListClick(event) {
       var photoButton = event.target.closest(".js-open-photo");
       if (photoButton) {
+        var productId = photoButton.getAttribute("data-id");
+        var viewerSrc = String(photoButton.getAttribute("data-viewer-src") || "").trim();
+        var cachedAsset = pickVisualAssetForProduct(state, productId);
+        var shouldUpgradeViewer = !!(
+          productId &&
+          cachedAsset &&
+          String(cachedAsset.thumbUrl || "").trim() &&
+          (
+            !String(cachedAsset.viewerUrl || "").trim() ||
+            String(cachedAsset.viewerUrl || "").trim() === String(cachedAsset.thumbUrl || "").trim()
+          )
+        );
+        if ((shouldUpgradeViewer || !viewerSrc) && productId) {
+          try {
+            var fetchedViewer = await ensureViewerVisualAsset(state, productId);
+            if (fetchedViewer) viewerSrc = fetchedViewer;
+          } catch (errViewer) {
+            // Conservamos la imagen actual si existe.
+          }
+        }
+        if (!viewerSrc) {
+          return;
+        }
         openViewer(
           state,
-          photoButton.getAttribute("data-viewer-src"),
+          viewerSrc,
           photoButton.getAttribute("data-name") || "Foto ampliada"
         );
         return;
@@ -3357,7 +3519,10 @@
       remoteIndex: null,
       syncManager: null,
       assetIndexRemote: null,
+      visualGatewayClient: null,
       assetVisualsByProductId: Object.create(null),
+      assetVisualsInFlightByProductId: Object.create(null),
+      assetVisualLastErrorByProductId: Object.create(null),
       assetVisualsLoaded: false,
       assetVisualRequestId: 0,
       lastVisibleProductIds: [],

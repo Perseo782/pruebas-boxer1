@@ -93,6 +93,28 @@
       return safe && !isInlineDataUrl(safe) ? safe : "";
     }
 
+    function sanitizeVisualPath(value) {
+      var safe = String(value || "").trim();
+      if (!safe) return null;
+      if (isInlineDataUrl(safe) || /^blob:/i.test(safe)) return null;
+      return safe.slice(0, 420) || null;
+    }
+
+    function sanitizeVisualStateName(value, fallback) {
+      var safe = String(value || "").trim().toLowerCase();
+      if (!safe) return fallback || null;
+      if (safe === "pending" || safe === "uploading" || safe === "failed" || safe === "synced" || safe === "ok") {
+        return safe;
+      }
+      if (safe === "permission_denied" || safe === "not_found") return safe;
+      return fallback || null;
+    }
+
+    function sanitizeVisualError(value) {
+      var safe = String(value || "").trim();
+      return safe ? safe.slice(0, 300) : null;
+    }
+
     function buildCommercialState(input) {
       var safeInput = input || {};
       var comercialIn = safeInput.comercial && typeof safeInput.comercial === "object"
@@ -325,13 +347,38 @@
           .slice(0, 2);
       }
 
-      if (!fotoRefs.length && !visuales.length) return null;
+      var photoAssetId = sanitizeVisualRef(safeInput.photoAssetId);
+      var thumbPath = sanitizeVisualPath(safeInput.thumbPath);
+      var viewerPath = sanitizeVisualPath(safeInput.viewerPath);
+      var visualUploadState = sanitizeVisualStateName(safeInput.visualUploadState, null);
+      var visualReadState = sanitizeVisualStateName(safeInput.visualReadState, null);
+      var lastVisualError = sanitizeVisualError(safeInput.lastVisualError);
 
-      return {
+      if (
+        !fotoRefs.length &&
+        !visuales.length &&
+        !photoAssetId &&
+        !thumbPath &&
+        !viewerPath &&
+        !visualUploadState &&
+        !visualReadState &&
+        !lastVisualError
+      ) {
+        return null;
+      }
+
+      var out = {
         fotoRefs: fotoRefs,
         visuales: visuales,
         updatedAt: String(safeInput.updatedAt || "").trim() || nowIso()
       };
+      if (photoAssetId) out.photoAssetId = photoAssetId;
+      if (thumbPath) out.thumbPath = thumbPath;
+      if (viewerPath) out.viewerPath = viewerPath;
+      if (visualUploadState) out.visualUploadState = visualUploadState;
+      if (visualReadState) out.visualReadState = visualReadState;
+      if (lastVisualError) out.lastVisualError = lastVisualError;
+      return out;
     }
 
     function mergeProductVisualState(currentState, nextState) {
@@ -373,7 +420,7 @@
       (Array.isArray(currentState.visuales) ? currentState.visuales : []).forEach(mergeVisual);
       (Array.isArray(nextState.visuales) ? nextState.visuales : []).forEach(mergeVisual);
 
-      return {
+      var out = {
         fotoRefs: refs,
         visuales: refs.map(function mapRef(ref) {
           var visual = visualsByRef[ref] || { ref: ref };
@@ -389,6 +436,21 @@
         }),
         updatedAt: String(nextState.updatedAt || currentState.updatedAt || "").trim() || nowIso()
       };
+      var mergedPhotoAssetId = sanitizeVisualRef(nextState.photoAssetId || currentState.photoAssetId);
+      var mergedThumbPath = sanitizeVisualPath(nextState.thumbPath) || sanitizeVisualPath(currentState.thumbPath);
+      var mergedViewerPath = sanitizeVisualPath(nextState.viewerPath) || sanitizeVisualPath(currentState.viewerPath);
+      var mergedUploadState = sanitizeVisualStateName(nextState.visualUploadState, null) ||
+        sanitizeVisualStateName(currentState.visualUploadState, null);
+      var mergedReadState = sanitizeVisualStateName(nextState.visualReadState, null) ||
+        sanitizeVisualStateName(currentState.visualReadState, null);
+      var mergedLastError = sanitizeVisualError(nextState.lastVisualError) || sanitizeVisualError(currentState.lastVisualError);
+      if (mergedPhotoAssetId) out.photoAssetId = mergedPhotoAssetId;
+      if (mergedThumbPath) out.thumbPath = mergedThumbPath;
+      if (mergedViewerPath) out.viewerPath = mergedViewerPath;
+      if (mergedUploadState) out.visualUploadState = mergedUploadState;
+      if (mergedReadState) out.visualReadState = mergedReadState;
+      if (mergedLastError) out.lastVisualError = mergedLastError;
+      return out;
     }
 
     function hasVisualStateContent(visualState) {
@@ -405,6 +467,8 @@
         if (String(entry.ref || "").trim()) return true;
         if (isAllowedVisualSrc(entry.thumbSrc) || isAllowedVisualSrc(entry.viewerSrc)) return true;
       }
+      if (sanitizeVisualRef(safeVisual.photoAssetId)) return true;
+      if (sanitizeVisualPath(safeVisual.thumbPath) || sanitizeVisualPath(safeVisual.viewerPath)) return true;
       return false;
     }
 
