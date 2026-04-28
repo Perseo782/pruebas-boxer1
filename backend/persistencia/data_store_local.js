@@ -391,6 +391,38 @@
       };
     }
 
+    function hasVisualStateContent(visualState) {
+      var safeVisual = visualState && typeof visualState === "object" ? visualState : null;
+      if (!safeVisual) return false;
+      var refs = Array.isArray(safeVisual.fotoRefs) ? safeVisual.fotoRefs : [];
+      for (var i = 0; i < refs.length; i += 1) {
+        if (String(refs[i] || "").trim()) return true;
+      }
+      var visuales = Array.isArray(safeVisual.visuales) ? safeVisual.visuales : [];
+      for (var j = 0; j < visuales.length; j += 1) {
+        var entry = visuales[j] && typeof visuales[j] === "object" ? visuales[j] : null;
+        if (!entry) continue;
+        if (String(entry.ref || "").trim()) return true;
+        if (isAllowedVisualSrc(entry.thumbSrc) || isAllowedVisualSrc(entry.viewerSrc)) return true;
+      }
+      return false;
+    }
+
+    function hasExplicitVisualDeleteSignal(record) {
+      var safeRecord = record && typeof record === "object" ? record : null;
+      if (!safeRecord) return false;
+      if (safeRecord.visualDeleted === true || safeRecord.assetDeleted === true) return true;
+      var visual = safeRecord.visual && typeof safeRecord.visual === "object" ? safeRecord.visual : null;
+      if (!visual) return false;
+      if (visual.deleted === true) return true;
+      if (String(visual.estado || "").trim().toUpperCase() === "DELETED") return true;
+      var visualSistema = visual.sistema && typeof visual.sistema === "object" ? visual.sistema : null;
+      if (visualSistema && String(visualSistema.estadoRegistro || "").trim().toUpperCase() === "BORRADO_SUAVE") {
+        return true;
+      }
+      return false;
+    }
+
     function compareRecords(a, b) {
       var nameA = a && a.identidad ? String(a.identidad.nombreNormalizado || "") : "";
       var nameB = b && b.identidad ? String(b.identidad.nombreNormalizado || "") : "";
@@ -844,6 +876,14 @@
 
         var hydrated = buildHydratedProductRecord(incoming);
         if (!hydrated) continue;
+        if (
+          local &&
+          !hasExplicitVisualDeleteSignal(incoming) &&
+          !hasVisualStateContent(hydrated.visual) &&
+          hasVisualStateContent(local.visual)
+        ) {
+          hydrated.visual = cloneRecord(local.visual);
+        }
         hydrated.sistema.dirty = false;
         hydrated.sistema.syncState = "SYNCED";
         hydrated.sistema.lastSyncedAt = incomingUpdatedAt || nowIso();

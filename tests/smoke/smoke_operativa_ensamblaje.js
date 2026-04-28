@@ -79,6 +79,10 @@ function testAltaGestion() {
     altaFotoConfirmada.resultado.datos.producto.visual.fotoRefs[0].indexOf("alta_foto_normal_1") === 0,
     "Producto desde foto debe conservar referencia visual ligera"
   );
+  var modeloPendiente = gestion.crearModeloTarjetaProductoFase9({
+    producto: altaFotoConfirmada.resultado.datos.producto
+  });
+  assert.equal(modeloPendiente.tieneImagen, false, "Referencia ligera sin URL debe quedar como foto pendiente");
   var modeloFoto = gestion.crearModeloTarjetaProductoFase9({
     producto: altaFotoConfirmada.resultado.datos.producto,
     visual: {
@@ -87,6 +91,45 @@ function testAltaGestion() {
     }
   });
   assert.equal(modeloFoto.tieneImagen, true, "Tarjeta debe quedar con miniatura clicable");
+
+  var productIdFoto = String(altaFotoConfirmada.resultado.datos.producto.id || "");
+  var localVisualRef = "photo_asset:test_miniatura:1";
+  var localThumb = "https://local.example/miniatura.webp";
+  var localViewer = "https://local.example/visor.webp";
+  var updateVisual = store.updateProductById({
+    productId: productIdFoto,
+    visual: {
+      fotoRefs: [localVisualRef],
+      visuales: [{
+        ref: localVisualRef,
+        thumbSrc: localThumb,
+        viewerSrc: localViewer
+      }]
+    }
+  });
+  assert.equal(updateVisual.ok, true, "Debe permitir actualizar visual local");
+  store.markProductAsSynced({ productId: productIdFoto, syncedAt: "2026-04-28T10:00:00.000Z" });
+
+  var localBeforeMerge = store.getProductById(productIdFoto);
+  var localVisualMatch = (localBeforeMerge.visual.visuales || []).find(function findLocalVisual(item) {
+    return String(item && item.thumbSrc || "") === localThumb;
+  });
+  assert.ok(localVisualMatch, "Visual local debe quedar disponible");
+
+  var incomingWithoutVisual = JSON.parse(JSON.stringify(localBeforeMerge));
+  delete incomingWithoutVisual.visual;
+  incomingWithoutVisual.sistema.dirty = false;
+  incomingWithoutVisual.sistema.syncState = "SYNCED";
+  incomingWithoutVisual.sistema.updatedAt = "2026-04-28T10:01:00.000Z";
+  var mergeOut = store.fusionarRemotoCambios([incomingWithoutVisual], {});
+  assert.equal(mergeOut.ok, true, "Merge remoto debe ejecutarse");
+
+  var afterMerge = store.getProductById(productIdFoto);
+  assert.ok(afterMerge && afterMerge.visual, "Merge remoto no debe borrar visual local");
+  var afterMergeVisualMatch = (afterMerge.visual.visuales || []).find(function findMergedVisual(item) {
+    return String(item && item.thumbSrc || "") === localThumb;
+  });
+  assert.ok(afterMergeVisualMatch, "Remoto sin foto no debe pisar miniatura local");
 }
 
 async function testRevisionYLote() {

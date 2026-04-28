@@ -954,6 +954,50 @@
     return map;
   }
 
+  function hasVisualAssetUrls(asset) {
+    if (!asset || typeof asset !== "object") return false;
+    var thumbUrl = String(asset.thumbUrl || "").trim();
+    var viewerUrl = String(asset.viewerUrl || "").trim();
+    return !!(thumbUrl || viewerUrl);
+  }
+
+  function cloneVisualAssetMap(input) {
+    var out = Object.create(null);
+    var safeInput = input && typeof input === "object" ? input : null;
+    if (!safeInput) return out;
+    var keys = Object.keys(safeInput);
+    for (var i = 0; i < keys.length; i += 1) {
+      var key = String(keys[i] || "").trim();
+      if (!key) continue;
+      var item = safeInput[key] || null;
+      var asset = buildVisualAsset(item && item.thumbUrl, item && item.viewerUrl);
+      if (!asset) continue;
+      out[key] = asset;
+    }
+    return out;
+  }
+
+  function mergeRemoteVisualMapPreservingLocal(currentMap, remoteMap, productIds) {
+    var merged = cloneVisualAssetMap(currentMap);
+    var safeRemote = remoteMap && typeof remoteMap === "object" ? remoteMap : Object.create(null);
+    var safeIds = Array.isArray(productIds) ? productIds : [];
+    for (var i = 0; i < safeIds.length; i += 1) {
+      var productId = String(safeIds[i] || "").trim();
+      if (!productId) continue;
+      var remoteItem = safeRemote[productId] || null;
+      var remoteAsset = buildVisualAsset(remoteItem && remoteItem.thumbUrl, remoteItem && remoteItem.viewerUrl);
+      if (remoteAsset) {
+        merged[productId] = remoteAsset;
+        continue;
+      }
+      if (hasVisualAssetUrls(merged[productId])) {
+        continue;
+      }
+      delete merged[productId];
+    }
+    return merged;
+  }
+
   function buildVisualAsset(thumbUrl, viewerUrl) {
     var safeThumb = String(thumbUrl || "").trim();
     var safeViewer = String(viewerUrl || "").trim();
@@ -992,6 +1036,22 @@
     return state.assetVisualsByProductId[safeId] || null;
   }
 
+  function hasPendingPhotoReference(product) {
+    var visual = product && product.visual && typeof product.visual === "object" ? product.visual : null;
+    if (!visual) return false;
+    var refs = Array.isArray(visual.fotoRefs) ? visual.fotoRefs : [];
+    for (var i = 0; i < refs.length; i += 1) {
+      if (String(refs[i] || "").trim()) return true;
+    }
+    var visuales = Array.isArray(visual.visuales) ? visual.visuales : [];
+    for (var j = 0; j < visuales.length; j += 1) {
+      var entry = visuales[j] && typeof visuales[j] === "object" ? visuales[j] : null;
+      if (!entry) continue;
+      if (String(entry.ref || "").trim()) return true;
+    }
+    return false;
+  }
+
   function resolveCardModel(state, item) {
     if (!state.gestion || typeof state.gestion.crearModeloTarjetaProductoFase9 !== "function") return null;
     var model = state.gestion.crearModeloTarjetaProductoFase9({
@@ -999,6 +1059,9 @@
       visual: pickVisualAssetForProduct(state, item && item.id)
     });
     if (!model) return null;
+    if (!model.tieneImagen && hasPendingPhotoReference(item)) {
+      model.fotoPendiente = true;
+    }
     return model;
   }
 
@@ -1016,7 +1079,7 @@
             "<img src=\"" + escapeHtml(model.thumbUrl) + "\" alt=\"" + escapeHtml(visibleName) + "\">" +
           "</button>"
         )
-      : ("<div class=\"thumb-fallback\" aria-hidden=\"true\">Sin foto</div>");
+      : ("<div class=\"thumb-fallback\" aria-hidden=\"true\">" + (model.fotoPendiente ? "Foto pendiente" : "Sin foto") + "</div>");
 
     return (
       "<article class=\"card js-edit-card " + (displayMode === "iconos" ? "card--icon-mode" : "card--text-mode") + (noAllergens ? " card--empty-allergens" : "") + "\" data-product-id=\"" + escapeHtml(model.id) + "\">" +
@@ -1250,7 +1313,11 @@
     });
     if (state.assetVisualRequestId !== requestId) return;
     if (!out || out.ok !== true) return;
-    state.assetVisualsByProductId = buildVisualMap(out.items || []);
+    state.assetVisualsByProductId = mergeRemoteVisualMapPreservingLocal(
+      state.assetVisualsByProductId,
+      buildVisualMap(out.items || []),
+      productIds
+    );
     state.assetVisualsLoaded = true;
     refreshVisibleList(state, { skipAssetReload: true });
   }

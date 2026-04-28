@@ -190,6 +190,11 @@
     return alergenos.map(toHumanAllergenName).join(", ");
   }
 
+  function isUsableVisualUrl(value) {
+    var safe = String(value || "").trim();
+    return /^https?:\/\//i.test(safe) || /^data:image\//i.test(safe);
+  }
+
   function resolveVisualUrls(record, visualOverride) {
     var candidate = visualOverride;
     if (!candidate && record && record.visual && Array.isArray(record.visual.visuales) && record.visual.visuales.length) {
@@ -199,10 +204,13 @@
       };
     }
     if (!candidate && record && record.visual && Array.isArray(record.visual.fotoRefs) && record.visual.fotoRefs.length) {
-      candidate = {
-        thumbUrl: record.visual.fotoRefs[0] || "",
-        viewerUrl: record.visual.fotoRefs[0] || ""
-      };
+      var firstRef = String(record.visual.fotoRefs[0] || "").trim();
+      if (isUsableVisualUrl(firstRef)) {
+        candidate = {
+          thumbUrl: firstRef,
+          viewerUrl: firstRef
+        };
+      }
     }
     return {
       thumbUrl: candidate && candidate.thumbUrl ? String(candidate.thumbUrl).trim() : "",
