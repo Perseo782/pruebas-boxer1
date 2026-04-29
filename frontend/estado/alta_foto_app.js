@@ -1042,7 +1042,23 @@
       routePayload.modeOrigin || "normal"
     ].join("|");
     routePayload.idempotencyKey = idempotencyKey;
+    traceAnalysisEvent("review_draft_start", {
+      policy: policy,
+      decisionFlujo: flow || null
+    }, {
+      analysisId: routePayload.analysisId || null,
+      traceId: routePayload.traceId || null,
+      phase: "review"
+    });
     await Promise.resolve(destination(routePayload));
+    traceAnalysisEvent("review_draft_done", {
+      policy: policy,
+      decisionFlujo: flow || null
+    }, {
+      analysisId: routePayload.analysisId || null,
+      traceId: routePayload.traceId || null,
+      phase: "review"
+    });
     return response;
   }
 

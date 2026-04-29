@@ -1,7 +1,7 @@
 (function initDiagnosticoCleanup(globalScope) {
   "use strict";
 
-  var DEFAULT_MAX_EVENTS = 40;
+  var DEFAULT_MAX_EVENTS = 140;
   var DEFAULT_TTL_MS = 30 * 60 * 1000;
 
   function nowMs() {

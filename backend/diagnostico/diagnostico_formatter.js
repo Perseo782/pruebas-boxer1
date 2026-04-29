@@ -7,7 +7,7 @@
     CAIDO: "CAIDO",
     NO_APLICA: "NO_APLICA"
   };
-  var MAX_RAW_DETAIL_CHARS = 1200;
+  var MAX_RAW_DETAIL_CHARS = 3200;
 
   function normalizeText(value, fallback) {
     var text = String(value == null ? "" : value).replace(/\s+/g, " ").trim();
@@ -36,10 +36,23 @@
     }
   }
 
+  function hashText(text) {
+    var safe = String(text || "");
+    var hash = 0;
+    for (var i = 0; i < safe.length; i += 1) {
+      hash = ((hash << 5) - hash + safe.charCodeAt(i)) | 0;
+    }
+    return "h" + (hash >>> 0).toString(16).padStart(8, "0");
+  }
+
   function truncateDiagnosticText(value) {
     var text = String(value == null ? "" : value).trim();
     if (text.length <= MAX_RAW_DETAIL_CHARS) return text;
-    return text.slice(0, MAX_RAW_DETAIL_CHARS) + "... [TRUNCADO]";
+    if (/^data:image\//i.test(text) || /^blob:/i.test(text)) {
+      return "[RESUMEN_VISUAL lenOriginal=" + text.length + " hash=" + hashText(text) + "] contenido visual omitido para no saturar el diagnostico.";
+    }
+    var copied = text.slice(0, MAX_RAW_DETAIL_CHARS);
+    return "[RESUMEN lenOriginal=" + text.length + " lenCopiada=" + copied.length + " hash=" + hashText(text) + "] " + copied + "... [RESUMIDO]";
   }
 
   function buildRawDiagnosticDetail(input) {

@@ -211,12 +211,79 @@
 
   function stringifyDiagnostic(value) {
     if (value == null || value === "") return "";
-    if (typeof value === "string") return value;
+    if (typeof value === "string") return summarizeDiagnosticText(value, 1200);
     try {
-      return JSON.stringify(value);
+      return JSON.stringify(sanitizeDiagnosticPayload(value, 0));
     } catch (errJson) {
-      return String(value);
+      return summarizeDiagnosticText(String(value), 1200);
     }
+  }
+
+  function hashDiagnosticText(value) {
+    var text = String(value || "");
+    var hash = 0;
+    for (var i = 0; i < text.length; i += 1) {
+      hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+    }
+    return "h" + (hash >>> 0).toString(16);
+  }
+
+  function summarizeDiagnosticText(value, maxChars) {
+    var text = String(value == null ? "" : value);
+    var limit = Math.max(120, Number(maxChars || 1200));
+    if (!text) return "";
+    if (/^data:image\//i.test(text) || /^blob:/i.test(text)) {
+      return "[RESUMEN_VISUAL lenOriginal=" + text.length + " hash=" + hashDiagnosticText(text) + "] contenido visual omitido.";
+    }
+    if (text.length <= limit) return text;
+    return "[RESUMEN lenOriginal=" + text.length + " lenCopiada=" + limit + " hash=" + hashDiagnosticText(text) + "] " + text.slice(0, limit);
+  }
+
+  function isLikelyBase64Chunk(value) {
+    if (typeof value !== "string") return false;
+    if (/^data:image\//i.test(value) || /^blob:/i.test(value)) return true;
+    return value.length > 1200 && /^[A-Za-z0-9+/=\s]+$/.test(value);
+  }
+
+  function sanitizeDiagnosticPayload(value, depth) {
+    var safeDepth = Number(depth || 0);
+    if (value == null) return value;
+    if (typeof value === "string") {
+      if (isLikelyBase64Chunk(value)) {
+        return summarizeDiagnosticText(value, 80);
+      }
+      return summarizeDiagnosticText(value, 900);
+    }
+    if (typeof value === "number" || typeof value === "boolean") return value;
+    if (safeDepth >= 4) {
+      return "[RESUMEN_OBJETO depth=" + safeDepth + "]";
+    }
+    if (Array.isArray(value)) {
+      var limited = value.slice(0, 12).map(function each(item) {
+        return sanitizeDiagnosticPayload(item, safeDepth + 1);
+      });
+      if (value.length > 12) {
+        limited.push({
+          _resumenArray: true,
+          totalOriginal: value.length,
+          totalCopiado: 12
+        });
+      }
+      return limited;
+    }
+    var out = {};
+    var keys = Object.keys(value);
+    for (var i = 0; i < keys.length && i < 30; i += 1) {
+      var key = keys[i];
+      out[key] = sanitizeDiagnosticPayload(value[key], safeDepth + 1);
+    }
+    if (keys.length > 30) {
+      out._resumenKeys = {
+        totalOriginal: keys.length,
+        totalCopiadas: 30
+      };
+    }
+    return out;
   }
 
   function readFase11FallbackSnapshot() {
@@ -250,7 +317,7 @@
       module: String(moduleName || "Sistema"),
       action: String(action || "evento"),
       message: String(message || "Sin detalle."),
-      rawDetail: stringifyDiagnostic(rawDetail).slice(0, 1200),
+      rawDetail: stringifyDiagnostic(rawDetail),
       durationMs: Number.isFinite(Number(durationMs)) ? Number(durationMs) : null
     };
   }
@@ -1801,7 +1868,8 @@
     });
   }
 
-  async function deleteProduct(state, productId, productName) {
+  async function deleteProduct(state, productId, productName, options) {
+    var safeOptions = options || {};
     if (!productId) {
       return {
         ok: false,
@@ -1809,7 +1877,7 @@
       };
     }
     var question = "Se eliminara de verdad";
-    if (!globalScope.confirm(question + ": " + String(productName || productId) + ". Continuar?")) {
+    if (!safeOptions.skipConfirm && !globalScope.confirm(question + ": " + String(productName || productId) + ". Continuar?")) {
       return {
         ok: false,
         cancelled: true,
@@ -2453,6 +2521,298 @@
     return String(safe.modulo || moduleKey || "Motor");
   }
 
+  function getMetricEvents(response) {
+    var metricas = response && response.metricas ? response.metricas : null;
+    return metricas && Array.isArray(metricas.eventos) ? metricas.eventos : [];
+  }
+
+  function getAnalysisSessionForDiagnostic(finalData) {
+    if (!globalScope.AnalysisExclusiveRuntime || typeof globalScope.AnalysisExclusiveRuntime.snapshot !== "function") {
+      return null;
+    }
+    var safeFinal = finalData || {};
+    var analysisId = String(safeFinal.analysisId || "").trim();
+    var traceId = String(safeFinal.traceId || "").trim();
+    var snap = globalScope.AnalysisExclusiveRuntime.snapshot();
+    var sessions = [snap.currentSession].concat(snap.completedSessions || []).filter(Boolean);
+    if (!sessions.length) return null;
+    for (var i = sessions.length - 1; i >= 0; i -= 1) {
+      var session = sessions[i];
+      var sessionAnalysisId = String(session.analysisId || "").trim();
+      var sessionTraceId = String(session.traceId || "").trim();
+      if ((analysisId && sessionAnalysisId === analysisId) || (traceId && sessionTraceId === traceId)) {
+        return session;
+      }
+    }
+    return sessions[sessions.length - 1] || null;
+  }
+
+  function findTraceEvent(events, traceName) {
+    var safe = Array.isArray(events) ? events : [];
+    for (var i = 0; i < safe.length; i += 1) {
+      if (safe[i] && safe[i].trace === traceName) return safe[i];
+    }
+    return null;
+  }
+
+  function addStageTimelineDiagnostics(finalData, session) {
+    if (!session || !Array.isArray(session.events)) return;
+    var events = session.events.slice().sort(function sortByAt(a, b) {
+      return Number(a && a.atMs || 0) - Number(b && b.atMs || 0);
+    });
+    var defs = [
+      { action: "photo_input_received", trace: "photo_input_started", module: "Alta foto", blocking: true },
+      { action: "photo_read_start", trace: "photo_read_start", module: "Alta foto", blocking: true },
+      { action: "photo_read_done", trace: "photo_read_done", module: "Alta foto", blocking: true },
+      { action: "analysis_exclusive_on", trace: "analysis_exclusive_on", module: "Alta foto", blocking: true },
+      { action: "cerebro_call_start", trace: "cerebro_call_start", module: "Alta foto", blocking: true },
+      { action: "cerebro_start", trace: "cerebro_start", module: "Cerebro", blocking: true },
+      { action: "boxer1_start", trace: "boxer1_start", module: "Boxer1_Core", blocking: true },
+      { action: "boxer1_done", trace: "boxer1_done", module: "Boxer1_Core", blocking: true },
+      { action: "boxer2_start", trace: "boxer2_start", module: "Boxer2_Identidad", blocking: true },
+      { action: "boxer2_done", trace: "boxer2_done", module: "Boxer2_Identidad", blocking: true },
+      { action: "boxer3_start", trace: "boxer3_start", module: "Boxer3_PesoFormato", blocking: true },
+      { action: "boxer3_done", trace: "boxer3_done", module: "Boxer3_PesoFormato", blocking: true },
+      { action: "boxer4_start", trace: "boxer4_start", module: "Boxer4_Alergenos", blocking: true },
+      { action: "boxer4_done", trace: "boxer4_done", module: "Boxer4_Alergenos", blocking: true },
+      { action: "boxer_collection_done", trace: "boxer_collection_done", module: "Cerebro", blocking: true },
+      { action: "ia_batch_prepare_start", trace: "ia_batch_prepare_start", module: "Cerebro IA", blocking: true },
+      { action: "ia_batch_prepare_done", trace: "ia_batch_prepare_done", module: "Cerebro IA", blocking: true },
+      { action: "ia_backend_call_start", trace: "ia_backend_call_start", module: "Cerebro IA", blocking: true },
+      { action: "ia_backend_call_done", trace: "ia_backend_call_done", module: "Cerebro IA", blocking: true },
+      { action: "ia_response_validate_start", trace: "ia_response_validate_start", module: "Cerebro IA", blocking: true },
+      { action: "ia_response_validate_done", trace: "ia_response_validate_done", module: "Cerebro IA", blocking: true },
+      { action: "ia_response_distribute_start", trace: "ia_response_distribute_start", module: "Cerebro IA", blocking: true },
+      { action: "ia_response_distribute_done", trace: "ia_response_distribute_done", module: "Cerebro IA", blocking: true },
+      { action: "decision_build_start", trace: "decision_build_start", module: "Cerebro", blocking: true },
+      { action: "decision_build_done", trace: "decision_build_done", module: "Cerebro", blocking: true },
+      { action: "route_decision_start", trace: "route_decision_start", module: "Cerebro", blocking: true },
+      { action: "route_decision_done", trace: "route_decision_done", module: "Cerebro", blocking: true },
+      { action: "final_payload_build_start", trace: "final_payload_build_start", module: "Cerebro", blocking: true },
+      { action: "final_payload_build_done", trace: "final_payload_build_done", module: "Cerebro", blocking: true },
+      { action: "cerebro_return_start", trace: "cerebro_return_start", module: "Cerebro", blocking: true },
+      { action: "cerebro_return_done", trace: "cerebro_return_done", module: "Cerebro", blocking: true },
+      { action: "ui_result_received", trace: "ui_result_received", module: "UI", blocking: true },
+      { action: "review_draft_start", trace: "review_draft_start", module: "Revision", blocking: true },
+      { action: "review_draft_done", trace: "review_draft_done", module: "Revision", blocking: true },
+      { action: "review_modal_open_start", trace: "review_visible", module: "Revision", blocking: true, notes: "No hay traza separada de apertura; se usa la visible." },
+      { action: "review_modal_visible", trace: "review_visible", module: "Revision", blocking: true },
+      { action: "technical_case_close", trace: "technical_close", module: "Alta foto", blocking: false }
+    ];
+    var prevElapsed = null;
+    for (var i = 0; i < defs.length; i += 1) {
+      var def = defs[i];
+      var evt = findTraceEvent(events, def.trace);
+      if (!evt) continue;
+      var elapsed = Number.isFinite(Number(evt.sinceRequestMs)) ? Number(evt.sinceRequestMs) : null;
+      var delta = elapsed != null && prevElapsed != null ? Math.max(0, elapsed - prevElapsed) : null;
+      if (elapsed != null) prevElapsed = elapsed;
+      addFase11DiagnosticEvent(
+        "INFO",
+        "Timeline",
+        def.action,
+        "Etapa " + def.action + ".",
+        {
+          analysisId: String(finalData && finalData.analysisId || session.analysisId || "").trim() || null,
+          traceId: String(finalData && finalData.traceId || session.traceId || "").trim() || null,
+          stage: def.action,
+          module: def.module,
+          elapsedSinceAnalysisStartMs: elapsed,
+          deltaFromPreviousStageMs: delta,
+          blocking: !!def.blocking,
+          notes: def.notes || null,
+          traceSource: def.trace
+        },
+        elapsed
+      );
+    }
+  }
+
+  function buildBoxerTraceDetail(moduleKey, moduleData, finalData) {
+    var safeModule = moduleData || {};
+    var local = safeModule.resultadoLocal || {};
+    var data = local && local.datos ? local.datos : {};
+    var detail = {
+      analysisId: String(finalData && finalData.analysisId || "").trim() || null,
+      traceId: String(finalData && finalData.traceId || "").trim() || null,
+      modulo: moduleLabel(moduleKey, safeModule),
+      elapsedMs: safeModule.elapsedMs || null,
+      estadoIA_inicial: safeModule.huboTareaIA ? "NECESITA_LLAMADA" : "NO_NECESITA_LLAMADA",
+      estadoIA_final: safeModule.estadoIA || null,
+      pasaporte: safeModule.estadoPasaporteModulo || null,
+      confidence: safeModule.confidence || null,
+      requiereRevision: !!safeModule.requiereRevision,
+      tareasIACreadas: Array.isArray(safeModule.tareasIA) ? safeModule.tareasIA.length : 0,
+      taskIds: Array.isArray(safeModule.taskIds) ? safeModule.taskIds.slice() : [],
+      motivoTareasIA: data && (data.motivo_duda || data.motivoDuda) ? (data.motivo_duda || data.motivoDuda) : null,
+      conflictosPropios: Array.isArray(safeModule.conflictosPropios) ? safeModule.conflictosPropios.slice() : [],
+      warning: safeModule.warning || null,
+      datosClave: {
+        nombre: data && data.nombre ? data.nombre : null,
+        formato: data && data.formato ? data.formato : null,
+        formato_normalizado: data && (data.formato_normalizado || data.formatoNormalizado) ? (data.formato_normalizado || data.formatoNormalizado) : null,
+        alergenos: Array.isArray(data && data.alergenos) ? data.alergenos.slice(0, 8) : null,
+        dudas: Array.isArray(data && data.dudas) ? data.dudas.slice(0, 6) : [],
+        alertas: Array.isArray(data && data.alertas) ? data.alertas.slice(0, 6) : []
+      }
+    };
+    if (moduleKey === "boxer3") {
+      var candidates = Array.isArray(data && data.candidatosEvaluados) ? data.candidatosEvaluados : [];
+      detail.boxer3 = {
+        candidatosDetectados: candidates.slice(0, 6).map(function eachCandidate(item) {
+          var safe = item || {};
+          var line = String(safe.lineaOrigen || safe.literal || "").trim();
+          return {
+            literal: safe.literal || null,
+            formato: safe.formato || null,
+            unidadDetectada: /kg|g|ml|l/i.test(line) ? (line.match(/kg|g|ml|l/i) || [null])[0] : null,
+            lineaOrigen: line || null,
+            motivoDescarte: safe.motivoDescarte || null,
+            esTablaNutricional: /por\s*100|kcal|kj|grasas|hidratos|proteinas|sal/i.test(line)
+          };
+        }),
+        candidatosDescartados: Array.isArray(data && data.candidatosDescartados) ? data.candidatosDescartados.slice(0, 6) : [],
+        motivoDuda: data && (data.motivo_duda || data.motivoDuda) ? (data.motivo_duda || data.motivoDuda) : null
+      };
+    }
+    return detail;
+  }
+
+  function addIADetailDiagnostics(response, finalData, session) {
+    var ia = finalData && finalData.ia ? finalData.ia : {};
+    if (!ia || ia.huboLlamada !== true) return;
+    var traceEvents = session && Array.isArray(session.events) ? session.events : [];
+    var iaTasksEvent = findTraceEvent(traceEvents, "ia_batch_tasks");
+    var tasks = iaTasksEvent && iaTasksEvent.data && Array.isArray(iaTasksEvent.data.tasks)
+      ? iaTasksEvent.data.tasks
+      : [];
+    var iaCallStart = findTraceEvent(traceEvents, "ia_call_start");
+    var iaCallEnd = findTraceEvent(traceEvents, "ia_call_end");
+    var iaValidateStart = findTraceEvent(traceEvents, "ia_response_validate_start");
+    var iaValidateEnd = findTraceEvent(traceEvents, "ia_response_validate_done");
+    var iaDistributeStart = findTraceEvent(traceEvents, "ia_response_distribute_start");
+    var iaDistributeEnd = findTraceEvent(traceEvents, "ia_response_distribute_done");
+    var iaPrepareStart = findTraceEvent(traceEvents, "ia_batch_prepare_start");
+    var iaPrepareEnd = findTraceEvent(traceEvents, "ia_batch_prepare_done");
+    var metricEvents = getMetricEvents(response);
+    var iaTaskResults = metricEvents.filter(function eachMetric(event) {
+      return event && event.code === "CER_IA_TASK_RESULT";
+    });
+
+    for (var i = 0; i < tasks.length; i += 1) {
+      var task = tasks[i] || {};
+      addFase11DiagnosticEvent(
+        "INFO",
+        "Cerebro IA",
+        "CER_IA_TASK_DETAIL",
+        "Detalle de tarea IA.",
+        {
+          analysisId: finalData.analysisId || null,
+          traceId: finalData.traceId || null,
+          geminiBatchId: ia.geminiBatchId || null,
+          taskId: task.taskId || null,
+          moduloSolicitante: task.moduloSolicitante || null,
+          tipoTarea: task.tipoTarea || null,
+          schemaId: task.schemaId || null,
+          motivoCreacion: task.motivoCreacion || task.motivo || null,
+          estadoIAOriginalDelModulo: "NECESITA_LLAMADA",
+          payloadResumenSinBase64: task.payloadResumenSinBase64 || null,
+          respuestaEsperadaResumen: task.respuestaEsperadaResumen || null
+        },
+        null
+      );
+    }
+
+    addFase11DiagnosticEvent(
+      "INFO",
+      "Cerebro IA",
+      "CER_IA_BATCH_SEND_DETAIL",
+      "Resumen del lote enviado a IA.",
+      {
+        analysisId: finalData.analysisId || null,
+        traceId: finalData.traceId || null,
+        geminiBatchId: ia.geminiBatchId || null,
+        totalTareas: tasks.length,
+        taskIds: tasks.map(function each(task) { return task && task.taskId ? task.taskId : null; }).filter(Boolean),
+        modulosSolicitantes: tasks.map(function each(task) { return task && task.moduloSolicitante ? task.moduloSolicitante : null; }).filter(Boolean),
+        tiposTarea: tasks.map(function each(task) { return task && task.tipoTarea ? task.tipoTarea : null; }).filter(Boolean),
+        schemaIds: tasks.map(function each(task) { return task && task.schemaId ? task.schemaId : null; }).filter(Boolean),
+        modelo: metricEvents.reduce(function pickModel(found, event) {
+          if (found) return found;
+          var detail = event && event.detail ? event.detail : null;
+          return detail && detail.modelo ? detail.modelo : null;
+        }, null),
+        payloadSizeApprox: JSON.stringify(tasks || []).length,
+        promptLength: tasks.reduce(function sum(total, task) {
+          var payload = task && task.payloadResumenSinBase64 && task.payloadResumenSinBase64.textoBaseLength
+            ? Number(task.payloadResumenSinBase64.textoBaseLength)
+            : 0;
+          return total + (Number.isFinite(payload) ? payload : 0);
+        }, 0)
+      },
+      null
+    );
+
+    addFase11DiagnosticEvent(
+      "INFO",
+      "Cerebro IA",
+      "CER_IA_BATCH_TIMING",
+      "Tiempos del lote IA.",
+      {
+        elapsedPrepareMs: iaPrepareStart && iaPrepareEnd ? Math.max(0, Number(iaPrepareEnd.atMs || 0) - Number(iaPrepareStart.atMs || 0)) : null,
+        elapsedBackendMs: iaCallStart && iaCallEnd ? Math.max(0, Number(iaCallEnd.atMs || 0) - Number(iaCallStart.atMs || 0)) : null,
+        elapsedGeminiMs: iaCallEnd && iaCallEnd.data && Number.isFinite(Number(iaCallEnd.data.elapsedMs)) ? Number(iaCallEnd.data.elapsedMs) : null,
+        elapsedValidateMs: iaValidateStart && iaValidateEnd ? Math.max(0, Number(iaValidateEnd.atMs || 0) - Number(iaValidateStart.atMs || 0)) : null,
+        elapsedDistributeMs: iaDistributeStart && iaDistributeEnd ? Math.max(0, Number(iaDistributeEnd.atMs || 0) - Number(iaDistributeStart.atMs || 0)) : null,
+        elapsedTotalBatchMs: iaPrepareStart && iaDistributeEnd ? Math.max(0, Number(iaDistributeEnd.atMs || 0) - Number(iaPrepareStart.atMs || 0)) : null
+      },
+      null
+    );
+
+    for (var r = 0; r < iaTaskResults.length; r += 1) {
+      var taskOut = iaTaskResults[r] && iaTaskResults[r].detail ? iaTaskResults[r].detail : {};
+      addFase11DiagnosticEvent(
+        taskOut && taskOut.validada === false ? "WARN" : "INFO",
+        "Cerebro IA",
+        "CER_IA_TASK_RESULT",
+        "Resultado de tarea IA.",
+        {
+          taskId: taskOut.taskId || null,
+          moduloSolicitante: taskOut.moduloSolicitante || null,
+          tipoTarea: taskOut.tipoTarea || null,
+          schemaId: taskOut.schemaId || null,
+          resultadoEstado: taskOut.resultadoEstado || null,
+          dataResumen: taskOut.dataResumen || null,
+          validada: !!taskOut.validada,
+          contaminada: !!taskOut.contaminada,
+          descartada: !!taskOut.descartada,
+          errorCode: taskOut.errorCode || null,
+          elapsedTaskMs: taskOut.elapsedTaskMs || null
+        },
+        null
+      );
+    }
+
+    var missing = [];
+    if (!tasks.length) missing.push("taskId/moduloSolicitante/tipoTarea");
+    if (!(iaCallStart && iaCallEnd)) missing.push("duracion IA");
+    if (!iaTaskResults.length) missing.push("resultado IA");
+    if (missing.length) {
+      addFase11DiagnosticEvent(
+        "WARN",
+        "Cerebro IA",
+        "IA_TRACE_INCOMPLETA",
+        "Faltan datos obligatorios de traza IA.",
+        {
+          analysisId: finalData.analysisId || null,
+          traceId: finalData.traceId || null,
+          faltan: missing
+        },
+        null
+      );
+    }
+  }
+
   function addBoxerInternalDiagnostic(moduleKey, moduleData) {
     var local = moduleData && moduleData.resultadoLocal ? moduleData.resultadoLocal : null;
     var data = local && local.datos ? local.datos : {};
@@ -2472,9 +2832,8 @@
   }
 
   function addResponseMetricDiagnostics(response) {
-    var metricas = response && response.metricas ? response.metricas : null;
-    var events = metricas && Array.isArray(metricas.eventos) ? metricas.eventos : [];
-    events.slice(-12).forEach(function eachMetric(event) {
+    var events = getMetricEvents(response);
+    events.slice(-80).forEach(function eachMetric(event) {
       addFase11DiagnosticEvent(
         event && event.level === "error" ? "ERROR" : (event && event.level === "warn" ? "WARN" : "INFO"),
         "Cerebro",
@@ -2498,6 +2857,14 @@
         "resultado motor",
         "Pasaporte " + String(item.estadoPasaporteModulo || "-") + ". IA: " + String(item.estadoIA || "-") + ".",
         item,
+        item.elapsedMs
+      );
+      addFase11DiagnosticEvent(
+        item.estadoPasaporteModulo === "ROJO" ? "WARN" : "INFO",
+        moduleLabel(moduleKey, item),
+        "BOXER_TRACE_DETAIL",
+        "Detalle tecnico de " + moduleLabel(moduleKey, item) + ".",
+        buildBoxerTraceDetail(moduleKey, item, finalData),
         item.elapsedMs
       );
       addBoxerInternalDiagnostic(moduleKey, item);
@@ -2528,8 +2895,12 @@
 
   function recordPhotoAnalysisDiagnostics(response, outcome) {
     if (!response) return;
+    var finalData = getPhotoAnalysisFinalData(response);
+    var session = getAnalysisSessionForDiagnostic(finalData);
+    addStageTimelineDiagnostics(finalData, session);
     addResponseMetricDiagnostics(response);
     addModuleDiagnostics(response);
+    addIADetailDiagnostics(response, finalData, session);
     addFinalDecisionDiagnostic(response, outcome);
   }
 
@@ -2830,8 +3201,15 @@
         reason: "analyze_clicked",
         phase: "submit"
       });
+      traceAnalysisEvent("analysis_exclusive_on", {
+        source: "gestion_registros"
+      }, { phase: "pause" });
       renderAddModal(state);
+      traceAnalysisEvent("photo_read_start", null, { phase: "photo_read" });
       var fotoRefs = await readPhotoRefsFromInputs(state);
+      traceAnalysisEvent("photo_read_done", {
+        totalFotos: fotoRefs.length
+      }, { phase: "photo_read" });
       openFase11PhotoCase(fase11CaseId, fotoRefs);
       fase11CaseOpened = true;
       addFase11DiagnosticEvent("INFO", "Alta foto", "foto leida", "Foto leida: " + fotoRefs.length + " foto(s).", { totalFotos: fotoRefs.length }, null);
@@ -2847,6 +3225,9 @@
         backendUrl = String(state.runtime.getBackendUrl() || backendUrl).trim() || backendUrl;
       }
       markAnalysisStarted({ phase: "analysis" });
+      traceAnalysisEvent("cerebro_call_start", {
+        totalFotos: fotoRefs.length
+      }, { phase: "analysis" });
       var response = await globalScope.Fase3AltaFotoVisibleApp.ejecutarAnalisisVisible(
         {
           fotoRefs: fotoRefs,
@@ -2864,6 +3245,10 @@
       var outcome = typeof globalScope.Fase3AltaFotoVisibleApp.classifyVisibleOutcome === "function"
         ? globalScope.Fase3AltaFotoVisibleApp.classifyVisibleOutcome(response)
         : "revision";
+      traceAnalysisEvent("cerebro_call_done", {
+        ok: !!(response && response.ok === true),
+        outcome: outcome
+      }, { phase: "analysis" });
       var finalData = hasPhotoAnalysisResult(response) ? getPhotoAnalysisFinalData(response) : null;
       var analysisId = finalData && finalData.analysisId ? String(finalData.analysisId).trim() : "";
       var traceId = finalData && finalData.traceId ? String(finalData.traceId).trim() : "";
@@ -2877,7 +3262,6 @@
       var passport = hasPhotoAnalysisResult(response)
         ? resolvePhotoPassport(finalData, outcome)
         : "";
-      recordPhotoAnalysisDiagnostics(response, outcome);
       state.ui.add.busy = false;
       if (!response || response.ok !== true) {
         if (hasPhotoAnalysisResult(response)) {
@@ -2888,7 +3272,6 @@
             analysisId: analysisId,
             traceId: traceId
           });
-          closeFase11PhotoCase(true, "Analisis recibido con datos aprovechables. Pasaporte " + passport + ".", Date.now() - photoStartedAt, response);
           renderAddModal(state);
           showFeedback(state, "photo_ready");
           markAnalysisResultVisible({
@@ -2899,12 +3282,32 @@
             traceId: traceId,
             phase: "result"
           });
+          if (outcome === "revision") {
+            traceAnalysisEvent("review_visible", {
+              outcome: outcome,
+              passport: passport
+            }, {
+              analysisId: analysisId,
+              traceId: traceId,
+              phase: "review"
+            });
+          }
           scheduleDeferredAddVisuals(state, response, fotoRefs);
           resumeAnalysisExclusive({
             analysisId: analysisId,
             traceId: traceId,
             reason: "result_visible"
           });
+          traceAnalysisEvent("technical_close", {
+            ok: true,
+            outcome: outcome
+          }, {
+            analysisId: analysisId,
+            traceId: traceId,
+              phase: "close"
+            });
+          recordPhotoAnalysisDiagnostics(response, outcome);
+          closeFase11PhotoCase(true, "Analisis recibido con datos aprovechables. Pasaporte " + passport + ".", Date.now() - photoStartedAt, response);
           return;
         }
         state.ui.add.photoStatus = response && response.error && response.error.message
@@ -2912,10 +3315,19 @@
           : "No se pudo completar el analisis.";
         state.ui.add.photoResultReady = false;
         state.ui.add.photoStatusKind = "error";
-        closeFase11PhotoCase(false, state.ui.add.photoStatus, Date.now() - photoStartedAt, response);
         renderAddModal(state);
         showFeedback(state, "error", { message: state.ui.add.photoStatus });
         cancelAnalysisExclusive({ reason: "analysis_failed" });
+        traceAnalysisEvent("technical_close", {
+          ok: false,
+          reason: "analysis_failed"
+        }, {
+          analysisId: analysisId,
+          traceId: traceId,
+          phase: "close"
+        });
+        recordPhotoAnalysisDiagnostics(response, outcome);
+        closeFase11PhotoCase(false, state.ui.add.photoStatus, Date.now() - photoStartedAt, response);
         return;
       }
       applyPhotoAnalysisToAddModal(state, response, outcome, {
@@ -2925,7 +3337,6 @@
         analysisId: analysisId,
         traceId: traceId
       });
-      closeFase11PhotoCase(true, "Analisis completado. Pasaporte " + passport + ".", Date.now() - photoStartedAt, response);
       renderAddModal(state);
       showFeedback(state, "photo_ready");
       markAnalysisResultVisible({
@@ -2936,25 +3347,57 @@
         traceId: traceId,
         phase: "result"
       });
+      if (outcome === "revision") {
+        traceAnalysisEvent("review_visible", {
+          outcome: outcome,
+          passport: passport
+        }, {
+          analysisId: analysisId,
+          traceId: traceId,
+          phase: "review"
+        });
+      }
       scheduleDeferredAddVisuals(state, response, fotoRefs);
       resumeAnalysisExclusive({
         analysisId: analysisId,
         traceId: traceId,
         reason: "result_visible"
       });
+      traceAnalysisEvent("technical_close", {
+        ok: true,
+        outcome: outcome
+      }, {
+        analysisId: analysisId,
+        traceId: traceId,
+        phase: "close"
+      });
+      recordPhotoAnalysisDiagnostics(response, outcome);
+      closeFase11PhotoCase(true, "Analisis completado. Pasaporte " + passport + ".", Date.now() - photoStartedAt, response);
     } catch (errPhoto) {
       state.ui.add.busy = false;
       state.ui.add.photoResultReady = false;
       state.ui.add.photoStatus = errPhoto && errPhoto.message ? errPhoto.message : "No se pudo leer la foto.";
       state.ui.add.photoStatusKind = "error";
       if (!fase11CaseOpened) openFase11PhotoCase(fase11CaseId || "alta_foto_error_" + Date.now().toString(36), []);
+      renderAddModal(state);
+      showFeedback(state, "error", { message: state.ui.add.photoStatus });
+      cancelAnalysisExclusive({ reason: "analysis_exception" });
+      traceAnalysisEvent("technical_close", {
+        ok: false,
+        reason: "analysis_exception"
+      }, {
+        phase: "close"
+      });
+      recordPhotoAnalysisDiagnostics({
+        ok: false,
+        error: { message: state.ui.add.photoStatus },
+        resultado: null,
+        metricas: null
+      }, "bloqueado");
       closeFase11PhotoCase(false, state.ui.add.photoStatus, Date.now() - photoStartedAt, {
         message: state.ui.add.photoStatus,
         raw: errPhoto && errPhoto.stack ? errPhoto.stack : String(errPhoto || "")
       });
-      renderAddModal(state);
-      showFeedback(state, "error", { message: state.ui.add.photoStatus });
-      cancelAnalysisExclusive({ reason: "analysis_exception" });
     }
   }
 
@@ -3001,23 +3444,45 @@
 
   async function submitDeleteFromEdit(state) {
     if (!state.ui.edit.productId) return;
-    state.ui.edit.busy = true;
-    renderEditModal(state);
     var productId = state.ui.edit.productId;
     var productName = state.ui.edit.nombre;
-    var deleteOut = await deleteProduct(state, productId, productName);
-    state.ui.edit.busy = false;
-    if (deleteOut && deleteOut.ok === true) {
-      closeEditModal(state);
-      showFeedback(state, "", { message: deleteOut.message || "Producto eliminado." });
+    var question = "Se eliminara de verdad";
+    if (!globalScope.confirm(question + ": " + String(productName || productId) + ". Continuar?")) {
       return;
     }
-    if (!(deleteOut && deleteOut.cancelled === true)) {
-      showFeedback(state, "error", {
-        message: deleteOut && deleteOut.message ? deleteOut.message : "No se pudo eliminar el producto."
-      });
-    }
+    state.ui.edit.busy = true;
     renderEditModal(state);
+    closeEditModal(state);
+    var list = byId("productos-list");
+    if (list) {
+      var selectorId = String(productId || "").replace(/"/g, '\\"');
+      var card = list.querySelector('[data-product-id="' + selectorId + '"]');
+      if (card && card.parentNode) {
+        card.parentNode.removeChild(card);
+      }
+    }
+    showFeedback(state, "", { message: "Producto eliminado." });
+    state.ui.edit.busy = false;
+
+    deleteProduct(state, productId, productName, { skipConfirm: true })
+      .then(function onDeleteOut(deleteOut) {
+        if (deleteOut && deleteOut.ok === true) {
+          showFeedback(state, "", { message: deleteOut.message || "Producto eliminado." });
+          return;
+        }
+        refreshVisibleList(state, { skipAssetReload: true });
+        if (!(deleteOut && deleteOut.cancelled === true)) {
+          showFeedback(state, "error", {
+            message: "Eliminacion pendiente de sincronizar."
+          });
+        }
+      })
+      .catch(function onDeleteError() {
+        refreshVisibleList(state, { skipAssetReload: true });
+        showFeedback(state, "error", {
+          message: "Eliminacion pendiente de sincronizar."
+        });
+      });
   }
 
   function buildFilterButtons() {

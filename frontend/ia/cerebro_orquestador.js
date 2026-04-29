@@ -363,6 +363,18 @@
   }
 
   async function invokeAndValidate(boxerName, action, data, normalizedRequest, meta, deps) {
+    var boxerStartAt = Date.now();
+    var boxerStage = boxerStageName(boxerName);
+    traceAnalysisEvent(boxerStage + "_start", {
+      action: action || null
+    }, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "boxer"
+    });
+    metricas.pushEvent(meta.metricCtx, "info", boxerName + "_START", "Inicio de " + boxerName + ".", {
+      action: action || null
+    });
     var request = buildBoxerRequest(boxerName, action, meta, normalizedRequest, data);
     request.handlers = deps && deps.handlers ? deps.handlers : {};
     request.deps = deps || {};
@@ -383,7 +395,17 @@
     metricas.recordBoxerTime(meta.metricCtx, boxerName, validated.normalized.resultado.elapsedMs);
     metricas.pushEvent(meta.metricCtx, validated.normalized.ok ? "info" : "warn", boxerName + "_RESPUESTA", "Respuesta validada de " + boxerName + ".", {
       ok: validated.normalized.ok,
-      passport: validated.normalized.resultado.estadoPasaporteModulo
+      passport: validated.normalized.resultado.estadoPasaporteModulo,
+      elapsedMs: Math.max(0, Date.now() - boxerStartAt)
+    });
+    traceAnalysisEvent(boxerStage + "_done", {
+      ok: validated.normalized.ok,
+      passport: validated.normalized.resultado.estadoPasaporteModulo,
+      elapsedMs: Math.max(0, Date.now() - boxerStartAt)
+    }, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "boxer"
     });
 
     return {
@@ -411,6 +433,68 @@
       out.push(item);
     }
     return out;
+  }
+
+  function boxerStageName(boxerName) {
+    var safe = String(boxerName || "").trim();
+    if (safe === MODULES.BOXER1) return "boxer1";
+    if (safe === MODULES.BOXER2) return "boxer2";
+    if (safe === MODULES.BOXER3) return "boxer3";
+    if (safe === MODULES.BOXER4) return "boxer4";
+    return safe ? safe.toLowerCase() : "boxer";
+  }
+
+  function shortHash(text) {
+    var safe = String(text || "");
+    var hash = 0;
+    for (var i = 0; i < safe.length; i += 1) {
+      hash = ((hash << 5) - hash + safe.charCodeAt(i)) | 0;
+    }
+    return "h" + (hash >>> 0).toString(16);
+  }
+
+  function summarizeText(value, maxChars) {
+    var safe = String(value == null ? "" : value);
+    var limit = Math.max(80, Number(maxChars || 240));
+    if (!safe) return "";
+    if (safe.length <= limit) return safe;
+    return "[resumen lenOriginal=" + safe.length + " hash=" + shortHash(safe) + "] " + safe.slice(0, limit);
+  }
+
+  function summarizeIaPayload(payload) {
+    var safe = asPlainObject(payload) ? payload : {};
+    var out = {
+      keys: Object.keys(safe)
+    };
+    if (typeof safe.textoBase === "string") {
+      out.textoBaseResumen = summarizeText(safe.textoBase, 240);
+      out.textoBaseLength = safe.textoBase.length;
+    }
+    if (typeof safe.ocrTexto === "string") {
+      out.ocrTextLength = safe.ocrTexto.length;
+      out.ocrTextHash = shortHash(safe.ocrTexto);
+      out.ocrResumen = summarizeText(safe.ocrTexto, 240);
+    }
+    if (Array.isArray(safe.slots)) {
+      out.totalSlots = safe.slots.length;
+      out.lineasRelevantes = safe.slots.slice(0, 4).map(function eachSlot(slot) {
+        var line = slot && slot.textoOriginal ? String(slot.textoOriginal) : "";
+        return summarizeText(line, 140);
+      }).filter(Boolean);
+    }
+    if (Array.isArray(safe.fragmentosImagen)) {
+      out.totalFragmentosImagen = safe.fragmentosImagen.length;
+    }
+    return out;
+  }
+
+  function summarizeIaExpected(expected) {
+    var safe = asPlainObject(expected) ? expected : {};
+    return {
+      keys: Object.keys(safe),
+      correccionesEsperadas: Array.isArray(safe.correcciones) ? safe.correcciones.length : null,
+      simetria: safe.simetria || null
+    };
   }
 
   function resolveBrokerApi(deps) {
@@ -697,10 +781,72 @@
       };
     }
 
-    metricas.pushEvent(meta.metricCtx, "info", "CER_IA_LOTE_ENVIO", "Cerebro envia un lote unico IA.", {
-      tareas: batchState.tasks.length
+    var iaPrepareStartedAt = Date.now();
+    traceAnalysisEvent("ia_batch_prepare_start", {
+      totalTareas: batchState.tasks.length
+    }, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "ia"
+    });
+    var taskDetails = batchState.tasks.map(function eachTask(task) {
+      var safeTask = asPlainObject(task) ? task : {};
+      return {
+        taskId: String(safeTask.taskId || "").trim() || null,
+        moduloSolicitante: String(safeTask.moduloSolicitante || safeTask.modulo || "").trim() || null,
+        tipoTarea: String(safeTask.tipoTarea || safeTask.schemaId || "").trim() || null,
+        schemaId: String(safeTask.schemaId || "").trim() || null,
+        motivoCreacion: String(safeTask.motivo || safeTask.reason || safeTask.motivoDuda || "").trim() || null,
+        payloadResumenSinBase64: summarizeIaPayload(safeTask.payload),
+        respuestaEsperadaResumen: summarizeIaExpected(safeTask.respuestaEsperada)
+      };
+    });
+    var taskDetailById = Object.create(null);
+    for (var tIndex = 0; tIndex < taskDetails.length; tIndex += 1) {
+      var detailItem = taskDetails[tIndex];
+      if (detailItem && detailItem.taskId) taskDetailById[detailItem.taskId] = detailItem;
+      metricas.pushEvent(meta.metricCtx, "info", "CER_IA_TASK_DETAIL", "Detalle de tarea IA.", detailItem || null);
+    }
+    traceAnalysisEvent("ia_batch_tasks", {
+      total: taskDetails.length,
+      tasks: taskDetails
+    }, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "ia"
+    });
+    traceAnalysisEvent("ia_batch_prepare_done", {
+      totalTareas: taskDetails.length,
+      elapsedMs: Math.max(0, Date.now() - iaPrepareStartedAt)
+    }, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "ia"
     });
 
+    metricas.pushEvent(meta.metricCtx, "info", "CER_IA_LOTE_ENVIO", "Cerebro envia un lote unico IA.", {
+      tareas: taskDetails.length,
+      taskIds: taskDetails.map(function each(item) { return item.taskId; }).filter(Boolean),
+      modulosSolicitantes: uniqueStrings(taskDetails.map(function each(item) { return item.moduloSolicitante; }).filter(Boolean)),
+      tiposTarea: uniqueStrings(taskDetails.map(function each(item) { return item.tipoTarea; }).filter(Boolean)),
+      schemaIds: uniqueStrings(taskDetails.map(function each(item) { return item.schemaId; }).filter(Boolean))
+    });
+
+    var iaBackendStartedAt = Date.now();
+    traceAnalysisEvent("ia_backend_call_start", {
+      totalTareas: batchState.tasks.length
+    }, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "ia"
+    });
+    traceAnalysisEvent("ia_call_start", {
+      totalTareas: batchState.tasks.length
+    }, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "ia"
+    });
     var sent = await broker.enviarLoteIA({
       analysisId: meta.analysisId,
       traceId: meta.traceId,
@@ -710,6 +856,23 @@
       totalBoxersConvocados: batchState.totalBoxersConvocados,
       totalRespuestasContadas: batchState.totalRespuestasContadas
     }, deps || {});
+    var iaBackendElapsed = Math.max(0, Date.now() - iaBackendStartedAt);
+    traceAnalysisEvent("ia_backend_call_done", {
+      ok: !!(sent && sent.ok === true),
+      elapsedMs: iaBackendElapsed
+    }, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "ia"
+    });
+    traceAnalysisEvent("ia_call_end", {
+      ok: !!(sent && sent.ok === true),
+      elapsedMs: iaBackendElapsed
+    }, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "ia"
+    });
 
     iaInfo.huboLlamada = true;
 
@@ -726,10 +889,25 @@
       };
     }
 
+    var iaValidateStartedAt = Date.now();
+    traceAnalysisEvent("ia_response_validate_start", null, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "ia"
+    });
     var validatedBatch = broker.validarRespuestaLote(sent, {
       analysisId: meta.analysisId,
       traceId: meta.traceId,
       tasks: batchState.tasks
+    });
+    var iaValidateElapsed = Math.max(0, Date.now() - iaValidateStartedAt);
+    traceAnalysisEvent("ia_response_validate_done", {
+      ok: !!(validatedBatch && validatedBatch.ok === true),
+      elapsedMs: iaValidateElapsed
+    }, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "ia"
     });
     if (!validatedBatch.ok) {
       metricas.pushEvent(meta.metricCtx, "warn", validatedBatch.code, validatedBatch.message, validatedBatch.detail || null);
@@ -744,6 +922,12 @@
       };
     }
 
+    var iaDistributeStartedAt = Date.now();
+    traceAnalysisEvent("ia_response_distribute_start", null, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "ia"
+    });
     var separated = broker.separarSubrespuestas(validatedBatch, batchState.tasks);
     iaInfo.geminiBatchId = separated.geminiBatchId || (validatedBatch.normalized && validatedBatch.normalized.geminiBatchId) || null;
     iaInfo.tareasResueltas = separated.resueltas;
@@ -765,25 +949,80 @@
       }
 
       var subresponse = null;
+      var matchedTaskId = null;
       for (var j = 0; j < summary.taskIds.length; j += 1) {
         var taskId = summary.taskIds[j];
         if (separated.byTaskId[taskId]) {
           subresponse = separated.byTaskId[taskId];
+          matchedTaskId = taskId;
           break;
         }
       }
 
       if (!subresponse) {
+        if (summary.taskIds && summary.taskIds[0]) {
+          var missingTask = taskDetailById[summary.taskIds[0]] || {
+            taskId: summary.taskIds[0],
+            moduloSolicitante: summary.modulo,
+            tipoTarea: null,
+            schemaId: null
+          };
+          metricas.pushEvent(meta.metricCtx, "warn", "CER_IA_TASK_RESULT", "Resultado de tarea IA no disponible.", {
+            taskId: missingTask.taskId || null,
+            moduloSolicitante: missingTask.moduloSolicitante || null,
+            tipoTarea: missingTask.tipoTarea || null,
+            schemaId: missingTask.schemaId || null,
+            resultadoEstado: "sin_subrespuesta",
+            validada: false,
+            contaminada: false,
+            descartada: true,
+            errorCode: "ia_subrespuesta_no_resuelta"
+          });
+        }
         nextSummaries[summary.modulo === MODULES.BOXER1 ? "boxer1" : (summary.modulo === MODULES.BOXER2 ? "boxer2" : "boxer3")] =
           buildIaReviewSummary(summary, "ia_subrespuesta_no_resuelta", "No llego subrespuesta valida para " + summary.modulo + ".");
         continue;
       }
 
+      var taskMeta = matchedTaskId ? taskDetailById[matchedTaskId] : null;
       var closedSummary = await closeIaSummary(summary, subresponse, normalizedRequest, meta, deps || {});
+      metricas.pushEvent(meta.metricCtx, "info", "CER_IA_TASK_RESULT", "Resultado de tarea IA procesado.", {
+        taskId: matchedTaskId || (taskMeta && taskMeta.taskId) || null,
+        moduloSolicitante: summary.modulo || (taskMeta && taskMeta.moduloSolicitante) || null,
+        tipoTarea: taskMeta && taskMeta.tipoTarea ? taskMeta.tipoTarea : null,
+        schemaId: taskMeta && taskMeta.schemaId ? taskMeta.schemaId : null,
+        resultadoEstado: closedSummary && closedSummary.passport ? String(closedSummary.passport) : "desconocido",
+        validada: true,
+        contaminada: false,
+        descartada: false,
+        errorCode: closedSummary && closedSummary.error && closedSummary.error.code ? closedSummary.error.code : null,
+        dataResumen: {
+          requiereRevision: !!(closedSummary && closedSummary.requiereRevision),
+          confidence: closedSummary && closedSummary.confidence ? closedSummary.confidence : null
+        }
+      });
       if (summary.modulo === MODULES.BOXER1) nextSummaries.boxer1 = closedSummary;
       if (summary.modulo === MODULES.BOXER2) nextSummaries.boxer2 = closedSummary;
       if (summary.modulo === MODULES.BOXER3) nextSummaries.boxer3 = closedSummary;
     }
+    var iaDistributeElapsed = Math.max(0, Date.now() - iaDistributeStartedAt);
+    traceAnalysisEvent("ia_response_distribute_done", {
+      elapsedMs: iaDistributeElapsed
+    }, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "ia"
+    });
+    metricas.pushEvent(meta.metricCtx, "info", "CER_IA_BATCH_TIMING", "Tiempos del lote IA.", {
+      elapsedPrepareMs: Math.max(0, iaBackendStartedAt - iaPrepareStartedAt),
+      elapsedBackendMs: iaBackendElapsed,
+      elapsedGeminiMs: sent && sent.tiempos && sent.tiempos.gemini && Number.isFinite(Number(sent.tiempos.gemini.t_total_gemini_ms))
+        ? Number(sent.tiempos.gemini.t_total_gemini_ms)
+        : null,
+      elapsedValidateMs: iaValidateElapsed,
+      elapsedDistributeMs: iaDistributeElapsed,
+      elapsedTotalBatchMs: Math.max(0, Date.now() - iaPrepareStartedAt)
+    });
 
     metricas.pushEvent(meta.metricCtx, "info", "CER_IA_LOTE_CIERRE", "Cerebro cierra subtareas del lote IA.", {
       geminiBatchId: iaInfo.geminiBatchId,
@@ -1069,11 +1308,27 @@
       summaries = refresh.summaries;
     }
 
+    traceAnalysisEvent("boxer_collection_done", {
+      totalBoxers: 4,
+      iaPendiente: !!(summaries.boxer1 && summaries.boxer1.estadoIA === IA_STATES.NECESITA_LLAMADA) ||
+        !!(summaries.boxer2 && summaries.boxer2.estadoIA === IA_STATES.NECESITA_LLAMADA) ||
+        !!(summaries.boxer3 && summaries.boxer3.estadoIA === IA_STATES.NECESITA_LLAMADA)
+    }, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "boxers"
+    });
+
     if (isTimeBudgetExpired(meta, normalizedRequest)) {
       metricas.pushEvent(meta.metricCtx, "error", ERROR_CODES.TIMEOUT_OPERACION || "CER_TIMEOUT_OPERACION", "Cerebro detiene el flujo por timeout global.", null);
       return buildTimeoutEnvelope(meta, summaries);
     }
 
+    traceAnalysisEvent("decision_build_start", null, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "decision"
+    });
     var proposal = arbitraje.getProposal(summaries);
     var dudas = arbitraje.collectDudas(summaries);
     var conflicts = arbitraje.collectConflicts(summaries, proposal);
@@ -1107,11 +1362,32 @@
       possibleDuplicate: duplicateInfo.posibleDuplicado,
       mergeableDuplicate: duplicateInfo.fusionable
     });
+    traceAnalysisEvent("decision_build_done", {
+      passport: decision.passport,
+      decisionFlujo: decision.decisionFlow
+    }, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "decision"
+    });
+    traceAnalysisEvent("final_payload_build_start", null, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "response"
+    });
     var finalData = arbitraje.buildFinalData({
       analysisId: meta.analysisId,
       traceId: meta.traceId,
       elapsedMs: metricas.elapsedSince(meta.startedAt)
     }, summaries, decision, duplicateInfo, iaInfo);
+    traceAnalysisEvent("final_payload_build_done", {
+      passport: decision.passport,
+      decisionFlujo: decision.decisionFlow
+    }, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "response"
+    });
 
     metricas.pushEvent(meta.metricCtx, decision.passport === PASSPORTS.VERDE ? "info" : "warn", "CER_DECISION_FINAL", "Cerebro decide el destino del caso.", {
       passport: decision.passport,
@@ -1127,13 +1403,39 @@
       traceId: meta.traceId,
       phase: "cerebro"
     });
+    traceAnalysisEvent("decision_final_done", {
+      passport: decision.passport,
+      decisionFlujo: decision.decisionFlow,
+      elapsedMs: metricas.elapsedSince(meta.startedAt)
+    }, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "cerebro"
+    });
 
     if (isTimeBudgetExpired(meta, normalizedRequest)) {
       metricas.pushEvent(meta.metricCtx, "error", ERROR_CODES.TIMEOUT_OPERACION || "CER_TIMEOUT_OPERACION", "Cerebro evita efectos laterales por timeout global.", null);
       return buildTimeoutEnvelope(meta, summaries);
     }
 
+    var routeDecisionStartedAt = Date.now();
+    traceAnalysisEvent("route_decision_start", {
+      decisionFlujo: decision.decisionFlow
+    }, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "route"
+    });
     var routeResult = await routeDecision(decision, finalData, meta, effectiveDeps || {});
+    traceAnalysisEvent("route_decision_done", {
+      decisionFlujo: decision.decisionFlow,
+      ok: !(routeResult && routeResult.ok === false),
+      elapsedMs: Math.max(0, Date.now() - routeDecisionStartedAt)
+    }, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "route"
+    });
     if (routeResult && routeResult.ok === false) {
       metricas.pushEvent(meta.metricCtx, "error", ERROR_CODES.DESTINO_INTERNO_FALLIDO, "Fallo el destino interno de Cerebro.", routeResult);
       return errores.buildFailureEnvelope(buildContext(meta), {
@@ -1147,6 +1449,38 @@
     }
 
     if (decision.passport === PASSPORTS.ROJO) {
+      traceAnalysisEvent("cerebro_return_start", {
+        ok: false,
+        passport: decision.passport
+      }, {
+        analysisId: meta.analysisId,
+        traceId: meta.traceId,
+        phase: "return"
+      });
+      traceAnalysisEvent("build_response_start", {
+        ok: false,
+        passport: decision.passport
+      }, {
+        analysisId: meta.analysisId,
+        traceId: meta.traceId,
+        phase: "response"
+      });
+      traceAnalysisEvent("build_response_done", {
+        ok: false,
+        passport: decision.passport
+      }, {
+        analysisId: meta.analysisId,
+        traceId: meta.traceId,
+        phase: "response"
+      });
+      traceAnalysisEvent("cerebro_return_done", {
+        ok: false,
+        passport: decision.passport
+      }, {
+        analysisId: meta.analysisId,
+        traceId: meta.traceId,
+        phase: "return"
+      });
       return errores.buildFailureEnvelope(buildContext(meta), {
         code: decision.errorCode || ERROR_CODES.ARBITRAJE_IMPOSIBLE,
         message: "Cerebro no pudo gobernar el caso con seguridad.",
@@ -1157,6 +1491,38 @@
       });
     }
 
+    traceAnalysisEvent("cerebro_return_start", {
+      ok: true,
+      passport: decision.passport
+    }, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "return"
+    });
+    traceAnalysisEvent("build_response_start", {
+      ok: true,
+      passport: decision.passport
+    }, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "response"
+    });
+    traceAnalysisEvent("build_response_done", {
+      ok: true,
+      passport: decision.passport
+    }, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "response"
+    });
+    traceAnalysisEvent("cerebro_return_done", {
+      ok: true,
+      passport: decision.passport
+    }, {
+      analysisId: meta.analysisId,
+      traceId: meta.traceId,
+      phase: "return"
+    });
     return {
       ok: true,
       resultado: {

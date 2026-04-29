@@ -90,12 +90,34 @@ function eliminarTara(texto) {
   );
 }
 
+// "Peso: 3,5k" -> "Peso: 3,5 kg" solo en contexto comercial.
+// Nunca aplica en lineas nutricionales.
+function normalizarPesoKComercial(texto) {
+  var lineas = String(texto || "").split("\n");
+  var out = [];
+  var hasLabel = /\b(?:peso(?:\s+neto)?|contenido\s+neto)\b/i;
+  var isNutritional = /\b(?:por\s*100|valor\s*energetico|grasas?|hidratos?|proteinas?|sal|kcal|kj)\b/i;
+  var kiloShorthand = /\b(\d+(?:[.,]\d+)?)\s*k\b/ig;
+
+  for (var i = 0; i < lineas.length; i += 1) {
+    var linea = String(lineas[i] || "");
+    var lineaNorm = normalizarUnicode(linea);
+    if (!hasLabel.test(lineaNorm) || isNutritional.test(lineaNorm)) {
+      out.push(linea);
+      continue;
+    }
+    out.push(linea.replace(kiloShorthand, "$1 kg"));
+  }
+  return out.join("\n");
+}
+
 function normalizarOCR(texto) {
   var r = corregirNumeros(texto);
   r = corregirUnidades(r);
   r = normalizarSlashMultipack(r);
   r = normalizarEspaciosMiles(r);
   r = eliminarTara(r);
+  r = normalizarPesoKComercial(r);
   return r;
 }
 
