@@ -2133,6 +2133,9 @@
       state.el.addPhotoPane.hidden = !!ui.photoResultReady;
     }
     state.el.addProductName.value = ui.nombre;
+    if (state.el.addProductFormat) {
+      state.el.addProductFormat.value = ui.formato || ui.formatoNormalizado || "";
+    }
     renderPickerButtons(state.el.addAllergenGrid, ui.selectedAllergenIds, "add");
     setElementText(state.el.addPhotoSummary, ui.photoSummary || "Todavía no has elegido fotos.");
     setElementText(state.el.addPhotoStatus, ui.photoStatus || "");
@@ -2501,19 +2504,33 @@
     return "passport-red";
   }
 
+  function buildReviewInstructionFromShortMessage(message) {
+    var normalized = normalizeTextKey(message);
+    var targets = [];
+    if (normalized.indexOf("nombre") >= 0) targets.push("nombre");
+    if (normalized.indexOf("peso") >= 0 || normalized.indexOf("formato") >= 0) targets.push("formato");
+    if (normalized.indexOf("alerg") >= 0 || normalized.indexOf("traza") >= 0) targets.push("alergenos");
+    if (normalized.indexOf("analisis") >= 0 || normalized.indexOf("lectura") >= 0) targets.push("analisis");
+    if (!targets.length) return "Revisa el resultado";
+    if (targets.length === 1) return "Revisa " + targets[0];
+    return "Revisa " + targets.slice(0, -1).join(", ") + " y " + targets[targets.length - 1];
+  }
+
   function buildPhotoAnalysisStatus(response, outcome) {
     var finalData = getPhotoAnalysisFinalData(response);
     var passport = resolvePhotoPassport(finalData, outcome);
-    var propuesta = finalData.propuestaFinal || {};
-    var nombre = String(propuesta.nombre || "").trim();
-    var formato = String(propuesta.formato || propuesta.formatoNormalizado || "").trim();
-    var visibleName = combineNameAndFormat(nombre, formato);
     var label = passport === "VERDE"
       ? "Pasaporte VERDE"
       : passport === "NARANJA"
         ? "Pasaporte NARANJA"
         : "Pasaporte ROJO";
-    return label + ". Revisa y confirma antes de guardar" + (visibleName ? ": " + visibleName : ".");
+    if (passport === "VERDE") return label + ".";
+    if (passport === "NARANJA" || passport === "ROJO") {
+      var decision = finalData && finalData.decision ? finalData.decision : {};
+      var explicit = String(decision.mensajePasaporteCorto || "").trim();
+      return label + ". " + buildReviewInstructionFromShortMessage(explicit) + " antes de guardar.";
+    }
+    return label + ". Revisa y confirma antes de guardar.";
   }
 
   function moduleLabel(moduleKey, moduleData) {
@@ -3757,11 +3774,18 @@
 
     byId("save-add-product").addEventListener("click", function onSaveAdd() {
       state.ui.add.nombre = byId("add-product-name").value;
+      state.ui.add.formato = byId("add-product-format").value;
+      state.ui.add.formatoNormalizado = byId("add-product-format").value;
       submitManualAdd(state);
     });
 
     byId("add-product-name").addEventListener("input", function onAddNameInput() {
       state.ui.add.nombre = byId("add-product-name").value;
+    });
+
+    byId("add-product-format").addEventListener("input", function onAddFormatInput() {
+      state.ui.add.formato = byId("add-product-format").value;
+      state.ui.add.formatoNormalizado = byId("add-product-format").value;
     });
 
     byId("add-photo-file-1").addEventListener("change", function onPhotoChange() {
@@ -4045,6 +4069,7 @@
         addManualTitle: byId("add-manual-title"),
         addPhotoPane: byId("add-photo-pane"),
         addProductName: byId("add-product-name"),
+        addProductFormat: byId("add-product-format"),
         addAllergenGrid: byId("add-allergen-grid"),
         saveAddProduct: byId("save-add-product"),
         cancelAddProduct: byId("cancel-add-product"),
@@ -4110,6 +4135,8 @@
     initialProductsLoad: initialProductsLoad,
     buildLightPhotoRefs: buildLightPhotoRefs,
     buildLightProductVisuales: buildLightProductVisuales,
+    buildPhotoAnalysisStatus: buildPhotoAnalysisStatus,
+    applyPhotoAnalysisToAddModal: applyPhotoAnalysisToAddModal,
     loadProducts: loadProducts,
     listPendingRevisionDraftsFromStore: listPendingRevisionDraftsFromStore,
     manualSync: manualSync,

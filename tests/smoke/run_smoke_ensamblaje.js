@@ -6,7 +6,8 @@ const { spawnSync } = require("child_process");
 const tests = [
   "smoke_entrada_ensamblaje.js",
   "smoke_operativa_ensamblaje.js",
-  "smoke_pantallas_ensamblaje.js"
+  "smoke_pantallas_ensamblaje.js",
+  "smoke_revision_modal_foto.js"
 ];
 
 if (process.env.ALERGENOS_REAL_USER && process.env.ALERGENOS_REAL_PASSWORD) {

@@ -371,32 +371,71 @@
     };
   }
 
-  function buildShortPassportMessage(decision, revisionData) {
-    var safeDecision = decision || {};
-    var safeRevision = revisionData || {};
-    var passport = String(safeDecision.passport || PASSPORTS.ROJO).trim().toUpperCase();
-    if (passport === PASSPORTS.VERDE) return "";
+  function addReviewTarget(targets, target) {
+    if (!target || targets.indexOf(target) >= 0) return;
+    targets.push(target);
+  }
 
+  function moduleNeedsReview(summary) {
+    if (!summary) return false;
+    var passport = String(summary.passport || summary.estadoPasaporteModulo || "").trim().toUpperCase();
+    return passport === PASSPORTS.NARANJA || passport === PASSPORTS.ROJO;
+  }
+
+  function collectReviewTargetsFromModules(summaries) {
+    var safeSummaries = summaries || {};
+    var targets = [];
+    if (moduleNeedsReview(safeSummaries.boxer2)) addReviewTarget(targets, "nombre");
+    if (moduleNeedsReview(safeSummaries.boxer3)) addReviewTarget(targets, "formato");
+    if (moduleNeedsReview(safeSummaries.boxer4)) addReviewTarget(targets, "alergenos");
+    if (moduleNeedsReview(safeSummaries.boxer1)) addReviewTarget(targets, "analisis");
+    return targets;
+  }
+
+  function collectReviewTargetsFromReasons(revisionData) {
+    var safeRevision = revisionData || {};
     var motivos = []
       .concat(Array.isArray(safeRevision.conflictos) ? safeRevision.conflictos : [])
       .concat(Array.isArray(safeRevision.dudas) ? safeRevision.dudas : []);
     var joined = String(motivos.join(" ") || "").toLowerCase();
-
-    if (joined.indexOf("nombre") >= 0 || joined.indexOf("marca") >= 0) return "Revisa nombre";
-    if (joined.indexOf("peso") >= 0 || joined.indexOf("formato") >= 0) return "Revisa formato";
+    var targets = [];
+    if (joined.indexOf("nombre") >= 0 || joined.indexOf("marca") >= 0) addReviewTarget(targets, "nombre");
+    if (joined.indexOf("peso") >= 0 || joined.indexOf("formato") >= 0) addReviewTarget(targets, "formato");
     if (joined.indexOf("alergen") >= 0 || joined.indexOf("traza") >= 0 || joined.indexOf("sanitario") >= 0) {
-      return "Revisa alergenos";
+      addReviewTarget(targets, "alergenos");
     }
-    return "Revision requerida";
+    return targets;
   }
 
-  function buildDecisionData(decision, revisionData) {
+  function buildReviewTargetText(targets) {
+    var safeTargets = Array.isArray(targets) ? targets : [];
+    var labels = [];
+    if (safeTargets.indexOf("nombre") >= 0) labels.push("nombre");
+    if (safeTargets.indexOf("formato") >= 0) labels.push("formato");
+    if (safeTargets.indexOf("alergenos") >= 0) labels.push("alergenos");
+    if (safeTargets.indexOf("analisis") >= 0) labels.push("analisis");
+    if (!labels.length) return "Revision requerida";
+    if (labels.length === 1) return "Revisa " + labels[0];
+    return "Revisa " + labels.slice(0, -1).join(", ") + " y " + labels[labels.length - 1];
+  }
+
+  function buildShortPassportMessage(decision, revisionData, summaries) {
+    var safeDecision = decision || {};
+    var passport = String(safeDecision.passport || PASSPORTS.ROJO).trim().toUpperCase();
+    if (passport === PASSPORTS.VERDE) return "";
+
+    var targets = collectReviewTargetsFromModules(summaries);
+    if (!targets.length) targets = collectReviewTargetsFromReasons(revisionData);
+    return buildReviewTargetText(targets);
+  }
+
+  function buildDecisionData(decision, revisionData, summaries) {
     var safeDecision = decision || {};
     return {
       pasaporte: safeDecision.passport || PASSPORTS.ROJO,
       decisionFlujo: safeDecision.decisionFlow || DECISION_FLOW.ABORTADO,
       accionSugerida: safeDecision.suggestedAction || SUGGESTED_ACTIONS.ABORTAR_FLUJO,
-      mensajePasaporteCorto: buildShortPassportMessage(safeDecision, revisionData),
+      mensajePasaporteCorto: buildShortPassportMessage(safeDecision, revisionData, summaries),
       requiereRevisionGlobal: (safeDecision.decisionFlow || DECISION_FLOW.ABORTADO) !== DECISION_FLOW.GUARDAR ||
         revisionData.conflictos.length > 0 ||
         revisionData.dudas.length > 0
@@ -420,7 +459,7 @@
       analysisId: meta.analysisId,
       traceId: meta.traceId || null,
       elapsedMs: Math.max(0, Number(meta.elapsedMs) || 0),
-      decision: buildDecisionData(decision, revisionData),
+      decision: buildDecisionData(decision, revisionData, summaries),
       propuestaFinal: {
         nombre: proposal.nombre || "",
         nombreNormalizado: normalizeText(proposal.nombre || ""),
@@ -516,6 +555,7 @@
     getProposal: getProposal,
     collectDudas: collectDudas,
     collectConflicts: collectConflicts,
+    buildShortPassportMessage: buildShortPassportMessage,
     detectPossibleDuplicate: detectPossibleDuplicate,
     classifyDecision: classifyDecision,
     buildFinalData: buildFinalData,

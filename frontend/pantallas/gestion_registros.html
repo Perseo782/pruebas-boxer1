@@ -729,6 +729,7 @@
       padding: 16px;
       background: var(--overlay-soft);
       backdrop-filter: blur(4px);
+      overflow: hidden;
     }
 
     .sheet-panel {
@@ -736,6 +737,7 @@
       max-width: 395px;
       max-height: calc(100vh - 32px);
       overflow: auto;
+      overscroll-behavior: contain;
       background: var(--bg-surface-soft);
       border: 1px solid var(--border-soft);
       border-radius: 30px;
@@ -743,6 +745,12 @@
       padding: 14px;
       display: grid;
       gap: 14px;
+    }
+
+    @media (min-width: 700px) {
+      .sheet-modal {
+        align-items: center;
+      }
     }
 
     .sheet-head {
@@ -1112,6 +1120,7 @@
 
     /* Campo de nombre: altura compacta como el resto de controles (40px) */
     #add-product-name,
+    #add-product-format,
     #edit-product-name {
       min-height: 40px;
       height: 40px;
@@ -1395,6 +1404,10 @@
           <div class="field-group">
             <label for="add-product-name">Nombre del producto</label>
             <input id="add-product-name" class="text-input" type="text" maxlength="63" placeholder="Ej: Galletas integrales">
+          </div>
+          <div class="field-group" id="add-product-format-group">
+            <label for="add-product-format">Formato / peso</label>
+            <input id="add-product-format" class="text-input" type="text" maxlength="32" placeholder="Ej: 500 g">
           </div>
           <div class="field-group">
             <label>Alérgenos</label>
