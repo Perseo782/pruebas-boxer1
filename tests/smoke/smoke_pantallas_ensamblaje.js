@@ -72,6 +72,8 @@ async function run() {
   });
   page.on("requestfailed", (request) => {
     const url = request.url();
+    const failure = request.failure();
+    if (failure && failure.errorText === "net::ERR_ABORTED") return;
     if (url.startsWith(`http://127.0.0.1:${PORT}/`)) {
       failedLocalRequests.push(url);
     }

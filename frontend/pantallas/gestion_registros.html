@@ -1215,35 +1215,15 @@
       z-index: 120;
       background: var(--overlay-strong);
       display: grid;
-      grid-template-rows: auto auto 1fr;
-      gap: 14px;
+      grid-template-rows: auto 1fr;
+      gap: 10px;
       padding: 16px;
     }
 
     .viewer-head {
       display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 12px;
-    }
-
-    .viewer-copy {
-      display: grid;
-      gap: 4px;
-      min-width: 0;
-    }
-
-    .viewer-copy h2 {
-      color: var(--text-on-dark);
-      font-size: var(--font-size-card-title);
-      line-height: var(--line-height-card-title);
-      font-weight: var(--weight-medium);
-    }
-
-    .viewer-copy p {
-      color: rgba(255, 255, 255, 0.72);
-      font-size: var(--font-size-secondary);
-      line-height: var(--line-height-secondary);
+      justify-content: flex-end;
+      align-items: center;
     }
 
     .viewer-close {
@@ -1257,31 +1237,9 @@
       font-weight: var(--weight-medium);
     }
 
-    .viewer-controls {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .viewer-controls button {
-      min-height: 42px;
-      border-radius: 999px;
-      padding: 0 14px;
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      background: rgba(255, 255, 255, 0.08);
-      color: var(--text-on-dark);
-      font-size: var(--font-size-secondary);
-      line-height: var(--line-height-secondary);
-      font-weight: var(--weight-medium);
-    }
-
     .viewer-stage {
       min-height: 0;
-      border-radius: 24px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      background:
-        radial-gradient(circle at top, rgba(79, 151, 142, 0.22), rgba(79, 151, 142, 0) 30%),
-        rgba(124, 116, 109, 0.82);
+      background: transparent;
       display: grid;
       place-items: center;
       overflow: hidden;
@@ -1294,7 +1252,7 @@
 
     .viewer-stage img {
       max-width: min(92vw, 980px);
-      max-height: calc(100vh - 190px);
+      max-height: calc(100vh - 92px);
       object-fit: contain;
       transform-origin: center center;
       will-change: transform;
@@ -1491,16 +1449,7 @@
 
   <div id="viewer-modal" class="viewer-modal" hidden aria-hidden="true">
     <div class="viewer-head">
-      <div class="viewer-copy">
-        <h2 id="viewer-title">Foto ampliada</h2>
-        <p id="viewer-meta">Zoom x1.00</p>
-      </div>
       <button id="viewer-close" class="viewer-close" type="button" aria-label="Cerrar foto">&#10005;</button>
-    </div>
-    <div class="viewer-controls">
-      <button id="viewer-zoom-out" type="button">Zoom -</button>
-      <button id="viewer-zoom-in" type="button">Zoom +</button>
-      <button id="viewer-zoom-reset" type="button">Centrar</button>
     </div>
     <div id="viewer-stage" class="viewer-stage">
       <img id="viewer-image" alt="Foto ampliada">

@@ -3520,7 +3520,6 @@
     var viewer = state.viewer;
     var transform = "translate(" + viewer.offsetX.toFixed(1) + "px, " + viewer.offsetY.toFixed(1) + "px) scale(" + viewer.zoom.toFixed(2) + ")";
     state.el.viewerImage.style.transform = transform;
-    state.el.viewerMeta.textContent = "Zoom x" + viewer.zoom.toFixed(2);
   }
 
   function clampZoom(value) {
@@ -3596,9 +3595,13 @@
     state.viewer.offsetX = 0;
     state.viewer.offsetY = 0;
     state.viewer.dragging = false;
+    state.viewer.pointers = Object.create(null);
+    state.viewer.pinchDistance = 0;
+    state.viewer.pinchZoom = 1;
+    state.viewer.pinchCenterX = 0;
+    state.viewer.pinchCenterY = 0;
     state.el.viewerStage.classList.remove("dragging");
     state.el.viewerImage.src = String(src || "").trim();
-    state.el.viewerTitle.textContent = title ? String(title) : "Foto ampliada";
     state.el.viewerModal.hidden = false;
     state.el.viewerModal.setAttribute("aria-hidden", "false");
     applyViewerTransform(state);
@@ -3611,6 +3614,7 @@
       state.viewer.awaitingPopstateClose = true;
       state.viewer.isOpen = false;
       state.viewer.dragging = false;
+      state.viewer.pointers = Object.create(null);
       state.el.viewerStage.classList.remove("dragging");
       state.el.viewerModal.hidden = true;
       state.el.viewerModal.setAttribute("aria-hidden", "true");
@@ -3631,6 +3635,7 @@
     state.viewer.awaitingPopstateClose = false;
     state.viewer.isOpen = false;
     state.viewer.dragging = false;
+    state.viewer.pointers = Object.create(null);
     state.el.viewerStage.classList.remove("dragging");
     state.el.viewerModal.hidden = true;
     state.el.viewerModal.setAttribute("aria-hidden", "true");
@@ -3645,36 +3650,112 @@
     restoreViewerScroll(state);
   }
 
+  function getViewerPointers(state) {
+    if (!state.viewer.pointers) state.viewer.pointers = Object.create(null);
+    return state.viewer.pointers;
+  }
+
+  function getViewerPointerList(state) {
+    var pointers = getViewerPointers(state);
+    return Object.keys(pointers).map(function mapPointer(key) {
+      return pointers[key];
+    });
+  }
+
+  function getPointerDistance(a, b) {
+    var dx = Number(a.clientX || 0) - Number(b.clientX || 0);
+    var dy = Number(a.clientY || 0) - Number(b.clientY || 0);
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  function getPointerCenter(a, b) {
+    return {
+      x: (Number(a.clientX || 0) + Number(b.clientX || 0)) / 2,
+      y: (Number(a.clientY || 0) + Number(b.clientY || 0)) / 2
+    };
+  }
+
+  function startViewerPinch(state, a, b) {
+    state.viewer.dragging = false;
+    state.el.viewerStage.classList.remove("dragging");
+    state.viewer.pinchDistance = Math.max(1, getPointerDistance(a, b));
+    state.viewer.pinchZoom = state.viewer.zoom;
+    var center = getPointerCenter(a, b);
+    state.viewer.pinchCenterX = center.x;
+    state.viewer.pinchCenterY = center.y;
+  }
+
+  function updateViewerPointersAfterPointerUp(state) {
+    var list = getViewerPointerList(state);
+    if (list.length >= 2) {
+      startViewerPinch(state, list[0], list[1]);
+      return;
+    }
+    state.viewer.pinchDistance = 0;
+    if (list.length === 1 && state.viewer.zoom > 1) {
+      state.viewer.dragging = true;
+      state.viewer.dragStartX = list[0].clientX;
+      state.viewer.dragStartY = list[0].clientY;
+      state.el.viewerStage.classList.add("dragging");
+      return;
+    }
+    state.viewer.dragging = false;
+    state.el.viewerStage.classList.remove("dragging");
+  }
+
   function bindViewer(state) {
     state.el.viewerClose.addEventListener("click", function onClose() {
       closeViewer(state, { fromPopstate: false });
     });
-    state.el.viewerZoomIn.addEventListener("click", function onZoomIn() {
-      state.viewer.zoom = clampZoom(state.viewer.zoom + 0.25);
-      applyViewerTransform(state);
-    });
-    state.el.viewerZoomOut.addEventListener("click", function onZoomOut() {
-      state.viewer.zoom = clampZoom(state.viewer.zoom - 0.25);
-      applyViewerTransform(state);
-    });
-    state.el.viewerZoomReset.addEventListener("click", function onZoomReset() {
-      state.viewer.zoom = 1;
-      state.viewer.offsetX = 0;
-      state.viewer.offsetY = 0;
-      applyViewerTransform(state);
-    });
     state.el.viewerStage.addEventListener("wheel", function onWheel(ev) {
       ev.preventDefault();
       state.viewer.zoom = clampZoom(state.viewer.zoom + (ev.deltaY < 0 ? 0.15 : -0.15));
+      if (state.viewer.zoom <= 1) {
+        state.viewer.offsetX = 0;
+        state.viewer.offsetY = 0;
+      }
       applyViewerTransform(state);
     }, { passive: false });
     state.el.viewerStage.addEventListener("pointerdown", function onPointerDown(ev) {
-      state.viewer.dragging = true;
-      state.viewer.dragStartX = ev.clientX;
-      state.viewer.dragStartY = ev.clientY;
-      state.el.viewerStage.classList.add("dragging");
+      ev.preventDefault();
+      getViewerPointers(state)[ev.pointerId] = { clientX: ev.clientX, clientY: ev.clientY };
+      if (state.el.viewerStage.setPointerCapture) {
+        try { state.el.viewerStage.setPointerCapture(ev.pointerId); } catch (errCapture) {}
+      }
+      var list = getViewerPointerList(state);
+      if (list.length >= 2) {
+        startViewerPinch(state, list[0], list[1]);
+        return;
+      }
+      if (state.viewer.zoom > 1) {
+        state.viewer.dragging = true;
+        state.viewer.dragStartX = ev.clientX;
+        state.viewer.dragStartY = ev.clientY;
+        state.el.viewerStage.classList.add("dragging");
+      }
     });
     globalScope.addEventListener("pointermove", function onPointerMove(ev) {
+      var pointers = getViewerPointers(state);
+      if (pointers[ev.pointerId]) {
+        pointers[ev.pointerId] = { clientX: ev.clientX, clientY: ev.clientY };
+        var list = getViewerPointerList(state);
+        if (list.length >= 2) {
+          ev.preventDefault();
+          var center = getPointerCenter(list[0], list[1]);
+          var distance = Math.max(1, getPointerDistance(list[0], list[1]));
+          state.viewer.zoom = clampZoom(state.viewer.pinchZoom * (distance / Math.max(1, state.viewer.pinchDistance)));
+          state.viewer.offsetX += center.x - state.viewer.pinchCenterX;
+          state.viewer.offsetY += center.y - state.viewer.pinchCenterY;
+          state.viewer.pinchCenterX = center.x;
+          state.viewer.pinchCenterY = center.y;
+          if (state.viewer.zoom <= 1) {
+            state.viewer.offsetX = 0;
+            state.viewer.offsetY = 0;
+          }
+          applyViewerTransform(state);
+          return;
+        }
+      }
       if (!state.viewer.dragging) return;
       var dx = ev.clientX - state.viewer.dragStartX;
       var dy = ev.clientY - state.viewer.dragStartY;
@@ -3684,10 +3765,15 @@
       state.viewer.offsetY += dy;
       applyViewerTransform(state);
     });
-    globalScope.addEventListener("pointerup", function onPointerUp() {
-      if (!state.viewer.dragging) return;
-      state.viewer.dragging = false;
-      state.el.viewerStage.classList.remove("dragging");
+    globalScope.addEventListener("pointerup", function onPointerUp(ev) {
+      var pointers = getViewerPointers(state);
+      delete pointers[ev.pointerId];
+      updateViewerPointersAfterPointerUp(state);
+    });
+    globalScope.addEventListener("pointercancel", function onPointerCancel(ev) {
+      var pointers = getViewerPointers(state);
+      delete pointers[ev.pointerId];
+      updateViewerPointersAfterPointerUp(state);
     });
     globalScope.addEventListener("keydown", function onKeyDown(ev) {
       if (!state.viewer.isOpen) return;
@@ -4044,6 +4130,11 @@
         dragging: false,
         dragStartX: 0,
         dragStartY: 0,
+        pointers: Object.create(null),
+        pinchDistance: 0,
+        pinchZoom: 1,
+        pinchCenterX: 0,
+        pinchCenterY: 0,
         isOpen: false,
         awaitingPopstateClose: false,
         historyPushed: false,
@@ -4053,14 +4144,9 @@
       },
       el: {
         viewerModal: byId("viewer-modal"),
-        viewerTitle: byId("viewer-title"),
-        viewerMeta: byId("viewer-meta"),
         viewerStage: byId("viewer-stage"),
         viewerImage: byId("viewer-image"),
         viewerClose: byId("viewer-close"),
-        viewerZoomIn: byId("viewer-zoom-in"),
-        viewerZoomOut: byId("viewer-zoom-out"),
-        viewerZoomReset: byId("viewer-zoom-reset"),
         feedbackToast: byId("feedback-toast"),
         addModal: byId("add-product-modal"),
         addModalTitle: byId("add-modal-title"),
