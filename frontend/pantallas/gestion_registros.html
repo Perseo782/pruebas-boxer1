@@ -1295,7 +1295,7 @@
 
     @media (min-width: 721px) {
       body {
-        padding: 24px 16px 96px;
+        padding: 24px 16px 140px;
       }
 
       .page {
@@ -1304,6 +1304,7 @@
 
       .bottom-add-bar {
         width: min(calc(100vw - 32px), 390px);
+        bottom: max(68px, env(safe-area-inset-bottom, 0px));
       }
     }
   </style>
