@@ -80,6 +80,7 @@
     var out = {
       createdAt: new Date().toISOString(),
       modo: normalizeMode(safe.modo || safe.ocrMode),
+      motorSeleccionado: String(safe.motorSeleccionado || safe.modo || safe.ocrMode || ""),
       ok: safe.ok === true,
       vision: safe.vision || null,
       deepseek: safe.deepseek || null,
@@ -102,24 +103,60 @@
     return String(value == null ? "" : value).trim();
   }
 
+  function secondsLabel(ms) {
+    var n = Number(ms);
+    if (!Number.isFinite(n) || n < 0) return "no disponible";
+    if (n < 1000) return "menos de 1 segundo";
+    var seconds = Math.max(1, Math.round(n / 1000));
+    return seconds === 1 ? "1 segundo" : seconds + " segundos";
+  }
+
+  function engineSignature(engine, info) {
+    var source = safeText(info && (info.firma || info.motor || info.source));
+    if (source) return source;
+    if (engine === "vision") return "FUENTE_REAL: GOOGLE_VISION_OCR";
+    if (engine === "deepseek") return "FUENTE_REAL: DEEPSEEK_OCR_VERTEX_AI";
+    return "FUENTE_REAL: OCR_NO_IDENTIFICADO";
+  }
+
+  function engineBlock(title, engine, info) {
+    var safe = info && typeof info === "object" ? info : {};
+    var lines = [];
+    lines.push("[" + title + "]");
+    lines.push("Firma: " + engineSignature(engine, safe));
+    lines.push("Tiempo: " + secondsLabel(safe.elapsedMs));
+    lines.push("Estado: " + (safe.ok === false ? "AVISO" : "OK"));
+    if (safe.message) lines.push("Mensaje: " + safeText(safe.message));
+    lines.push("Texto devuelto:");
+    lines.push(safeText(safe.texto || safe.text || safe.ocrTexto || safe.message) || "(sin texto)");
+    return lines;
+  }
+
   function formatOcrDetailForCopy(detail) {
     var d = detail || readLastOcrDetail();
     if (!d) return "";
+    var modo = normalizeMode(d.modo);
     var lines = [];
-    lines.push("Detalle OCR");
+    lines.push("DETALLE OCR - ULTIMO ANALISIS REAL");
     lines.push("Fecha: " + safeText(d.createdAt));
-    lines.push("Modo: " + modeLabel(d.modo));
+    lines.push("Motor seleccionado en Ajustes: " + modeLabel(modo));
     lines.push("Estado: " + (d.ok ? "OK" : "AVISO"));
     if (d.message) lines.push("Mensaje: " + safeText(d.message));
     lines.push("");
-    lines.push("[Vision]");
-    lines.push(safeText(d.vision && (d.vision.texto || d.vision.message)) || "(sin texto)");
-    lines.push("");
-    lines.push("[DeepSeek-OCR]");
-    lines.push(safeText(d.deepseek && (d.deepseek.texto || d.deepseek.message)) || "(sin texto)");
-    lines.push("");
-    lines.push("[Fusion final]");
-    lines.push(safeText(d.fusion && (d.fusion.textoOCRFinal || d.fusion.message)) || "(sin fusion)");
+    if (modo === "vision") {
+      lines = lines.concat(engineBlock("MOTOR USADO", "vision", d.vision));
+    } else if (modo === "deepseek") {
+      lines = lines.concat(engineBlock("MOTOR USADO", "deepseek", d.deepseek));
+    } else {
+      lines = lines.concat(engineBlock("MOTOR 1", "vision", d.vision));
+      lines.push("");
+      lines = lines.concat(engineBlock("MOTOR 2", "deepseek", d.deepseek));
+      lines.push("");
+      lines.push("[TEXTO FINAL FUSIONADO QUE RECIBE BOXER1]");
+      lines.push("Firma: FUENTE_REAL: FUSION_LOCAL_VISION_DEEPSEEK");
+      lines.push("Tiempo fusion: " + secondsLabel(d.fusion && d.fusion.elapsedMs));
+      lines.push(safeText(d.fusion && (d.fusion.textoOCRFinal || d.fusion.message)) || "(sin fusion)");
+    }
     return lines.join("\n");
   }
 

@@ -47,6 +47,7 @@ async function B1_llamarVisionOCR(canvas, sendMode, sessionToken, urlTrastienda)
         textoFinal: _B1_extraerTextoOCR_(deepseekOnly.respuesta),
         vision: null,
         deepseek: deepseekOnly.respuesta,
+        deepseekElapsedMs: deepseekOnly.durationMs,
         fusion: null,
         t_fetch_vision_total_ms: deepseekOnly.durationMs,
         t_parse_respuesta_vision_cliente_ms: deepseekOnly.parseMs
@@ -66,7 +67,9 @@ async function B1_llamarVisionOCR(canvas, sendMode, sessionToken, urlTrastienda)
       return _B1_prepararRespuestaOCR_((visionOk || deepseekOk).respuesta, Object.assign({}, ctxBase, {
         textoFinal: fusion.textoOCRFinal || textoVision || textoDeepseek,
         vision: visionOk ? visionOk.respuesta : null,
+        visionElapsedMs: visionOk ? visionOk.durationMs : null,
         deepseek: deepseekOk ? deepseekOk.respuesta : null,
+        deepseekElapsedMs: deepseekOk ? deepseekOk.durationMs : null,
         fusion,
         t_fetch_vision_total_ms: Math.max(visionOk ? visionOk.durationMs : 0, deepseekOk ? deepseekOk.durationMs : 0),
         t_parse_respuesta_vision_cliente_ms: (visionOk ? visionOk.parseMs : 0) + (deepseekOk ? deepseekOk.parseMs : 0)
@@ -78,6 +81,7 @@ async function B1_llamarVisionOCR(canvas, sendMode, sessionToken, urlTrastienda)
       modo: 'vision',
       textoFinal: _B1_extraerTextoOCR_(visionOnly.respuesta),
       vision: visionOnly.respuesta,
+      visionElapsedMs: visionOnly.durationMs,
       deepseek: null,
       fusion: null,
       t_fetch_vision_total_ms: visionOnly.durationMs,
@@ -192,10 +196,25 @@ function _B1_guardarDetalleOCR_(ctx, textoFinal) {
     if (!globalThis.AppV2OcrSettings || typeof globalThis.AppV2OcrSettings.saveLastOcrDetail !== 'function') return;
     globalThis.AppV2OcrSettings.saveLastOcrDetail({
       modo: ctx.modo || 'vision',
+      motorSeleccionado: ctx.modo || 'vision',
       ok: true,
-      vision: ctx.vision ? { texto: _B1_extraerTextoOCR_(ctx.vision) } : null,
-      deepseek: ctx.deepseek ? { texto: _B1_extraerTextoOCR_(ctx.deepseek) } : null,
-      fusion: ctx.fusion || { textoOCRFinal: textoFinal || '' },
+      vision: ctx.vision ? {
+        motor: 'Google Vision OCR',
+        firma: 'FUENTE_REAL: GOOGLE_VISION_OCR',
+        ok: true,
+        elapsedMs: ctx.visionElapsedMs,
+        texto: _B1_extraerTextoOCR_(ctx.vision)
+      } : null,
+      deepseek: ctx.deepseek ? {
+        motor: 'DeepSeek-OCR en Vertex AI',
+        firma: 'FUENTE_REAL: DEEPSEEK_OCR_VERTEX_AI',
+        ok: true,
+        elapsedMs: ctx.deepseekElapsedMs,
+        texto: _B1_extraerTextoOCR_(ctx.deepseek)
+      } : null,
+      fusion: ctx.fusion ? Object.assign({}, ctx.fusion, {
+        elapsedMs: ctx.fusion && ctx.fusion.metricas ? ctx.fusion.metricas.elapsedMs : 0
+      }) : { textoOCRFinal: textoFinal || '', elapsedMs: 0 },
       message: 'Detalle OCR generado por Boxer1.'
     });
   } catch (err) {
