@@ -1,7 +1,7 @@
 (function initCerebroBrokerIaModule(globalScope) {
   "use strict";
 
-  var DEFAULT_MODEL = "gemini-3.1-flash-lite-preview";
+  var DEFAULT_MODEL = "gemini-3-flash-preview";
   var DEFAULT_BACKEND_URL = "https://europe-west1-project-a6f6b968-a591-4b1f-823.cloudfunctions.net/api";
 
   function asPlainObject(value) {

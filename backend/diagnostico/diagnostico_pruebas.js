@@ -170,7 +170,7 @@
         traceId: id + "_trace",
         sessionToken: token,
         tasks: [expectedTask],
-        modelo: brokerIa.DEFAULT_MODEL || "gemini-3.1-flash-lite-preview",
+        modelo: brokerIa.DEFAULT_MODEL || "gemini-3-flash-preview",
         totalBoxersConvocados: 1,
         totalRespuestasContadas: 1
       }, {

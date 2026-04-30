@@ -84,6 +84,43 @@
     globalScope.AnalysisExclusiveRuntime.trace(name, data || null, Object.assign({ source: "cerebro" }, meta || {}));
   }
 
+  function extractBrokerEnvelope(rawResponse) {
+    var payload = rawResponse && rawResponse.data ? rawResponse.data : rawResponse;
+    if (payload && payload.data && payload.data.meta) return payload.data;
+    return payload || {};
+  }
+
+  function buildIaBackendTraceData(sent, elapsedMs, taskDetails) {
+    var envelope = extractBrokerEnvelope(sent);
+    var metaIa = envelope && envelope.meta ? envelope.meta : {};
+    var tiempos = metaIa && metaIa.tiemposInternos ? metaIa.tiemposInternos : {};
+    var config = metaIa && metaIa.geminiConfig ? metaIa.geminiConfig : {};
+    var fallbackTaskIds = (taskDetails || []).map(function each(item) { return item.taskId; }).filter(Boolean);
+    var fallbackModules = uniqueStrings((taskDetails || []).map(function each(item) { return item.moduloSolicitante; }).filter(Boolean));
+    var error = sent && sent.ok === false ? {
+      code: sent.code || null,
+      message: sent.message || null,
+      detail: sent.detail || null
+    } : null;
+
+    return {
+      ok: !!(sent && sent.ok === true),
+      elapsedMs: elapsedMs,
+      modelo: config.modelo || null,
+      thinkingLevel: config.thinkingLevel || null,
+      taskIds: config.taskIds || fallbackTaskIds,
+      modulosSolicitantes: config.modulosSolicitantes || fallbackModules,
+      promptLength: config.promptLength || config.promptChars || null,
+      payloadSizeApprox: config.payloadSizeApprox || config.payloadApproxBytes || null,
+      maxOutputTokens: config.maxOutputTokens || null,
+      elapsedGeminiMs: tiempos.elapsedGeminiMs || tiempos.t_gemini_api_ms || null,
+      elapsedBackendMs: tiempos.elapsedBackendMs || tiempos.t_total_trastienda_ms || elapsedMs,
+      usageMetadata: config.usageMetadata || null,
+      resultadoValido: !!(sent && sent.ok === true),
+      error: error
+    };
+  }
+
   function cleanupRouteIdempotencyCache(nowMs) {
     var keys = Object.keys(routeIdempotencyCache);
     for (var i = 0; i < keys.length; i += 1) {
@@ -852,23 +889,18 @@
       traceId: meta.traceId,
       sessionToken: normalizedRequest.sessionToken,
       tasks: batchState.tasks,
-      modelo: broker.DEFAULT_MODEL || "gemini-3.1-flash-lite-preview",
+      modelo: broker.DEFAULT_MODEL || "gemini-3-flash-preview",
       totalBoxersConvocados: batchState.totalBoxersConvocados,
       totalRespuestasContadas: batchState.totalRespuestasContadas
     }, deps || {});
     var iaBackendElapsed = Math.max(0, Date.now() - iaBackendStartedAt);
-    traceAnalysisEvent("ia_backend_call_done", {
-      ok: !!(sent && sent.ok === true),
-      elapsedMs: iaBackendElapsed
-    }, {
+    var iaBackendTraceData = buildIaBackendTraceData(sent, iaBackendElapsed, taskDetails);
+    traceAnalysisEvent("ia_backend_call_done", iaBackendTraceData, {
       analysisId: meta.analysisId,
       traceId: meta.traceId,
       phase: "ia"
     });
-    traceAnalysisEvent("ia_call_end", {
-      ok: !!(sent && sent.ok === true),
-      elapsedMs: iaBackendElapsed
-    }, {
+    traceAnalysisEvent("ia_call_end", iaBackendTraceData, {
       analysisId: meta.analysisId,
       traceId: meta.traceId,
       phase: "ia"

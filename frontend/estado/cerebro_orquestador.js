@@ -699,7 +699,7 @@
       traceId: meta.traceId,
       sessionToken: normalizedRequest.sessionToken,
       tasks: batchState.tasks,
-      modelo: broker.DEFAULT_MODEL || "gemini-3.1-flash-lite-preview",
+      modelo: broker.DEFAULT_MODEL || "gemini-3-flash-preview",
       totalBoxersConvocados: batchState.totalBoxersConvocados,
       totalRespuestasContadas: batchState.totalRespuestasContadas
     }, deps || {});
