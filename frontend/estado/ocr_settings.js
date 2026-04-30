@@ -122,6 +122,7 @@
   function engineBlock(title, engine, info) {
     var safe = info && typeof info === "object" ? info : {};
     var raw = safeText(safe.rawJson || safe.raw);
+    var ocrText = safeText(safe.texto || safe.text || safe.ocrTexto);
     var lines = [];
     lines.push("[" + title + "]");
     lines.push("Firma: " + engineSignature(engine, safe));
@@ -129,7 +130,7 @@
     lines.push("Estado: " + (safe.ok === false ? "AVISO" : "OK"));
     if (safe.message) lines.push("Mensaje: " + safeText(safe.message));
     lines.push("Texto devuelto:");
-    lines.push(safeText(safe.texto || safe.text || safe.ocrTexto || safe.message) || "(sin texto)");
+    lines.push(ocrText || "(sin texto OCR guardado; no es valido usar 'prueba completada' como texto OCR)");
     lines.push("");
     lines.push("TODOS LOS DETALLES DEVUELTOS POR EL OCR SELECCIONADO:");
     lines.push(raw || "(respuesta completa no guardada; repite la prueba o analiza una foto nueva)");
