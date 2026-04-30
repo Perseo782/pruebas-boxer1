@@ -12540,6 +12540,40 @@ if (typeof globalThis !== "undefined") {
       .trim();
   }
 
+  function formatDisplayNumber(value) {
+    var rounded = Math.round(Number(value) * 10000) / 10000;
+    var text = String(rounded);
+    return text.indexOf(".") >= 0 ? text.replace(/\.?0+$/, "") : text;
+  }
+
+  function normalizeDisplayUnit(unit) {
+    var safe = String(unit || "").trim().toLowerCase();
+    if (safe === "gr" || safe === "grs") return "g";
+    if (safe === "lt" || safe === "litro" || safe === "litros") return "l";
+    return safe;
+  }
+
+  function normalizeFormatForDisplay(value) {
+    return String(value || "")
+      .replace(/\s+/g, " ")
+      .replace(/(\d+(?:[.,]\d+)?)\s*(kg|g|gr|grs|ml|cl|dl|l|lt|litro|litros)\b/gi, function replaceUnit(match, amount, unit) {
+        var n = Number(String(amount || "").replace(",", "."));
+        if (!Number.isFinite(n)) return match;
+        var u = normalizeDisplayUnit(unit);
+        if ((u === "g" || u === "kg") && (u === "kg" ? n * 1000 : n) >= 1000) {
+          return formatDisplayNumber((u === "kg" ? n * 1000 : n) / 1000) + " kg";
+        }
+        if ((u === "ml" || u === "cl" || u === "dl" || u === "l") && (
+          u === "l" ? n * 1000 : u === "cl" ? n * 10 : u === "dl" ? n * 100 : n
+        ) >= 1000) {
+          var ml = u === "l" ? n * 1000 : u === "cl" ? n * 10 : u === "dl" ? n * 100 : n;
+          return formatDisplayNumber(ml / 1000) + " l";
+        }
+        return formatDisplayNumber(n) + " " + u;
+      })
+      .trim();
+  }
+
   function clone(value) {
     if (value == null) return value;
     return JSON.parse(JSON.stringify(value));
@@ -12624,10 +12658,11 @@ if (typeof globalThis !== "undefined") {
     var boxer2 = summaries.boxer2 ? summaries.boxer2.datos : {};
     var boxer3 = summaries.boxer3 ? summaries.boxer3.datos : {};
     var boxer4 = summaries.boxer4 ? summaries.boxer4.datos : {};
+    var formato = normalizeFormatForDisplay(boxer3.formato || boxer3.formato_normalizado || "");
 
     return {
       nombre: boxer2.nombre || boxer2.nombrePropuesto || boxer2.nombreProducto || "",
-      formato: boxer3.formato || boxer3.formato_normalizado || "",
+      formato: formato,
       tipoFormato: boxer3.tipo || "desconocido",
       alergenos: normalizeAllergenList(boxer4.alergenos),
       trazas: normalizeAllergenList(boxer4.trazas)

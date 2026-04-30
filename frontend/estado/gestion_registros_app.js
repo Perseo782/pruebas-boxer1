@@ -44,7 +44,7 @@
   var VISUAL_GATEWAY_THUMB_BATCH_LIMIT = 12;
   var DYNAMIC_SCRIPT_PROMISES = Object.create(null);
   var PHOTO_RUNTIME_TRACE_STORAGE_KEY = "appv2_photo_runtime_trace_v1";
-  var PHOTO_RUNTIME_BUNDLE_PATH = "../estado/photo_analysis_runtime_bundle.js?v=20260430runtime1";
+  var PHOTO_RUNTIME_BUNDLE_PATH = "../estado/photo_analysis_runtime_bundle.js?v=20260430format2";
   var photoRuntimeSharedPromise = null;
   var photoRuntimeStatus = "idle";
   var photoRuntimeLastError = "";
