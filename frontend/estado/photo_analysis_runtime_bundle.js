@@ -670,6 +670,441 @@ async function B1_prechequeo(imageSrc, cronometro) {
 ;/* END ../../backend/boxer1/backend/operativa/B1_prechequeo_unificado_patch.js */
 
 ;/* BEGIN ../../backend/boxer1/backend/operativa/B1_ocr_base_unificado_patch.js */
+;/* BEGIN ../../backend/ocr/ocr_fusion_engine.js */
+(function initOcrFusionEngine(globalScope) {
+  "use strict";
+
+  var MAX_SOURCE_CHARS = 9000;
+  var MAX_LINES = 140;
+  var MAX_WORDS_PER_LINE = 80;
+  var MIN_TOKEN_LEN = 2;
+
+  function now() {
+    return Date.now ? Date.now() : new Date().getTime();
+  }
+
+  function stripAccents(value) {
+    return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  }
+
+  function normalizeToken(value) {
+    return stripAccents(value).toLowerCase().replace(/[^a-z0-9%]+/g, "");
+  }
+
+  function normalizeLine(value) {
+    return stripAccents(value)
+      .toLowerCase()
+      .replace(/[^a-z0-9%]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function cleanText(value) {
+    return String(value || "")
+      .replace(/\r/g, "\n")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+      .slice(0, MAX_SOURCE_CHARS);
+  }
+
+  function splitLines(value) {
+    var text = cleanText(value);
+    if (!text) return [];
+    var seen = Object.create(null);
+    return text.split(/\n+/).map(function trim(line) {
+      return String(line || "").trim();
+    }).filter(function valid(line) {
+      if (!line) return false;
+      var key = normalizeLine(line);
+      if (!key || seen[key]) return false;
+      seen[key] = true;
+      return true;
+    }).slice(0, MAX_LINES);
+  }
+
+  function tokenize(line) {
+    return String(line || "").split(/\s+/).filter(Boolean).slice(0, MAX_WORDS_PER_LINE);
+  }
+
+  function levenshtein(a, b) {
+    var left = normalizeToken(a);
+    var right = normalizeToken(b);
+    if (left === right) return 0;
+    if (!left) return right.length;
+    if (!right) return left.length;
+    var prev = [];
+    var curr = [];
+    var i;
+    var j;
+    for (j = 0; j <= right.length; j += 1) prev[j] = j;
+    for (i = 1; i <= left.length; i += 1) {
+      curr[0] = i;
+      for (j = 1; j <= right.length; j += 1) {
+        curr[j] = Math.min(
+          prev[j] + 1,
+          curr[j - 1] + 1,
+          prev[j - 1] + (left.charAt(i - 1) === right.charAt(j - 1) ? 0 : 1)
+        );
+      }
+      var tmp = prev;
+      prev = curr;
+      curr = tmp;
+    }
+    return prev[right.length];
+  }
+
+  function looksBroken(token) {
+    var raw = String(token || "");
+    var norm = normalizeToken(raw);
+    if (norm.length < MIN_TOKEN_LEN) return true;
+    if (/\d/.test(norm)) return false;
+    if (norm.length <= 3 && raw.length <= 3) return true;
+    if (/[bcdfghjklmnpqrstvwxyz]{4,}/i.test(norm)) return true;
+    return false;
+  }
+
+  function scoreToken(token) {
+    var norm = normalizeToken(token);
+    var score = norm.length;
+    if (!norm) return -100;
+    if (looksBroken(token)) score -= 3;
+    if (/^[a-z]+$/i.test(norm) && /[aeiou]/i.test(norm)) score += 2;
+    if (/\d/.test(norm)) score += 2;
+    return score;
+  }
+
+  function chooseToken(visionToken, deepseekToken, stats) {
+    var leftNorm = normalizeToken(visionToken);
+    var rightNorm = normalizeToken(deepseekToken);
+    if (!leftNorm) return deepseekToken;
+    if (!rightNorm) return visionToken;
+    if (leftNorm === rightNorm) return visionToken.length >= deepseekToken.length ? visionToken : deepseekToken;
+
+    var distance = levenshtein(leftNorm, rightNorm);
+    var maxLen = Math.max(leftNorm.length, rightNorm.length);
+    var near = maxLen >= 4 && distance <= Math.max(1, Math.ceil(maxLen * 0.4));
+    if (near) {
+      var leftScore = scoreToken(visionToken);
+      var rightScore = scoreToken(deepseekToken);
+      if (Math.abs(leftScore - rightScore) >= 2) {
+        stats.mejorasAplicadas += 1;
+        return rightScore > leftScore ? deepseekToken : visionToken;
+      }
+    }
+
+    stats.fragmentosConservadosPorDuda += 1;
+    return visionToken + " / " + deepseekToken;
+  }
+
+  function similarityLine(a, b) {
+    var aTokens = tokenize(normalizeLine(a));
+    var bTokens = tokenize(normalizeLine(b));
+    var total = Math.max(aTokens.length, bTokens.length);
+    var matches = 0;
+    var used = Object.create(null);
+    var i;
+    var j;
+    if (!total) return 0;
+    for (i = 0; i < aTokens.length; i += 1) {
+      for (j = 0; j < bTokens.length; j += 1) {
+        if (used[j]) continue;
+        if (aTokens[i] === bTokens[j] || levenshtein(aTokens[i], bTokens[j]) <= 1) {
+          used[j] = true;
+          matches += 1;
+          break;
+        }
+      }
+    }
+    return matches / total;
+  }
+
+  function mergeLine(visionLine, deepseekLine, stats) {
+    var v = tokenize(visionLine);
+    var d = tokenize(deepseekLine);
+    var total = Math.max(v.length, d.length);
+    var out = [];
+    var i;
+    for (i = 0; i < total; i += 1) {
+      if (v[i] && d[i]) {
+        out.push(chooseToken(v[i], d[i], stats));
+      } else if (v[i]) {
+        out.push(v[i]);
+      } else if (d[i]) {
+        out.push(d[i]);
+      }
+    }
+    return out.join(" ").replace(/\s+\/\s+/g, " / ").trim();
+  }
+
+  function fusionarOCR(input) {
+    var started = now();
+    var safe = input && typeof input === "object" ? input : {};
+    var visionLines = splitLines(safe.textoVision || safe.vision || "");
+    var deepseekLines = splitLines(safe.textoDeepSeek || safe.deepseek || "");
+    var usedDeepseek = Object.create(null);
+    var stats = {
+      mejorasAplicadas: 0,
+      fragmentosConservadosPorDuda: 0,
+      lineasAnadidas: 0,
+      avisos: []
+    };
+    var output = [];
+
+    visionLines.forEach(function eachVision(line) {
+      var bestIndex = -1;
+      var bestScore = 0;
+      deepseekLines.forEach(function eachDeepseek(candidate, index) {
+        var score;
+        if (usedDeepseek[index]) return;
+        score = similarityLine(line, candidate);
+        if (score > bestScore) {
+          bestScore = score;
+          bestIndex = index;
+        }
+      });
+      if (bestIndex >= 0 && bestScore >= 0.45) {
+        usedDeepseek[bestIndex] = true;
+        output.push(mergeLine(line, deepseekLines[bestIndex], stats));
+        return;
+      }
+      output.push(line);
+    });
+
+    deepseekLines.forEach(function addUnused(line, index) {
+      if (usedDeepseek[index]) return;
+      output.push(line);
+      stats.lineasAnadidas += 1;
+    });
+
+    var seen = Object.create(null);
+    var finalLines = output.filter(function unique(line) {
+      var key = normalizeLine(line);
+      if (!key || seen[key]) return false;
+      seen[key] = true;
+      return true;
+    });
+    var textoOCRFinal = finalLines.join("\n").trim();
+    var longest = Math.max(cleanText(safe.textoVision || "").length, cleanText(safe.textoDeepSeek || "").length);
+    var maxFinal = Math.max(longest + 1500, Math.floor(longest * 1.25), 2500);
+    if (textoOCRFinal.length > maxFinal) {
+      textoOCRFinal = textoOCRFinal.slice(0, maxFinal).trim();
+      stats.avisos.push("fusion_recortada_para_evitar_texto_excesivo");
+    }
+
+    return {
+      ok: true,
+      textoOCRFinal: textoOCRFinal,
+      metricas: {
+        visionLineas: visionLines.length,
+        deepseekLineas: deepseekLines.length,
+        lineasFinales: finalLines.length,
+        mejorasAplicadas: stats.mejorasAplicadas,
+        fragmentosConservadosPorDuda: stats.fragmentosConservadosPorDuda,
+        lineasAnadidas: stats.lineasAnadidas,
+        elapsedMs: now() - started
+      },
+      avisos: stats.avisos
+    };
+  }
+
+  var api = {
+    fusionarOCR: fusionarOCR,
+    normalizeToken: normalizeToken,
+    similarityLine: similarityLine
+  };
+
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  if (globalScope) globalScope.AppV2OcrFusionEngine = api;
+})(typeof globalThis !== "undefined" ? globalThis : this);
+
+;/* END ../../backend/ocr/ocr_fusion_engine.js */
+;/* BEGIN ../estado/ocr_settings.js */
+(function initOcrSettings(globalScope) {
+  "use strict";
+
+  var SETTINGS_KEY = "appv2_ocr_settings_v1";
+  var DETAIL_KEY = "appv2_last_ocr_detail_v1";
+  var DEFAULT_SETTINGS = { ocrMode: "vision", updatedAt: "" };
+
+  function storage() {
+    try {
+      return globalScope && globalScope.localStorage ? globalScope.localStorage : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function normalizeMode(mode) {
+    var value = String(mode || "").trim().toLowerCase();
+    if (value === "deepseek" || value === "both" || value === "vision") return value;
+    return "vision";
+  }
+
+  function readJson(key) {
+    var ls = storage();
+    if (!ls) return null;
+    try {
+      return JSON.parse(ls.getItem(key) || "null");
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function writeJson(key, value) {
+    var ls = storage();
+    if (!ls) return false;
+    try {
+      ls.setItem(key, JSON.stringify(value || null));
+      return true;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function removeKey(key) {
+    var ls = storage();
+    if (!ls) return false;
+    try {
+      ls.removeItem(key);
+      return true;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function getSettings() {
+    var saved = readJson(SETTINGS_KEY) || {};
+    return {
+      ocrMode: normalizeMode(saved.ocrMode),
+      updatedAt: String(saved.updatedAt || "")
+    };
+  }
+
+  function saveSettings(next) {
+    var saved = {
+      ocrMode: normalizeMode(next && next.ocrMode),
+      updatedAt: new Date().toISOString()
+    };
+    writeJson(SETTINGS_KEY, saved);
+    return saved;
+  }
+
+  function modeLabel(mode) {
+    var value = normalizeMode(mode);
+    if (value === "deepseek") return "DeepSeek-OCR";
+    if (value === "both") return "Vision + DeepSeek";
+    return "Vision";
+  }
+
+  function saveLastOcrDetail(detail) {
+    var safe = detail && typeof detail === "object" ? detail : {};
+    var out = {
+      createdAt: new Date().toISOString(),
+      modo: normalizeMode(safe.modo || safe.ocrMode),
+      motorSeleccionado: String(safe.motorSeleccionado || safe.modo || safe.ocrMode || ""),
+      ok: safe.ok === true,
+      vision: safe.vision || null,
+      deepseek: safe.deepseek || null,
+      fusion: safe.fusion || null,
+      message: String(safe.message || "")
+    };
+    writeJson(DETAIL_KEY, out);
+    return out;
+  }
+
+  function readLastOcrDetail() {
+    return readJson(DETAIL_KEY);
+  }
+
+  function clearLastOcrDetail() {
+    return removeKey(DETAIL_KEY);
+  }
+
+  function safeText(value) {
+    return String(value == null ? "" : value).trim();
+  }
+
+  function secondsLabel(ms) {
+    var n = Number(ms);
+    if (!Number.isFinite(n) || n < 0) return "no disponible";
+    if (n < 1000) return "menos de 1 segundo";
+    var seconds = Math.max(1, Math.round(n / 1000));
+    return seconds === 1 ? "1 segundo" : seconds + " segundos";
+  }
+
+  function engineSignature(engine, info) {
+    var source = safeText(info && (info.firma || info.motor || info.source));
+    if (source) return source;
+    if (engine === "vision") return "FUENTE_REAL: GOOGLE_VISION_OCR";
+    if (engine === "deepseek") return "FUENTE_REAL: DEEPSEEK_OCR_VERTEX_AI";
+    return "FUENTE_REAL: OCR_NO_IDENTIFICADO";
+  }
+
+  function engineBlock(title, engine, info) {
+    var safe = info && typeof info === "object" ? info : {};
+    var raw = safeText(safe.rawJson || safe.raw);
+    var ocrText = safeText(safe.texto || safe.text || safe.ocrTexto);
+    var lines = [];
+    lines.push("[" + title + "]");
+    lines.push("Firma: " + engineSignature(engine, safe));
+    lines.push("Tiempo: " + secondsLabel(safe.elapsedMs));
+    lines.push("Estado: " + (safe.ok === false ? "AVISO" : "OK"));
+    if (safe.message) lines.push("Mensaje: " + safeText(safe.message));
+    lines.push("Texto devuelto:");
+    lines.push(ocrText || "(sin texto OCR guardado; no es valido usar 'prueba completada' como texto OCR)");
+    lines.push("");
+    lines.push("TODOS LOS DETALLES DEVUELTOS POR EL OCR SELECCIONADO:");
+    lines.push(raw || "(respuesta completa no guardada; repite la prueba o analiza una foto nueva)");
+    return lines;
+  }
+
+  function formatOcrDetailForCopy(detail) {
+    var d = detail || readLastOcrDetail();
+    if (!d) return "";
+    var modo = normalizeMode(d.modo);
+    var lines = [];
+    lines.push("DETALLE OCR - ULTIMO ANALISIS REAL");
+    lines.push("Fecha: " + safeText(d.createdAt));
+    lines.push("Motor seleccionado en Ajustes: " + modeLabel(modo));
+    lines.push("Estado: " + (d.ok ? "OK" : "AVISO"));
+    if (d.message) lines.push("Mensaje: " + safeText(d.message));
+    lines.push("");
+    if (modo === "vision") {
+      lines = lines.concat(engineBlock("MOTOR USADO", "vision", d.vision));
+    } else if (modo === "deepseek") {
+      lines = lines.concat(engineBlock("MOTOR USADO", "deepseek", d.deepseek));
+    } else {
+      lines = lines.concat(engineBlock("MOTOR 1", "vision", d.vision));
+      lines.push("");
+      lines = lines.concat(engineBlock("MOTOR 2", "deepseek", d.deepseek));
+      lines.push("");
+      lines.push("[TEXTO FINAL FUSIONADO QUE RECIBE BOXER1]");
+      lines.push("Firma: FUENTE_REAL: FUSION_LOCAL_VISION_DEEPSEEK");
+      lines.push("Tiempo fusion: " + secondsLabel(d.fusion && d.fusion.elapsedMs));
+      lines.push(safeText(d.fusion && (d.fusion.textoOCRFinal || d.fusion.message)) || "(sin fusion)");
+    }
+    return lines.join("\n");
+  }
+
+  var api = {
+    SETTINGS_KEY: SETTINGS_KEY,
+    DETAIL_KEY: DETAIL_KEY,
+    getSettings: getSettings,
+    saveSettings: saveSettings,
+    normalizeMode: normalizeMode,
+    modeLabel: modeLabel,
+    saveLastOcrDetail: saveLastOcrDetail,
+    readLastOcrDetail: readLastOcrDetail,
+    clearLastOcrDetail: clearLastOcrDetail,
+    formatOcrDetailForCopy: formatOcrDetailForCopy
+  };
+
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  if (globalScope) globalScope.AppV2OcrSettings = api;
+})(typeof globalThis !== "undefined" ? globalThis : this);
+
+;/* END ../estado/ocr_settings.js */
 /**
  * BOXER 1 Â· OCR base adaptado a GAS unificado + OCR rico completo.
  */
@@ -690,90 +1125,218 @@ async function B1_llamarVisionOCR(canvas, sendMode, sessionToken, urlTrastienda)
   const t_toDataURL_ms = Date.now() - tData;
   const base64 = dataUrl.split(',')[1];
   const tPayload = Date.now();
-  const body = {
-    moduloDestino: B1_CONFIG.TRASTIENDA_MODULO_DESTINO,
-    accion: B1_CONFIG.TRASTIENDA_ACCION_VISION,
-    sessionToken: sessionToken || '',
-    payload: {
-      imageBase64: base64,
-      mimeType: 'image/jpeg',
-      sessionToken: sessionToken || '',
-      token: sessionToken || ''
-    }
-  };
+  const payload = { imageBase64: base64, mimeType: 'image/jpeg', sessionToken: sessionToken || '', token: sessionToken || '' };
   const t_build_payload_vision_ms = Date.now() - tPayload;
-  const tFetch = Date.now();
   const timeoutMs = (typeof B1_CONFIG !== 'undefined' && B1_CONFIG && B1_CONFIG.VISION_FETCH_TIMEOUT_MS) || 15000;
-  const controller = (typeof AbortController === 'function') ? new AbortController() : null;
-  const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
-  let response;
+  const ocrMode = _B1_resolverModoOCR_();
+  const ctxBase = { modo: ocrMode, t0, t_toDataURL_ms, t_build_payload_vision_ms, sendMode };
+
   B1_emitVisionCallTrace('vision_call_start', {
     timeoutMs,
     sendModeSolicitado: sendMode || B1_SEND_MODE.BASE64,
     sendModeAplicado: 'base64',
+    ocrMode,
     t_toDataURL_ms,
     t_build_payload_vision_ms
   });
+
+  const callVision = function() {
+    return _B1_postOcrTrastienda_(urlTrastienda, B1_CONFIG.TRASTIENDA_ACCION_VISION, sessionToken, payload, timeoutMs, 'Vision OCR');
+  };
+  const callDeepseek = function() {
+    return _B1_postOcrTrastienda_(urlTrastienda, 'procesarDeepSeekOCR', sessionToken, payload, timeoutMs, 'DeepSeek-OCR');
+  };
+
+  try {
+    if (ocrMode === 'deepseek') {
+      const deepseekOnly = await callDeepseek();
+      return _B1_prepararRespuestaOCR_(deepseekOnly.respuesta, Object.assign({}, ctxBase, {
+        textoFinal: _B1_extraerTextoOCR_(deepseekOnly.respuesta),
+        vision: null,
+        deepseek: deepseekOnly.respuesta,
+        deepseekElapsedMs: deepseekOnly.durationMs,
+        fusion: null,
+        t_fetch_vision_total_ms: deepseekOnly.durationMs,
+        t_parse_respuesta_vision_cliente_ms: deepseekOnly.parseMs
+      }));
+    }
+
+    if (ocrMode === 'both') {
+      const settled = await Promise.allSettled([callVision(), callDeepseek()]);
+      const visionOk = settled[0].status === 'fulfilled' ? settled[0].value : null;
+      const deepseekOk = settled[1].status === 'fulfilled' ? settled[1].value : null;
+      if (!visionOk && !deepseekOk) throw (settled[0].reason || settled[1].reason);
+      const textoVision = visionOk ? _B1_extraerTextoOCR_(visionOk.respuesta) : '';
+      const textoDeepseek = deepseekOk ? _B1_extraerTextoOCR_(deepseekOk.respuesta) : '';
+      const fusion = (typeof globalThis !== 'undefined' && globalThis.AppV2OcrFusionEngine && typeof globalThis.AppV2OcrFusionEngine.fusionarOCR === 'function')
+        ? globalThis.AppV2OcrFusionEngine.fusionarOCR({ textoVision, textoDeepSeek: textoDeepseek })
+        : { textoOCRFinal: textoVision || textoDeepseek, metricas: null, avisos: ['fusion_engine_no_cargado'] };
+      return _B1_prepararRespuestaOCR_((visionOk || deepseekOk).respuesta, Object.assign({}, ctxBase, {
+        textoFinal: fusion.textoOCRFinal || textoVision || textoDeepseek,
+        vision: visionOk ? visionOk.respuesta : null,
+        visionElapsedMs: visionOk ? visionOk.durationMs : null,
+        deepseek: deepseekOk ? deepseekOk.respuesta : null,
+        deepseekElapsedMs: deepseekOk ? deepseekOk.durationMs : null,
+        fusion,
+        t_fetch_vision_total_ms: Math.max(visionOk ? visionOk.durationMs : 0, deepseekOk ? deepseekOk.durationMs : 0),
+        t_parse_respuesta_vision_cliente_ms: (visionOk ? visionOk.parseMs : 0) + (deepseekOk ? deepseekOk.parseMs : 0)
+      }));
+    }
+
+    const visionOnly = await callVision();
+    return _B1_prepararRespuestaOCR_(visionOnly.respuesta, Object.assign({}, ctxBase, {
+      modo: 'vision',
+      textoFinal: _B1_extraerTextoOCR_(visionOnly.respuesta),
+      vision: visionOnly.respuesta,
+      visionElapsedMs: visionOnly.durationMs,
+      deepseek: null,
+      fusion: null,
+      t_fetch_vision_total_ms: visionOnly.durationMs,
+      t_parse_respuesta_vision_cliente_ms: visionOnly.parseMs
+    }));
+  } catch (fetchErr) {
+    B1_emitVisionCallTrace('vision_call_end', {
+      ok: false,
+      ocrMode,
+      message: fetchErr && fetchErr.message ? fetchErr.message : String(fetchErr || ''),
+      t_fetch_vision_total_ms: Date.now() - t0
+    });
+    throw fetchErr;
+  }
+}
+
+async function _B1_postOcrTrastienda_(urlTrastienda, accion, sessionToken, payload, timeoutMs, label) {
+  const tFetch = Date.now();
+  const controller = (typeof AbortController === 'function') ? new AbortController() : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  let response;
+  let respuesta = null;
+  let parseMs = 0;
   try {
     response = await fetch(urlTrastienda, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ moduloDestino: B1_CONFIG.TRASTIENDA_MODULO_DESTINO, accion, sessionToken: sessionToken || '', payload }),
       signal: controller ? controller.signal : undefined
     });
   } catch (fetchErr) {
     if (controller && fetchErr && fetchErr.name === 'AbortError') {
-      throw B1_crearErrorUpstream({
-        message: 'Vision OCR timeout tras ' + timeoutMs + 'ms',
-        upstreamCode: 'HTTP_TIMEOUT',
-        upstreamModule: B1_CONFIG.TRASTIENDA_MODULO_DESTINO,
-        raw: null
-      });
+      throw B1_crearErrorUpstream({ message: label + ' timeout tras ' + timeoutMs + 'ms', upstreamCode: 'HTTP_TIMEOUT', upstreamModule: B1_CONFIG.TRASTIENDA_MODULO_DESTINO, raw: null });
     }
-    B1_emitVisionCallTrace('vision_call_end', {
-      ok: false,
-      aborted: !!(controller && fetchErr && fetchErr.name === 'AbortError'),
-      message: fetchErr && fetchErr.message ? fetchErr.message : String(fetchErr || ''),
-      t_fetch_vision_total_ms: Date.now() - tFetch
-    });
     throw fetchErr;
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
   }
-  const t_fetch_vision_total_ms = Date.now() - tFetch;
-
   const tParse = Date.now();
-  let respuesta = null;
   try { respuesta = await response.json(); } catch (_) { respuesta = null; }
-  const t_parse_respuesta_vision_cliente_ms = Date.now() - tParse;
-  B1_emitVisionCallTrace('vision_call_end', {
-    ok: !!(response.ok && respuesta && respuesta.ok === true),
-    status: response.status || null,
-    t_fetch_vision_total_ms,
-    t_parse_respuesta_vision_cliente_ms
-  });
-
+  parseMs = Date.now() - tParse;
   if (!response.ok || !respuesta || respuesta.ok !== true) {
     const err = (respuesta && respuesta.error) || {};
     throw B1_crearErrorUpstream({
-      message: err.mensaje || err.message || `Trastienda respondiÃ³ ${response.status || 'sin status'} en Vision OCR`,
-      upstreamCode: err.codigo || `HTTP_${response.status || 'UNKNOWN'}`,
+      message: err.mensaje || err.message || (label + ' respondio ' + (response.status || 'sin status')),
+      upstreamCode: err.codigo || ('HTTP_' + (response.status || 'UNKNOWN')),
       upstreamModule: err.modulo || B1_CONFIG.TRASTIENDA_MODULO_DESTINO,
       raw: respuesta
     });
   }
+  return { respuesta, durationMs: Date.now() - tFetch, parseMs };
+}
 
+function _B1_prepararRespuestaOCR_(respuesta, ctx) {
+  const resultado = respuesta && respuesta.resultado ? respuesta.resultado : {};
+  const textoFinal = String(ctx.textoFinal || '').trim();
+  if (textoFinal) resultado.ocrTexto = textoFinal;
+  respuesta.resultado = resultado;
   respuesta.__b1TiemposCliente = {
-    t_toDataURL_ms,
-    t_build_payload_vision_ms,
-    t_fetch_vision_total_ms,
-    t_parse_respuesta_vision_cliente_ms,
-    t_ocr_llamada_total_ms: Date.now() - t0,
-    sendModeSolicitado: sendMode || B1_SEND_MODE.BASE64,
-    sendModeAplicado: 'base64'
+    t_toDataURL_ms: ctx.t_toDataURL_ms,
+    t_build_payload_vision_ms: ctx.t_build_payload_vision_ms,
+    t_fetch_vision_total_ms: ctx.t_fetch_vision_total_ms,
+    t_parse_respuesta_vision_cliente_ms: ctx.t_parse_respuesta_vision_cliente_ms,
+    t_ocr_llamada_total_ms: Date.now() - ctx.t0,
+    sendModeSolicitado: ctx.sendMode || B1_SEND_MODE.BASE64,
+    sendModeAplicado: 'base64',
+    ocrMode: ctx.modo || 'vision'
   };
   respuesta.__b1Upstream = (respuesta && respuesta.meta && respuesta.meta.tiemposInternos) ? respuesta.meta.tiemposInternos : null;
+  respuesta.__b1OcrDetalle = {
+    modo: ctx.modo || 'vision',
+    visionOk: !!ctx.vision,
+    deepseekOk: !!ctx.deepseek,
+    fusionMetricas: ctx.fusion && ctx.fusion.metricas ? ctx.fusion.metricas : null,
+    fusionAvisos: ctx.fusion && Array.isArray(ctx.fusion.avisos) ? ctx.fusion.avisos : []
+  };
+  _B1_guardarDetalleOCR_(ctx, textoFinal);
+  B1_emitVisionCallTrace('vision_call_end', {
+    ok: true,
+    ocrMode: ctx.modo || 'vision',
+    t_fetch_vision_total_ms: ctx.t_fetch_vision_total_ms,
+    t_parse_respuesta_vision_cliente_ms: ctx.t_parse_respuesta_vision_cliente_ms
+  });
   return respuesta;
+}
+
+function _B1_resolverModoOCR_() {
+  try {
+    if (typeof globalThis !== 'undefined' && globalThis.AppV2OcrSettings && typeof globalThis.AppV2OcrSettings.getSettings === 'function') {
+      return globalThis.AppV2OcrSettings.normalizeMode(globalThis.AppV2OcrSettings.getSettings().ocrMode);
+    }
+  } catch (err) {
+    // No-op.
+  }
+  return 'vision';
+}
+
+function _B1_extraerTextoOCR_(respuesta) {
+  const safe = respuesta && typeof respuesta === 'object' ? respuesta : {};
+  const resultado = safe.resultado && typeof safe.resultado === 'object' ? safe.resultado : {};
+  const data = safe.data && typeof safe.data === 'object' ? safe.data : {};
+  const candidates = [resultado.ocrTexto, resultado.textoOCR, resultado.texto, resultado.text, data.ocrTexto, data.textoOCR, data.texto, data.text, safe.ocrTexto, safe.textoOCR, safe.texto, safe.text];
+  for (let i = 0; i < candidates.length; i += 1) {
+    if (typeof candidates[i] === 'string' && candidates[i].trim()) return candidates[i].trim();
+  }
+  return '';
+}
+
+function _B1_guardarDetalleOCR_(ctx, textoFinal) {
+  try {
+    if (typeof globalThis === 'undefined') return;
+    if (!globalThis.AppV2OcrSettings || typeof globalThis.AppV2OcrSettings.saveLastOcrDetail !== 'function') return;
+    globalThis.AppV2OcrSettings.saveLastOcrDetail({
+      modo: ctx.modo || 'vision',
+      motorSeleccionado: ctx.modo || 'vision',
+      ok: true,
+      vision: ctx.vision ? {
+        motor: 'Google Vision OCR',
+        firma: 'FUENTE_REAL: GOOGLE_VISION_OCR',
+        ok: true,
+        elapsedMs: ctx.visionElapsedMs,
+        texto: _B1_extraerTextoOCR_(ctx.vision),
+        rawJson: _B1_serializarRespuestaOCR_(ctx.vision)
+      } : null,
+      deepseek: ctx.deepseek ? {
+        motor: 'DeepSeek-OCR en Vertex AI',
+        firma: 'FUENTE_REAL: DEEPSEEK_OCR_VERTEX_AI',
+        ok: true,
+        elapsedMs: ctx.deepseekElapsedMs,
+        texto: _B1_extraerTextoOCR_(ctx.deepseek),
+        rawJson: _B1_serializarRespuestaOCR_(ctx.deepseek)
+      } : null,
+      fusion: ctx.fusion ? Object.assign({}, ctx.fusion, {
+        elapsedMs: ctx.fusion && ctx.fusion.metricas ? ctx.fusion.metricas.elapsedMs : 0
+      }) : { textoOCRFinal: textoFinal || '', elapsedMs: 0 },
+      message: 'Detalle OCR generado por Boxer1.'
+    });
+  } catch (err) {
+    // No-op.
+  }
+}
+
+function _B1_serializarRespuestaOCR_(respuesta) {
+  try {
+    return JSON.stringify(respuesta || null, null, 2);
+  } catch (err) {
+    return String(respuesta || '');
+  }
 }
 
 function B1_normalizarOCR(respuestaTrastienda) {
@@ -7054,7 +7617,7 @@ function scoringNeutros(candidatos, totalLineas) {
 // â”€â”€â”€ NORMALIZACIÃ“N DE SALIDA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Formato uniforme: "920 g" Â· "1.5 kg" Â· "500 ml" Â· "4x2.5 kg"
 // NÃºmero: separador decimal = punto, sin separador de miles, sin ceros finales.
-// Unidad: forma corta normalizada y subida cuando corresponde (1000 g -> 1 kg).
+// Unidad: forma corta normalizada (g, kg, ml, l, cl, dl, oz, lb).
 
 function formatearNumero(n) {
   var r = Math.round(n * 10000) / 10000; // evita ruido flotante
@@ -7065,28 +7628,15 @@ function formatearNumero(n) {
   return s;
 }
 
-function subirUnidadSalida(valor, unidad) {
-  var u = normalizarUnidad(unidad);
-  var valorNorm = normalizarValor(valor, u);
-  if ((u === "g" || u === "kg") && valorNorm >= 1000) {
-    return { valor: valorNorm / 1000, unidad: "kg" };
-  }
-  if ((u === "ml" || u === "cl" || u === "dl" || u === "l") && valorNorm >= 1000) {
-    return { valor: valorNorm / 1000, unidad: "l" };
-  }
-  return { valor: valor, unidad: u };
-}
-
 function formatearSalida(candidato) {
   var u = candidato.unidadNorm;
   if (candidato.esMultipack) {
     // Multipack: "4x2.5 kg"
     var n1 = formatearNumero(candidato.valor1);
-    var unidadPack = subirUnidadSalida(candidato.valor2, u);
-    return n1 + "x" + formatearNumero(unidadPack.valor) + " " + unidadPack.unidad;
+    var n2 = formatearNumero(candidato.valor2);
+    return n1 + "x" + n2 + " " + u;
   }
-  var unidadSalida = subirUnidadSalida(candidato.valorTotal, u);
-  return formatearNumero(unidadSalida.valor) + " " + unidadSalida.unidad;
+  return formatearNumero(candidato.valorTotal) + " " + u;
 }
 
 // â”€â”€â”€ DECISIÃ“N FINAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -8442,17 +8992,6 @@ if (typeof globalThis !== "undefined") {
     y: true
   });
 
-  var SPANISH_UPPERCASE_TOKENS = Object.freeze({
-    aove: true,
-    brc: true,
-    ce: true,
-    dop: true,
-    ifs: true,
-    igp: true,
-    msc: true,
-    ue: true
-  });
-
   var WEIGHT_PATTERN = /\b\d{1,4}(?:[.,]\d{1,2})?\s?(?:kg|g|mg|l|ml|cl|ud|uds|unidades|capsulas|capsules|pack|x)\b/i;
   var INGREDIENTS_PATTERN = /^(ingredientes?|ingredients?|ingredienti|ingr[eé]dients?)\b|\b(contiene|contains|puede contener|may contain|trazas?|traces?)\b/i;
   var NUTRITION_PATTERN = /^(informacion nutricional|informaci[oó]n nutricional|declaracion nutricional|declaraci[oó]n nutricional|nutrition facts|nutrition|valor energ[eé]tico|energia|grasas|lipidos|hidratos|proteinas|proteins|salt|sal)\b/i;
@@ -8960,7 +9499,7 @@ if (typeof globalThis !== "undefined") {
         out.push(brandName);
       } else if (i > 0 && SPANISH_LOWERCASE_WORDS[compare]) {
         out.push(word.toLowerCase());
-      } else if (shouldKeepUppercaseToken(originalWord, compare)) {
+      } else if (/^[A-Z0-9]{2,4}$/.test(originalWord) && !Object.prototype.hasOwnProperty.call(ACCENT_FIXES, normalizeCompareText(originalWord)) && !SPANISH_LOWERCASE_WORDS[compare]) {
         out.push(originalWord);
       } else {
         var lower = word.toLowerCase();
@@ -8970,15 +9509,6 @@ if (typeof globalThis !== "undefined") {
     }
 
     return collapseText(out.join(" "));
-  }
-
-  function shouldKeepUppercaseToken(originalWord, compare) {
-    if (!/^[A-Z0-9]{2,6}$/.test(originalWord)) return false;
-    if (Object.prototype.hasOwnProperty.call(ACCENT_FIXES, normalizeCompareText(originalWord))) return false;
-    if (SPANISH_LOWERCASE_WORDS[compare]) return false;
-    if (SPANISH_UPPERCASE_TOKENS[compare]) return true;
-    if (/\d/.test(originalWord)) return true;
-    return !/[aeiou]/.test(compare);
   }
 
   function buildCandidateView(candidate) {
@@ -11283,7 +11813,7 @@ if (typeof globalThis !== "undefined") {
 (function initCerebroBrokerIaModule(globalScope) {
   "use strict";
 
-  var DEFAULT_MODEL = "gemini-3-flash-preview";
+  var DEFAULT_MODEL = "gemini-3.1-flash-lite-preview";
   var DEFAULT_BACKEND_URL = "https://europe-west1-project-a6f6b968-a591-4b1f-823.cloudfunctions.net/api";
 
   function asPlainObject(value) {
@@ -12540,40 +13070,6 @@ if (typeof globalThis !== "undefined") {
       .trim();
   }
 
-  function formatDisplayNumber(value) {
-    var rounded = Math.round(Number(value) * 10000) / 10000;
-    var text = String(rounded);
-    return text.indexOf(".") >= 0 ? text.replace(/\.?0+$/, "") : text;
-  }
-
-  function normalizeDisplayUnit(unit) {
-    var safe = String(unit || "").trim().toLowerCase();
-    if (safe === "gr" || safe === "grs") return "g";
-    if (safe === "lt" || safe === "litro" || safe === "litros") return "l";
-    return safe;
-  }
-
-  function normalizeFormatForDisplay(value) {
-    return String(value || "")
-      .replace(/\s+/g, " ")
-      .replace(/(\d+(?:[.,]\d+)?)\s*(kg|g|gr|grs|ml|cl|dl|l|lt|litro|litros)\b/gi, function replaceUnit(match, amount, unit) {
-        var n = Number(String(amount || "").replace(",", "."));
-        if (!Number.isFinite(n)) return match;
-        var u = normalizeDisplayUnit(unit);
-        if ((u === "g" || u === "kg") && (u === "kg" ? n * 1000 : n) >= 1000) {
-          return formatDisplayNumber((u === "kg" ? n * 1000 : n) / 1000) + " kg";
-        }
-        if ((u === "ml" || u === "cl" || u === "dl" || u === "l") && (
-          u === "l" ? n * 1000 : u === "cl" ? n * 10 : u === "dl" ? n * 100 : n
-        ) >= 1000) {
-          var ml = u === "l" ? n * 1000 : u === "cl" ? n * 10 : u === "dl" ? n * 100 : n;
-          return formatDisplayNumber(ml / 1000) + " l";
-        }
-        return formatDisplayNumber(n) + " " + u;
-      })
-      .trim();
-  }
-
   function clone(value) {
     if (value == null) return value;
     return JSON.parse(JSON.stringify(value));
@@ -12658,11 +13154,10 @@ if (typeof globalThis !== "undefined") {
     var boxer2 = summaries.boxer2 ? summaries.boxer2.datos : {};
     var boxer3 = summaries.boxer3 ? summaries.boxer3.datos : {};
     var boxer4 = summaries.boxer4 ? summaries.boxer4.datos : {};
-    var formato = normalizeFormatForDisplay(boxer3.formato || boxer3.formato_normalizado || "");
 
     return {
       nombre: boxer2.nombre || boxer2.nombrePropuesto || boxer2.nombreProducto || "",
-      formato: formato,
+      formato: boxer3.formato || boxer3.formato_normalizado || "",
       tipoFormato: boxer3.tipo || "desconocido",
       alergenos: normalizeAllergenList(boxer4.alergenos),
       trazas: normalizeAllergenList(boxer4.trazas)
@@ -13165,43 +13660,6 @@ if (typeof globalThis !== "undefined") {
       return;
     }
     globalScope.AnalysisExclusiveRuntime.trace(name, data || null, Object.assign({ source: "cerebro" }, meta || {}));
-  }
-
-  function extractBrokerEnvelope(rawResponse) {
-    var payload = rawResponse && rawResponse.data ? rawResponse.data : rawResponse;
-    if (payload && payload.data && payload.data.meta) return payload.data;
-    return payload || {};
-  }
-
-  function buildIaBackendTraceData(sent, elapsedMs, taskDetails) {
-    var envelope = extractBrokerEnvelope(sent);
-    var metaIa = envelope && envelope.meta ? envelope.meta : {};
-    var tiempos = metaIa && metaIa.tiemposInternos ? metaIa.tiemposInternos : {};
-    var config = metaIa && metaIa.geminiConfig ? metaIa.geminiConfig : {};
-    var fallbackTaskIds = (taskDetails || []).map(function each(item) { return item.taskId; }).filter(Boolean);
-    var fallbackModules = uniqueStrings((taskDetails || []).map(function each(item) { return item.moduloSolicitante; }).filter(Boolean));
-    var error = sent && sent.ok === false ? {
-      code: sent.code || null,
-      message: sent.message || null,
-      detail: sent.detail || null
-    } : null;
-
-    return {
-      ok: !!(sent && sent.ok === true),
-      elapsedMs: elapsedMs,
-      modelo: config.modelo || null,
-      thinkingLevel: config.thinkingLevel || null,
-      taskIds: config.taskIds || fallbackTaskIds,
-      modulosSolicitantes: config.modulosSolicitantes || fallbackModules,
-      promptLength: config.promptLength || config.promptChars || null,
-      payloadSizeApprox: config.payloadSizeApprox || config.payloadApproxBytes || null,
-      maxOutputTokens: config.maxOutputTokens || null,
-      elapsedGeminiMs: tiempos.elapsedGeminiMs || tiempos.t_gemini_api_ms || null,
-      elapsedBackendMs: tiempos.elapsedBackendMs || tiempos.t_total_trastienda_ms || elapsedMs,
-      usageMetadata: config.usageMetadata || null,
-      resultadoValido: !!(sent && sent.ok === true),
-      error: error
-    };
   }
 
   function cleanupRouteIdempotencyCache(nowMs) {
@@ -13972,18 +14430,23 @@ if (typeof globalThis !== "undefined") {
       traceId: meta.traceId,
       sessionToken: normalizedRequest.sessionToken,
       tasks: batchState.tasks,
-      modelo: broker.DEFAULT_MODEL || "gemini-3-flash-preview",
+      modelo: broker.DEFAULT_MODEL || "gemini-3.1-flash-lite-preview",
       totalBoxersConvocados: batchState.totalBoxersConvocados,
       totalRespuestasContadas: batchState.totalRespuestasContadas
     }, deps || {});
     var iaBackendElapsed = Math.max(0, Date.now() - iaBackendStartedAt);
-    var iaBackendTraceData = buildIaBackendTraceData(sent, iaBackendElapsed, taskDetails);
-    traceAnalysisEvent("ia_backend_call_done", iaBackendTraceData, {
+    traceAnalysisEvent("ia_backend_call_done", {
+      ok: !!(sent && sent.ok === true),
+      elapsedMs: iaBackendElapsed
+    }, {
       analysisId: meta.analysisId,
       traceId: meta.traceId,
       phase: "ia"
     });
-    traceAnalysisEvent("ia_call_end", iaBackendTraceData, {
+    traceAnalysisEvent("ia_call_end", {
+      ok: !!(sent && sent.ok === true),
+      elapsedMs: iaBackendElapsed
+    }, {
       analysisId: meta.analysisId,
       traceId: meta.traceId,
       phase: "ia"

@@ -44,7 +44,7 @@
   var VISUAL_GATEWAY_THUMB_BATCH_LIMIT = 12;
   var DYNAMIC_SCRIPT_PROMISES = Object.create(null);
   var PHOTO_RUNTIME_TRACE_STORAGE_KEY = "appv2_photo_runtime_trace_v1";
-  var PHOTO_RUNTIME_BUNDLE_PATH = "../estado/photo_analysis_runtime_bundle.js?v=20260430format2";
+  var PHOTO_RUNTIME_BUNDLE_PATH = "../estado/photo_analysis_runtime_bundle.js?v=20260430ocrdual1";
   var photoRuntimeSharedPromise = null;
   var photoRuntimeStatus = "idle";
   var photoRuntimeLastError = "";
@@ -53,6 +53,8 @@
     "../../backend/boxer1/backend/operativa/B1_contratos_unificado_patch.js",
     "../../backend/boxer1/backend/operativa/B1_diagnostico_unificado_patch.js",
     "../../backend/boxer1/backend/operativa/B1_prechequeo_unificado_patch.js",
+    "../../backend/ocr/ocr_fusion_engine.js?v=20260430ocrdual1",
+    "../estado/ocr_settings.js?v=20260430ocrdual1",
     "../../backend/boxer1/backend/operativa/B1_ocr_base_unificado_patch.js",
     "../../backend/boxer1/backend/operativa/B1_fiabilidad.js",
     "../../backend/boxer1/backend/operativa/B1_catalogos.js",
