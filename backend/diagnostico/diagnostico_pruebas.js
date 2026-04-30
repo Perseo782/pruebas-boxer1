@@ -7,6 +7,9 @@
   var brokerIa = typeof require === "function"
     ? require("../../backend/ia/cerebro_broker_ia.js")
     : (globalScope && globalScope.CerebroBrokerIa);
+  var ocrFusion = typeof require === "function"
+    ? require("../ocr/ocr_fusion_engine.js")
+    : (globalScope && globalScope.AppV2OcrFusionEngine);
 
   var DEFAULT_BACKEND_URL = "https://europe-west1-project-a6f6b968-a591-4b1f-823.cloudfunctions.net/api";
   var DEFAULT_TIMEOUT_MS = 8000;
@@ -117,6 +120,7 @@
       status: ok ? formatter.STATUS.OPERATIVO : formatter.STATUS.ATENCION,
       detail: ok ? "prueba completada" : (out && out.message ? out.message : "prueba con aviso"),
       rawDetail: ok ? "" : rawDetail,
+      payload: out && out.payload,
       duration: formatter.formatDurationMs(out && out.durationMs)
     };
   }
@@ -170,7 +174,7 @@
         traceId: id + "_trace",
         sessionToken: token,
         tasks: [expectedTask],
-        modelo: brokerIa.DEFAULT_MODEL || "gemini-3-flash-preview",
+        modelo: brokerIa.DEFAULT_MODEL || "gemini-3.1-flash-lite-preview",
         totalBoxersConvocados: 1,
         totalRespuestasContadas: 1
       }, {
@@ -245,6 +249,101 @@
     }
   }
 
+  function extractOcrText(payload) {
+    var data = payload && typeof payload === "object" ? payload : {};
+    var nested = data.data && typeof data.data === "object" ? data.data : {};
+    var result = data.resultado && typeof data.resultado === "object" ? data.resultado : {};
+    var candidates = [
+      data.textoOCR,
+      data.texto,
+      data.text,
+      nested.textoOCR,
+      nested.texto,
+      nested.text,
+      result.textoOCR,
+      result.texto,
+      result.text
+    ];
+    var i;
+    for (i = 0; i < candidates.length; i += 1) {
+      if (typeof candidates[i] === "string" && candidates[i].trim()) return candidates[i].trim();
+    }
+    return "";
+  }
+
+  async function probarDeepSeekOCR(deps) {
+    var store = deps && deps.store;
+    if (store && typeof store.openCase === "function") store.openCase({ module: "DeepSeek-OCR", action: "probar DeepSeek-OCR", message: "Prueba de DeepSeek-OCR iniciada." });
+    var token = getSessionToken(deps);
+    if (!token) {
+      return writeResult(store, "DeepSeek-OCR", "probar DeepSeek-OCR", { ok: false, message: "falta token de sesion" });
+    }
+    try {
+      return writeResult(store, "DeepSeek-OCR", "probar DeepSeek-OCR", await postControl({
+        moduloDestino: "TRASTIENDA",
+        accion: "procesarDeepSeekOCR",
+        sessionToken: token,
+        payload: {
+          imageBase64: TINY_JPEG_BASE64,
+          mimeType: "image/jpeg",
+          sessionToken: token,
+          token: token,
+          modo: "diagnostico_ocr_dual"
+        }
+      }, deps));
+    } catch (err) {
+      return writeResult(store, "DeepSeek-OCR", "probar DeepSeek-OCR", { ok: false, message: err && err.message ? err.message : "fallo de DeepSeek-OCR" });
+    }
+  }
+
+  async function probarOCRAmbos(deps) {
+    var store = deps && deps.store;
+    var token = getSessionToken(deps);
+    var visionOut = null;
+    var deepseekOut = null;
+    var fusionOut = null;
+    if (store && typeof store.openCase === "function") store.openCase({ module: "OCR dual", action: "probar OCR ambos", message: "Prueba OCR dual iniciada." });
+    if (!token) {
+      return writeResult(store, "OCR dual", "probar OCR ambos", { ok: false, message: "falta token de sesion" });
+    }
+    try {
+      visionOut = await postControl({
+        moduloDestino: "TRASTIENDA",
+        accion: "procesarVision",
+        sessionToken: token,
+        payload: { imageBase64: TINY_JPEG_BASE64, mimeType: "image/jpeg", sessionToken: token, token: token, modo: "diagnostico_ocr_dual" }
+      }, deps);
+      deepseekOut = await postControl({
+        moduloDestino: "TRASTIENDA",
+        accion: "procesarDeepSeekOCR",
+        sessionToken: token,
+        payload: { imageBase64: TINY_JPEG_BASE64, mimeType: "image/jpeg", sessionToken: token, token: token, modo: "diagnostico_ocr_dual" }
+      }, deps);
+      if (ocrFusion && typeof ocrFusion.fusionarOCR === "function") {
+        fusionOut = ocrFusion.fusionarOCR({
+          textoVision: extractOcrText(visionOut && visionOut.payload),
+          textoDeepSeek: extractOcrText(deepseekOut && deepseekOut.payload)
+        });
+      }
+      return writeResult(store, "OCR dual", "probar OCR ambos", {
+        ok: !!(visionOut && visionOut.ok && deepseekOut && deepseekOut.ok && fusionOut && fusionOut.ok),
+        status: deepseekOut && deepseekOut.status,
+        errorCode: deepseekOut && deepseekOut.errorCode,
+        durationMs: (visionOut && visionOut.durationMs || 0) + (deepseekOut && deepseekOut.durationMs || 0) + (fusionOut && fusionOut.metricas && fusionOut.metricas.elapsedMs || 0),
+        payload: {
+          vision: visionOut && visionOut.payload,
+          deepseek: deepseekOut && deepseekOut.payload,
+          fusion: fusionOut
+        },
+        message: visionOut && visionOut.ok && deepseekOut && deepseekOut.ok
+          ? "OCR dual completado"
+          : "OCR dual con aviso"
+      });
+    } catch (err) {
+      return writeResult(store, "OCR dual", "probar OCR ambos", { ok: false, message: err && err.message ? err.message : "fallo de OCR dual" });
+    }
+  }
+
   async function probarSync(deps) {
     var store = deps && deps.store;
     if (store && typeof store.openCase === "function") store.openCase({ module: "Sync", action: "probar sync", message: "Prueba de sync iniciada." });
@@ -259,6 +358,8 @@
     probarBackend: probarBackend,
     probarIa: probarIa,
     probarVision: probarVision,
+    probarDeepSeekOCR: probarDeepSeekOCR,
+    probarOCRAmbos: probarOCRAmbos,
     probarSync: probarSync
   };
 

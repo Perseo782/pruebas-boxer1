@@ -709,6 +709,20 @@
     };
   }
 
+  function getOcrSettingsApi() {
+    return globalScope.AppV2OcrSettings || null;
+  }
+
+  function renderOcrSettings(state, message) {
+    var api = getOcrSettingsApi();
+    if (!api || !state.el.ocrModeSelect) return;
+    var settings = typeof api.getSettings === "function" ? api.getSettings() : { ocrMode: "vision" };
+    state.el.ocrModeSelect.value = settings.ocrMode || "vision";
+    if (state.el.ocrModeStatus) {
+      state.el.ocrModeStatus.textContent = message || ("OCR actual: " + api.modeLabel(settings.ocrMode) + ".");
+    }
+  }
+
   function refreshFase11Estado(state, message) {
     if (!globalScope.Fase11DiagnosticoEstado || typeof globalScope.Fase11DiagnosticoEstado.leerEstadoSistema !== "function") {
       if (state.el.fase11EstadoStatus) state.el.fase11EstadoStatus.textContent = "Diagnóstico no cargado.";
@@ -727,17 +741,56 @@
     var api = globalScope.Fase11DiagnosticoPruebas;
     var fn = type === "ia" ? api.probarIa :
       type === "vision" ? api.probarVision :
+      type === "deepseek" ? api.probarDeepSeekOCR :
+      type === "both" ? api.probarOCRAmbos :
       type === "sync" ? api.probarSync :
       api.probarBackend;
-    if (typeof fn !== "function") return;
+    if (typeof fn !== "function") {
+      state.el.fase11TestStatus.textContent = "Prueba no disponible.";
+      return;
+    }
     if (type === "sync" && !state.syncManager) getSyncManager(state);
     state.el.fase11TestStatus.textContent = "Probando...";
     var out = await fn(buildFase11Deps(state));
+    if ((type === "deepseek" || type === "both") && globalScope.AppV2OcrSettings && typeof globalScope.AppV2OcrSettings.saveLastOcrDetail === "function") {
+      var payload = out && out.payload && typeof out.payload === "object" ? out.payload : {};
+      globalScope.AppV2OcrSettings.saveLastOcrDetail({
+        modo: type === "both" ? "both" : "deepseek",
+        ok: out && out.ok === true,
+        vision: { texto: "", message: payload.vision ? "Vision ejecutado." : "" },
+        deepseek: { texto: "", message: payload.deepseek ? "DeepSeek ejecutado." : (out && out.detail) },
+        fusion: payload.fusion || null,
+        message: out && out.detail
+      });
+    }
     renderFase11Diagnostico(state);
     refreshFase11Estado(state, "Estado actualizado tras prueba.");
     state.el.fase11TestStatus.textContent =
       (out && out.ok ? "Prueba completada." : "Prueba con aviso.") +
       (out && out.duration ? " Tiempo: " + out.duration + "." : "");
+  }
+
+  async function copyOcrDetail(state) {
+    var api = getOcrSettingsApi();
+    if (!api || typeof api.formatOcrDetailForCopy !== "function") {
+      state.el.fase11TestStatus.textContent = "Detalle OCR no cargado.";
+      return;
+    }
+    var text = api.formatOcrDetailForCopy();
+    if (!text) {
+      state.el.fase11TestStatus.textContent = "No hay detalle OCR para copiar.";
+      return;
+    }
+    try {
+      if (globalScope.navigator && globalScope.navigator.clipboard && typeof globalScope.navigator.clipboard.writeText === "function") {
+        await globalScope.navigator.clipboard.writeText(text);
+        state.el.fase11TestStatus.textContent = "Detalle OCR copiado.";
+        return;
+      }
+    } catch (errClipboard) {
+      // No-op.
+    }
+    state.el.fase11TestStatus.textContent = "Detalle OCR preparado para copiar.";
   }
 
   async function copyFase11Diagnostico(state) {
@@ -762,6 +815,9 @@
   function clearFase11Diagnostico(state) {
     var store = getFase11Store();
     if (store && typeof store.clear === "function") store.clear();
+    if (globalScope.AppV2OcrSettings && typeof globalScope.AppV2OcrSettings.clearLastOcrDetail === "function") {
+      globalScope.AppV2OcrSettings.clearLastOcrDetail();
+    }
     renderFase11Diagnostico(state);
     if (state.el.fase11CopyStatus) state.el.fase11CopyStatus.textContent = "Registro limpio.";
   }
@@ -1204,6 +1260,13 @@
         renderAllergenDisplaySettings(state, "Guardado.");
       });
     }
+    if (state.el.ocrModeSelect) {
+      state.el.ocrModeSelect.addEventListener("change", function onOcrModeChange() {
+        var api = getOcrSettingsApi();
+        if (api && typeof api.saveSettings === "function") api.saveSettings({ ocrMode: state.el.ocrModeSelect.value });
+        renderOcrSettings(state, "OCR guardado: " + (api && api.modeLabel ? api.modeLabel(state.el.ocrModeSelect.value) : state.el.ocrModeSelect.value) + ".");
+      });
+    }
 
     state.el.backupReload.addEventListener("click", function onBackupReload() {
       loadBackups(state);
@@ -1234,6 +1297,26 @@
       state.el.fase11TestVision.addEventListener("click", function onFase11Vision() {
         runFase11Test(state, "vision");
       });
+      if (state.el.fase11TestDeepseek) {
+        state.el.fase11TestDeepseek.addEventListener("click", function onFase11Deepseek() {
+          runFase11Test(state, "deepseek");
+        });
+      }
+      if (state.el.fase11TestNewOcr) {
+        state.el.fase11TestNewOcr.addEventListener("click", function onFase11NewOcr() {
+          runFase11Test(state, "deepseek");
+        });
+      }
+      if (state.el.fase11TestOcrBoth) {
+        state.el.fase11TestOcrBoth.addEventListener("click", function onFase11OcrBoth() {
+          runFase11Test(state, "both");
+        });
+      }
+      if (state.el.ocrCopyDetail) {
+        state.el.ocrCopyDetail.addEventListener("click", function onOcrCopyDetail() {
+          copyOcrDetail(state);
+        });
+      }
       state.el.fase11TestSync.addEventListener("click", function onFase11Sync() {
         runFase11Test(state, "sync");
       });
@@ -1314,8 +1397,14 @@
         fase11TestBackend: byId("fase11-test-backend"),
         fase11TestIa: byId("fase11-test-ia"),
         fase11TestVision: byId("fase11-test-vision"),
+        fase11TestNewOcr: byId("fase11-test-new-ocr"),
+        fase11TestDeepseek: byId("fase11-test-deepseek"),
+        fase11TestOcrBoth: byId("fase11-test-ocr-both"),
         fase11TestSync: byId("fase11-test-sync"),
-        fase11TestStatus: byId("fase11-test-status")
+        fase11TestStatus: byId("fase11-test-status"),
+        ocrModeSelect: byId("ocr-mode-select"),
+        ocrModeStatus: byId("ocr-mode-status"),
+        ocrCopyDetail: byId("ocr-copy-detail")
       }
     };
 
@@ -1323,6 +1412,7 @@
     renderDatabaseSummary(state, { total: 0, cloudReady: false });
     renderPhotoSettings(state, null);
     renderAllergenDisplaySettings(state, null);
+    renderOcrSettings(state, null);
     renderHistoryList(state);
     renderSyncResumen(state, "");
     renderBackupList(state, []);

@@ -1,5 +1,5 @@
-/**
- * BOXER 1 · OCR base adaptado a GAS unificado + OCR rico completo.
+﻿/**
+ * BOXER 1 Â· OCR base adaptado a GAS unificado + OCR rico completo.
  */
 function B1_emitVisionCallTrace(name, data) {
   try {
@@ -18,90 +18,189 @@ async function B1_llamarVisionOCR(canvas, sendMode, sessionToken, urlTrastienda)
   const t_toDataURL_ms = Date.now() - tData;
   const base64 = dataUrl.split(',')[1];
   const tPayload = Date.now();
-  const body = {
-    moduloDestino: B1_CONFIG.TRASTIENDA_MODULO_DESTINO,
-    accion: B1_CONFIG.TRASTIENDA_ACCION_VISION,
-    sessionToken: sessionToken || '',
-    payload: {
-      imageBase64: base64,
-      mimeType: 'image/jpeg',
-      sessionToken: sessionToken || '',
-      token: sessionToken || ''
-    }
-  };
+  const payload = { imageBase64: base64, mimeType: 'image/jpeg', sessionToken: sessionToken || '', token: sessionToken || '' };
   const t_build_payload_vision_ms = Date.now() - tPayload;
-  const tFetch = Date.now();
   const timeoutMs = (typeof B1_CONFIG !== 'undefined' && B1_CONFIG && B1_CONFIG.VISION_FETCH_TIMEOUT_MS) || 15000;
-  const controller = (typeof AbortController === 'function') ? new AbortController() : null;
-  const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
-  let response;
+  const ocrMode = _B1_resolverModoOCR_();
+  const ctxBase = { modo: ocrMode, t0, t_toDataURL_ms, t_build_payload_vision_ms, sendMode };
+
   B1_emitVisionCallTrace('vision_call_start', {
     timeoutMs,
     sendModeSolicitado: sendMode || B1_SEND_MODE.BASE64,
     sendModeAplicado: 'base64',
+    ocrMode,
     t_toDataURL_ms,
     t_build_payload_vision_ms
   });
+
+  const callVision = function() {
+    return _B1_postOcrTrastienda_(urlTrastienda, B1_CONFIG.TRASTIENDA_ACCION_VISION, sessionToken, payload, timeoutMs, 'Vision OCR');
+  };
+  const callDeepseek = function() {
+    return _B1_postOcrTrastienda_(urlTrastienda, 'procesarDeepSeekOCR', sessionToken, payload, timeoutMs, 'DeepSeek-OCR');
+  };
+
+  try {
+    if (ocrMode === 'deepseek') {
+      const deepseekOnly = await callDeepseek();
+      return _B1_prepararRespuestaOCR_(deepseekOnly.respuesta, Object.assign({}, ctxBase, {
+        textoFinal: _B1_extraerTextoOCR_(deepseekOnly.respuesta),
+        vision: null,
+        deepseek: deepseekOnly.respuesta,
+        fusion: null,
+        t_fetch_vision_total_ms: deepseekOnly.durationMs,
+        t_parse_respuesta_vision_cliente_ms: deepseekOnly.parseMs
+      }));
+    }
+
+    if (ocrMode === 'both') {
+      const settled = await Promise.allSettled([callVision(), callDeepseek()]);
+      const visionOk = settled[0].status === 'fulfilled' ? settled[0].value : null;
+      const deepseekOk = settled[1].status === 'fulfilled' ? settled[1].value : null;
+      if (!visionOk && !deepseekOk) throw (settled[0].reason || settled[1].reason);
+      const textoVision = visionOk ? _B1_extraerTextoOCR_(visionOk.respuesta) : '';
+      const textoDeepseek = deepseekOk ? _B1_extraerTextoOCR_(deepseekOk.respuesta) : '';
+      const fusion = (typeof globalThis !== 'undefined' && globalThis.AppV2OcrFusionEngine && typeof globalThis.AppV2OcrFusionEngine.fusionarOCR === 'function')
+        ? globalThis.AppV2OcrFusionEngine.fusionarOCR({ textoVision, textoDeepSeek: textoDeepseek })
+        : { textoOCRFinal: textoVision || textoDeepseek, metricas: null, avisos: ['fusion_engine_no_cargado'] };
+      return _B1_prepararRespuestaOCR_((visionOk || deepseekOk).respuesta, Object.assign({}, ctxBase, {
+        textoFinal: fusion.textoOCRFinal || textoVision || textoDeepseek,
+        vision: visionOk ? visionOk.respuesta : null,
+        deepseek: deepseekOk ? deepseekOk.respuesta : null,
+        fusion,
+        t_fetch_vision_total_ms: Math.max(visionOk ? visionOk.durationMs : 0, deepseekOk ? deepseekOk.durationMs : 0),
+        t_parse_respuesta_vision_cliente_ms: (visionOk ? visionOk.parseMs : 0) + (deepseekOk ? deepseekOk.parseMs : 0)
+      }));
+    }
+
+    const visionOnly = await callVision();
+    return _B1_prepararRespuestaOCR_(visionOnly.respuesta, Object.assign({}, ctxBase, {
+      modo: 'vision',
+      textoFinal: _B1_extraerTextoOCR_(visionOnly.respuesta),
+      vision: visionOnly.respuesta,
+      deepseek: null,
+      fusion: null,
+      t_fetch_vision_total_ms: visionOnly.durationMs,
+      t_parse_respuesta_vision_cliente_ms: visionOnly.parseMs
+    }));
+  } catch (fetchErr) {
+    B1_emitVisionCallTrace('vision_call_end', {
+      ok: false,
+      ocrMode,
+      message: fetchErr && fetchErr.message ? fetchErr.message : String(fetchErr || ''),
+      t_fetch_vision_total_ms: Date.now() - t0
+    });
+    throw fetchErr;
+  }
+}
+
+async function _B1_postOcrTrastienda_(urlTrastienda, accion, sessionToken, payload, timeoutMs, label) {
+  const tFetch = Date.now();
+  const controller = (typeof AbortController === 'function') ? new AbortController() : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  let response;
+  let respuesta = null;
+  let parseMs = 0;
   try {
     response = await fetch(urlTrastienda, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ moduloDestino: B1_CONFIG.TRASTIENDA_MODULO_DESTINO, accion, sessionToken: sessionToken || '', payload }),
       signal: controller ? controller.signal : undefined
     });
   } catch (fetchErr) {
     if (controller && fetchErr && fetchErr.name === 'AbortError') {
-      throw B1_crearErrorUpstream({
-        message: 'Vision OCR timeout tras ' + timeoutMs + 'ms',
-        upstreamCode: 'HTTP_TIMEOUT',
-        upstreamModule: B1_CONFIG.TRASTIENDA_MODULO_DESTINO,
-        raw: null
-      });
+      throw B1_crearErrorUpstream({ message: label + ' timeout tras ' + timeoutMs + 'ms', upstreamCode: 'HTTP_TIMEOUT', upstreamModule: B1_CONFIG.TRASTIENDA_MODULO_DESTINO, raw: null });
     }
-    B1_emitVisionCallTrace('vision_call_end', {
-      ok: false,
-      aborted: !!(controller && fetchErr && fetchErr.name === 'AbortError'),
-      message: fetchErr && fetchErr.message ? fetchErr.message : String(fetchErr || ''),
-      t_fetch_vision_total_ms: Date.now() - tFetch
-    });
     throw fetchErr;
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
   }
-  const t_fetch_vision_total_ms = Date.now() - tFetch;
-
   const tParse = Date.now();
-  let respuesta = null;
   try { respuesta = await response.json(); } catch (_) { respuesta = null; }
-  const t_parse_respuesta_vision_cliente_ms = Date.now() - tParse;
-  B1_emitVisionCallTrace('vision_call_end', {
-    ok: !!(response.ok && respuesta && respuesta.ok === true),
-    status: response.status || null,
-    t_fetch_vision_total_ms,
-    t_parse_respuesta_vision_cliente_ms
-  });
-
+  parseMs = Date.now() - tParse;
   if (!response.ok || !respuesta || respuesta.ok !== true) {
     const err = (respuesta && respuesta.error) || {};
     throw B1_crearErrorUpstream({
-      message: err.mensaje || err.message || `Trastienda respondió ${response.status || 'sin status'} en Vision OCR`,
-      upstreamCode: err.codigo || `HTTP_${response.status || 'UNKNOWN'}`,
+      message: err.mensaje || err.message || (label + ' respondio ' + (response.status || 'sin status')),
+      upstreamCode: err.codigo || ('HTTP_' + (response.status || 'UNKNOWN')),
       upstreamModule: err.modulo || B1_CONFIG.TRASTIENDA_MODULO_DESTINO,
       raw: respuesta
     });
   }
+  return { respuesta, durationMs: Date.now() - tFetch, parseMs };
+}
 
+function _B1_prepararRespuestaOCR_(respuesta, ctx) {
+  const resultado = respuesta && respuesta.resultado ? respuesta.resultado : {};
+  const textoFinal = String(ctx.textoFinal || '').trim();
+  if (textoFinal) resultado.ocrTexto = textoFinal;
+  respuesta.resultado = resultado;
   respuesta.__b1TiemposCliente = {
-    t_toDataURL_ms,
-    t_build_payload_vision_ms,
-    t_fetch_vision_total_ms,
-    t_parse_respuesta_vision_cliente_ms,
-    t_ocr_llamada_total_ms: Date.now() - t0,
-    sendModeSolicitado: sendMode || B1_SEND_MODE.BASE64,
-    sendModeAplicado: 'base64'
+    t_toDataURL_ms: ctx.t_toDataURL_ms,
+    t_build_payload_vision_ms: ctx.t_build_payload_vision_ms,
+    t_fetch_vision_total_ms: ctx.t_fetch_vision_total_ms,
+    t_parse_respuesta_vision_cliente_ms: ctx.t_parse_respuesta_vision_cliente_ms,
+    t_ocr_llamada_total_ms: Date.now() - ctx.t0,
+    sendModeSolicitado: ctx.sendMode || B1_SEND_MODE.BASE64,
+    sendModeAplicado: 'base64',
+    ocrMode: ctx.modo || 'vision'
   };
   respuesta.__b1Upstream = (respuesta && respuesta.meta && respuesta.meta.tiemposInternos) ? respuesta.meta.tiemposInternos : null;
+  respuesta.__b1OcrDetalle = {
+    modo: ctx.modo || 'vision',
+    visionOk: !!ctx.vision,
+    deepseekOk: !!ctx.deepseek,
+    fusionMetricas: ctx.fusion && ctx.fusion.metricas ? ctx.fusion.metricas : null,
+    fusionAvisos: ctx.fusion && Array.isArray(ctx.fusion.avisos) ? ctx.fusion.avisos : []
+  };
+  _B1_guardarDetalleOCR_(ctx, textoFinal);
+  B1_emitVisionCallTrace('vision_call_end', {
+    ok: true,
+    ocrMode: ctx.modo || 'vision',
+    t_fetch_vision_total_ms: ctx.t_fetch_vision_total_ms,
+    t_parse_respuesta_vision_cliente_ms: ctx.t_parse_respuesta_vision_cliente_ms
+  });
   return respuesta;
+}
+
+function _B1_resolverModoOCR_() {
+  try {
+    if (typeof globalThis !== 'undefined' && globalThis.AppV2OcrSettings && typeof globalThis.AppV2OcrSettings.getSettings === 'function') {
+      return globalThis.AppV2OcrSettings.normalizeMode(globalThis.AppV2OcrSettings.getSettings().ocrMode);
+    }
+  } catch (err) {
+    // No-op.
+  }
+  return 'vision';
+}
+
+function _B1_extraerTextoOCR_(respuesta) {
+  const safe = respuesta && typeof respuesta === 'object' ? respuesta : {};
+  const resultado = safe.resultado && typeof safe.resultado === 'object' ? safe.resultado : {};
+  const data = safe.data && typeof safe.data === 'object' ? safe.data : {};
+  const candidates = [resultado.ocrTexto, resultado.textoOCR, resultado.texto, resultado.text, data.ocrTexto, data.textoOCR, data.texto, data.text, safe.ocrTexto, safe.textoOCR, safe.texto, safe.text];
+  for (let i = 0; i < candidates.length; i += 1) {
+    if (typeof candidates[i] === 'string' && candidates[i].trim()) return candidates[i].trim();
+  }
+  return '';
+}
+
+function _B1_guardarDetalleOCR_(ctx, textoFinal) {
+  try {
+    if (typeof globalThis === 'undefined') return;
+    if (!globalThis.AppV2OcrSettings || typeof globalThis.AppV2OcrSettings.saveLastOcrDetail !== 'function') return;
+    globalThis.AppV2OcrSettings.saveLastOcrDetail({
+      modo: ctx.modo || 'vision',
+      ok: true,
+      vision: ctx.vision ? { texto: _B1_extraerTextoOCR_(ctx.vision) } : null,
+      deepseek: ctx.deepseek ? { texto: _B1_extraerTextoOCR_(ctx.deepseek) } : null,
+      fusion: ctx.fusion || { textoOCRFinal: textoFinal || '' },
+      message: 'Detalle OCR generado por Boxer1.'
+    });
+  } catch (err) {
+    // No-op.
+  }
 }
 
 function B1_normalizarOCR(respuestaTrastienda) {
@@ -205,7 +304,7 @@ function _symbols_(symbols) { return (symbols || []).map(s => ({ texto: s && s.t
 function _poly_(poly) { return poly || null; }
 function _confidence_(v) { return typeof v === 'number' ? Number(v.toFixed(2)) : null; }
 function _avg_(arr) { const vals = (arr || []).filter(v => typeof v === 'number'); return vals.length ? Number((vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(2)) : null; }
-function _B1_esHuecoHeuristico(texto) { if (typeof texto !== 'string') return true; const t=texto.trim(); if(!t) return true; if(/^[._\-–—]{2,}$/.test(t)) return true; if(/^[\|/\\]+$/.test(t)) return true; if(/^[*~]+$/.test(t)) return true; if(/^\?+$/.test(t)) return true; if(/^[0OQ]{1}$/.test(t)) return false; return false; }
-function _B1_confianzaHeuristicaPalabra(texto) { if (!texto) return 0.35; let score=0.78; if(/[^\p{L}\p{N}\-.,()%/]/u.test(texto)) score-=0.15; if(/^[0-9]+$/.test(texto)) score-=0.08; if(texto.length===1) score-=0.10; if(texto.length>=18) score-=0.07; if(/(.)\1\1/.test(texto)) score-=0.12; if(/^[A-ZÁÉÍÓÚÜÑ]{2,}$/.test(texto)) score-=0.03; return Math.max(0.35, Math.min(0.95, Number(score.toFixed(2)))); }
+function _B1_esHuecoHeuristico(texto) { if (typeof texto !== 'string') return true; const t=texto.trim(); if(!t) return true; if(/^[._\-â€“â€”]{2,}$/.test(t)) return true; if(/^[\|/\\]+$/.test(t)) return true; if(/^[*~]+$/.test(t)) return true; if(/^\?+$/.test(t)) return true; if(/^[0OQ]{1}$/.test(t)) return false; return false; }
+function _B1_confianzaHeuristicaPalabra(texto) { if (!texto) return 0.35; let score=0.78; if(/[^\p{L}\p{N}\-.,()%/]/u.test(texto)) score-=0.15; if(/^[0-9]+$/.test(texto)) score-=0.08; if(texto.length===1) score-=0.10; if(texto.length>=18) score-=0.07; if(/(.)\1\1/.test(texto)) score-=0.12; if(/^[A-ZÃÃ‰ÃÃ“ÃšÃœÃ‘]{2,}$/.test(texto)) score-=0.03; return Math.max(0.35, Math.min(0.95, Number(score.toFixed(2)))); }
 function _B1_mediaConfianzaPalabras(palabras) { return _avg_((palabras || []).map(p=>p.confidence)); }
 function _B1_mediaConfianzaBloques(bloques) { return _avg_((bloques || []).map(b=>b.confidence)); }

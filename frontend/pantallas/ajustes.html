@@ -453,11 +453,24 @@
       <section class="panel">
         <h2>Pruebas operativas</h2>
         <p class="meta">Pruebas cortas, sin datos falsos persistentes.</p>
+        <div class="row">
+          <label for="ocr-mode-select">Motor OCR</label>
+          <select id="ocr-mode-select">
+            <option value="vision">Vision</option>
+            <option value="deepseek">DeepSeek-OCR</option>
+            <option value="both">Vision + DeepSeek</option>
+          </select>
+          <p id="ocr-mode-status" class="meta">OCR actual: Vision.</p>
+        </div>
         <div class="toolbar">
           <button id="fase11-test-backend" type="button">Probar backend</button>
           <button id="fase11-test-ia" type="button">Probar IA</button>
           <button id="fase11-test-vision" type="button">Probar Visión</button>
+          <button id="fase11-test-new-ocr" type="button">Probar nuevo OCR</button>
+          <button id="fase11-test-deepseek" type="button">Probar DeepSeek-OCR</button>
+          <button id="fase11-test-ocr-both" type="button">Probar OCR Ambos</button>
           <button id="fase11-test-sync" type="button">Probar sync</button>
+          <button id="ocr-copy-detail" type="button" class="ok">Copiar detalle OCR</button>
         </div>
         <p id="fase11-test-status" class="meta" style="margin-top:10px;">Sin pruebas recientes.</p>
       </section>
@@ -580,7 +593,9 @@
   <script src="../../backend/diagnostico/diagnostico_cleanup.js"></script>
   <script src="../../backend/diagnostico/diagnostico_store.js"></script>
   <script src="../../backend/diagnostico/diagnostico_estado.js"></script>
+  <script src="../../backend/ocr/ocr_fusion_engine.js"></script>
   <script src="../../backend/diagnostico/diagnostico_pruebas.js"></script>
+  <script src="../estado/ocr_settings.js"></script>
   <script src="../estado/cerebro_visible_runtime.js"></script>
   <script src="../estado/cerebro_warmup.js"></script>
   <script src="../estado/ajustes_app.js?v=20260426i"></script>
