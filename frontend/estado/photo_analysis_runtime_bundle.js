@@ -8429,6 +8429,17 @@ if (typeof globalThis !== "undefined") {
     y: true
   });
 
+  var SPANISH_UPPERCASE_TOKENS = Object.freeze({
+    aove: true,
+    brc: true,
+    ce: true,
+    dop: true,
+    ifs: true,
+    igp: true,
+    msc: true,
+    ue: true
+  });
+
   var WEIGHT_PATTERN = /\b\d{1,4}(?:[.,]\d{1,2})?\s?(?:kg|g|mg|l|ml|cl|ud|uds|unidades|capsulas|capsules|pack|x)\b/i;
   var INGREDIENTS_PATTERN = /^(ingredientes?|ingredients?|ingredienti|ingr[eé]dients?)\b|\b(contiene|contains|puede contener|may contain|trazas?|traces?)\b/i;
   var NUTRITION_PATTERN = /^(informacion nutricional|informaci[oó]n nutricional|declaracion nutricional|declaraci[oó]n nutricional|nutrition facts|nutrition|valor energ[eé]tico|energia|grasas|lipidos|hidratos|proteinas|proteins|salt|sal)\b/i;
@@ -8936,7 +8947,7 @@ if (typeof globalThis !== "undefined") {
         out.push(brandName);
       } else if (i > 0 && SPANISH_LOWERCASE_WORDS[compare]) {
         out.push(word.toLowerCase());
-      } else if (/^[A-Z0-9]{2,4}$/.test(originalWord) && !Object.prototype.hasOwnProperty.call(ACCENT_FIXES, normalizeCompareText(originalWord)) && !SPANISH_LOWERCASE_WORDS[compare]) {
+      } else if (shouldKeepUppercaseToken(originalWord, compare)) {
         out.push(originalWord);
       } else {
         var lower = word.toLowerCase();
@@ -8946,6 +8957,15 @@ if (typeof globalThis !== "undefined") {
     }
 
     return collapseText(out.join(" "));
+  }
+
+  function shouldKeepUppercaseToken(originalWord, compare) {
+    if (!/^[A-Z0-9]{2,6}$/.test(originalWord)) return false;
+    if (Object.prototype.hasOwnProperty.call(ACCENT_FIXES, normalizeCompareText(originalWord))) return false;
+    if (SPANISH_LOWERCASE_WORDS[compare]) return false;
+    if (SPANISH_UPPERCASE_TOKENS[compare]) return true;
+    if (/\d/.test(originalWord)) return true;
+    return !/[aeiou]/.test(compare);
   }
 
   function buildCandidateView(candidate) {
