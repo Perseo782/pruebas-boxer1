@@ -121,6 +121,7 @@
 
   function engineBlock(title, engine, info) {
     var safe = info && typeof info === "object" ? info : {};
+    var raw = safeText(safe.rawJson || safe.raw);
     var lines = [];
     lines.push("[" + title + "]");
     lines.push("Firma: " + engineSignature(engine, safe));
@@ -129,11 +130,9 @@
     if (safe.message) lines.push("Mensaje: " + safeText(safe.message));
     lines.push("Texto devuelto:");
     lines.push(safeText(safe.texto || safe.text || safe.ocrTexto || safe.message) || "(sin texto)");
-    if (safe.rawJson || safe.raw) {
-      lines.push("");
-      lines.push("Respuesta completa del motor:");
-      lines.push(safeText(safe.rawJson || safe.raw));
-    }
+    lines.push("");
+    lines.push("TODOS LOS DETALLES DEVUELTOS POR EL OCR SELECCIONADO:");
+    lines.push(raw || "(respuesta completa no guardada; repite la prueba o analiza una foto nueva)");
     return lines;
   }
 
