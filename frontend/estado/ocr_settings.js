@@ -129,6 +129,11 @@
     if (safe.message) lines.push("Mensaje: " + safeText(safe.message));
     lines.push("Texto devuelto:");
     lines.push(safeText(safe.texto || safe.text || safe.ocrTexto || safe.message) || "(sin texto)");
+    if (safe.rawJson || safe.raw) {
+      lines.push("");
+      lines.push("Respuesta completa del motor:");
+      lines.push(safeText(safe.rawJson || safe.raw));
+    }
     return lines;
   }
 

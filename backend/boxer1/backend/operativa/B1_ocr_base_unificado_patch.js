@@ -203,14 +203,16 @@ function _B1_guardarDetalleOCR_(ctx, textoFinal) {
         firma: 'FUENTE_REAL: GOOGLE_VISION_OCR',
         ok: true,
         elapsedMs: ctx.visionElapsedMs,
-        texto: _B1_extraerTextoOCR_(ctx.vision)
+        texto: _B1_extraerTextoOCR_(ctx.vision),
+        rawJson: _B1_serializarRespuestaOCR_(ctx.vision)
       } : null,
       deepseek: ctx.deepseek ? {
         motor: 'DeepSeek-OCR en Vertex AI',
         firma: 'FUENTE_REAL: DEEPSEEK_OCR_VERTEX_AI',
         ok: true,
         elapsedMs: ctx.deepseekElapsedMs,
-        texto: _B1_extraerTextoOCR_(ctx.deepseek)
+        texto: _B1_extraerTextoOCR_(ctx.deepseek),
+        rawJson: _B1_serializarRespuestaOCR_(ctx.deepseek)
       } : null,
       fusion: ctx.fusion ? Object.assign({}, ctx.fusion, {
         elapsedMs: ctx.fusion && ctx.fusion.metricas ? ctx.fusion.metricas.elapsedMs : 0
@@ -219,6 +221,14 @@ function _B1_guardarDetalleOCR_(ctx, textoFinal) {
     });
   } catch (err) {
     // No-op.
+  }
+}
+
+function _B1_serializarRespuestaOCR_(respuesta) {
+  try {
+    return JSON.stringify(respuesta || null, null, 2);
+  } catch (err) {
+    return String(respuesta || '');
   }
 }
 

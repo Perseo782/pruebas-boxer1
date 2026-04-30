@@ -121,6 +121,7 @@
       detail: ok ? "prueba completada" : (out && out.message ? out.message : "prueba con aviso"),
       rawDetail: ok ? "" : rawDetail,
       payload: out && out.payload,
+      durationMs: out && out.durationMs,
       duration: formatter.formatDurationMs(out && out.durationMs)
     };
   }
@@ -254,12 +255,15 @@
     var nested = data.data && typeof data.data === "object" ? data.data : {};
     var result = data.resultado && typeof data.resultado === "object" ? data.resultado : {};
     var candidates = [
+      data.ocrTexto,
       data.textoOCR,
       data.texto,
       data.text,
+      nested.ocrTexto,
       nested.textoOCR,
       nested.texto,
       nested.text,
+      result.ocrTexto,
       result.textoOCR,
       result.texto,
       result.text

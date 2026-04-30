@@ -754,13 +754,30 @@
     var out = await fn(buildFase11Deps(state));
     if ((type === "deepseek" || type === "both") && globalScope.AppV2OcrSettings && typeof globalScope.AppV2OcrSettings.saveLastOcrDetail === "function") {
       var payload = out && out.payload && typeof out.payload === "object" ? out.payload : {};
+      var visionPayload = type === "both" ? payload.vision : null;
+      var deepseekPayload = type === "both" ? payload.deepseek : payload;
+      var fusionPayload = type === "both" ? payload.fusion : null;
       globalScope.AppV2OcrSettings.saveLastOcrDetail({
         modo: type === "both" ? "both" : "deepseek",
         ok: out && out.ok === true,
-        vision: { texto: "", message: payload.vision ? "Vision ejecutado." : "" },
-        deepseek: { texto: "", message: payload.deepseek ? "DeepSeek ejecutado." : (out && out.detail) },
-        fusion: payload.fusion || null,
-        message: out && out.detail
+        vision: visionPayload ? {
+          motor: "Google Vision OCR",
+          firma: "FUENTE_REAL: GOOGLE_VISION_OCR",
+          ok: true,
+          elapsedMs: null,
+          texto: extractOcrTextFromPayload(visionPayload),
+          rawJson: stringifyOcrPayload(visionPayload)
+        } : null,
+        deepseek: deepseekPayload ? {
+          motor: "DeepSeek-OCR en Vertex AI",
+          firma: "FUENTE_REAL: DEEPSEEK_OCR_VERTEX_AI",
+          ok: out && out.ok === true,
+          elapsedMs: type === "deepseek" ? out.durationMs : null,
+          texto: extractOcrTextFromPayload(deepseekPayload),
+          rawJson: stringifyOcrPayload(deepseekPayload)
+        } : null,
+        fusion: fusionPayload || null,
+        message: "Detalle OCR generado por prueba operativa."
       });
     }
     renderFase11Diagnostico(state);
@@ -768,6 +785,29 @@
     state.el.fase11TestStatus.textContent =
       (out && out.ok ? "Prueba completada." : "Prueba con aviso.") +
       (out && out.duration ? " Tiempo: " + out.duration + "." : "");
+  }
+
+  function extractOcrTextFromPayload(payload) {
+    var data = payload && typeof payload === "object" ? payload : {};
+    var nested = data.data && typeof data.data === "object" ? data.data : {};
+    var result = data.resultado && typeof data.resultado === "object" ? data.resultado : {};
+    var candidates = [
+      data.ocrTexto, data.textoOCR, data.texto, data.text,
+      nested.ocrTexto, nested.textoOCR, nested.texto, nested.text,
+      result.ocrTexto, result.textoOCR, result.texto, result.text
+    ];
+    for (var i = 0; i < candidates.length; i += 1) {
+      if (typeof candidates[i] === "string" && candidates[i].trim()) return candidates[i].trim();
+    }
+    return "";
+  }
+
+  function stringifyOcrPayload(payload) {
+    try {
+      return JSON.stringify(payload || null, null, 2);
+    } catch (err) {
+      return String(payload || "");
+    }
   }
 
   async function copyOcrDetail(state) {
