@@ -43,6 +43,11 @@
   var FEEDBACK_DURATION_MS = 2200;
   var VISUAL_GATEWAY_THUMB_BATCH_LIMIT = 12;
   var DYNAMIC_SCRIPT_PROMISES = Object.create(null);
+  var PHOTO_RUNTIME_TRACE_STORAGE_KEY = "appv2_photo_runtime_trace_v1";
+  var PHOTO_RUNTIME_BUNDLE_PATH = "../estado/photo_analysis_runtime_bundle.js?v=20260430runtime1";
+  var photoRuntimeSharedPromise = null;
+  var photoRuntimeStatus = "idle";
+  var photoRuntimeLastError = "";
   var PHOTO_RUNTIME_SCRIPT_PATHS = Object.freeze([
     "../../backend/boxer1/backend/operativa/B1_enums.js",
     "../../backend/boxer1/backend/operativa/B1_contratos_unificado_patch.js",
@@ -152,6 +157,32 @@
     var runtime = getAnalysisRuntime();
     if (!runtime || typeof runtime.trace !== "function") return;
     runtime.trace(name, data || null, Object.assign({ source: "gestion_registros" }, meta || {}));
+  }
+
+  function persistPhotoRuntimeTrace(name, data, meta) {
+    try {
+      if (!globalScope || !globalScope.localStorage) return;
+      var raw = globalScope.localStorage.getItem(PHOTO_RUNTIME_TRACE_STORAGE_KEY);
+      var parsed = raw ? JSON.parse(raw) : [];
+      var list = Array.isArray(parsed) ? parsed : [];
+      list.push({
+        trace: String(name || ""),
+        atMs: Date.now(),
+        data: data || null,
+        meta: meta || null
+      });
+      globalScope.localStorage.setItem(PHOTO_RUNTIME_TRACE_STORAGE_KEY, JSON.stringify(list.slice(-80)));
+    } catch (errTrace) {
+      // La traza de precarga no debe afectar a la pantalla.
+    }
+  }
+
+  function tracePhotoRuntimeEvent(name, data, meta, options) {
+    var safeOptions = options || {};
+    persistPhotoRuntimeTrace(name, data || null, meta || null);
+    if (safeOptions.attachToAnalysis === true) {
+      traceAnalysisEvent(name, data || null, Object.assign({ phase: "runtime" }, meta || {}));
+    }
   }
 
   function requestAnalysisExclusive(meta) {
@@ -2456,26 +2487,146 @@
     }
   }
 
-  async function ensurePhotoRuntimeReady(state) {
+  function isPhotoRuntimeReady() {
     if (globalScope.CerebroOrquestador && globalScope.Fase3AltaFotoVisibleApp) {
-      return;
+      return true;
     }
-    if (state.ui.photoRuntimePromise) {
-      return state.ui.photoRuntimePromise;
-    }
-    state.ui.photoRuntimePromise = PHOTO_RUNTIME_SCRIPT_PATHS.reduce(function chain(promise, src) {
+    return false;
+  }
+
+  function getPhotoRuntimeStatus() {
+    return {
+      ready: isPhotoRuntimeReady(),
+      status: photoRuntimeStatus,
+      hasPromise: !!photoRuntimeSharedPromise,
+      lastError: photoRuntimeLastError || ""
+    };
+  }
+
+  async function loadPhotoRuntimeFallback(meta, traceOptions) {
+    return PHOTO_RUNTIME_SCRIPT_PATHS.reduce(function chain(promise, src) {
       return promise.then(function loadNext() {
         return loadScriptOnce(src);
       });
     }, Promise.resolve()).then(function onLoaded() {
-      if (!globalScope.CerebroOrquestador || !globalScope.Fase3AltaFotoVisibleApp) {
+      if (!isPhotoRuntimeReady()) {
         throw new Error("La analitica por foto no quedo lista.");
       }
+    });
+  }
+
+  async function loadPhotoRuntimeBundle(meta, traceOptions) {
+    var startedAt = Date.now();
+    tracePhotoRuntimeEvent("runtime_bundle_start", {
+      src: PHOTO_RUNTIME_BUNDLE_PATH
+    }, meta, traceOptions);
+    try {
+      await loadScriptOnce(PHOTO_RUNTIME_BUNDLE_PATH);
+      if (!isPhotoRuntimeReady()) {
+        throw new Error("El bundle de analitica no dejo Cerebro listo.");
+      }
+      tracePhotoRuntimeEvent("runtime_bundle_done", {
+        src: PHOTO_RUNTIME_BUNDLE_PATH,
+        elapsedMs: Date.now() - startedAt,
+        fallback: false
+      }, meta, traceOptions);
+    } catch (errBundle) {
+      tracePhotoRuntimeEvent("runtime_bundle_done", {
+        src: PHOTO_RUNTIME_BUNDLE_PATH,
+        elapsedMs: Date.now() - startedAt,
+        fallback: true,
+        error: errBundle && errBundle.message ? errBundle.message : String(errBundle || "")
+      }, meta, traceOptions);
+      await loadPhotoRuntimeFallback(meta, traceOptions);
+    }
+  }
+
+  async function loadPhotoRuntimeOnce(mode, meta, traceOptions) {
+    var safeMode = String(mode || "late").trim() || "late";
+    var safeMeta = meta || {};
+    var safeTraceOptions = traceOptions || {};
+    if (isPhotoRuntimeReady()) {
+      photoRuntimeStatus = "ready";
+      tracePhotoRuntimeEvent("runtime_already_ready", {
+        mode: safeMode
+      }, safeMeta, safeTraceOptions);
+      return;
+    }
+    if (photoRuntimeSharedPromise) {
+      if (safeMode === "late") {
+        var waitStartedAt = Date.now();
+        tracePhotoRuntimeEvent("runtime_late_wait_start", {
+          status: photoRuntimeStatus
+        }, safeMeta, safeTraceOptions);
+        await photoRuntimeSharedPromise;
+        tracePhotoRuntimeEvent("runtime_late_wait_done", {
+          elapsedMs: Date.now() - waitStartedAt,
+          ready: isPhotoRuntimeReady()
+        }, safeMeta, safeTraceOptions);
+      } else {
+        await photoRuntimeSharedPromise;
+      }
+      return;
+    }
+
+    var startedAt = Date.now();
+    photoRuntimeStatus = safeMode === "preload" ? "preloading" : "loading";
+    photoRuntimeLastError = "";
+    tracePhotoRuntimeEvent(safeMode === "preload" ? "runtime_preload_start" : "runtime_late_load_start", {
+      mode: safeMode
+    }, safeMeta, safeTraceOptions);
+    photoRuntimeSharedPromise = loadPhotoRuntimeBundle(safeMeta, safeTraceOptions).then(function onLoaded() {
+      photoRuntimeStatus = "ready";
+      tracePhotoRuntimeEvent(safeMode === "preload" ? "runtime_preload_done" : "runtime_late_load_done", {
+        elapsedMs: Date.now() - startedAt,
+        ready: isPhotoRuntimeReady()
+      }, safeMeta, safeTraceOptions);
     }).catch(function onLoadError(err) {
-      state.ui.photoRuntimePromise = null;
+      photoRuntimeStatus = "failed";
+      photoRuntimeLastError = err && err.message ? err.message : String(err || "");
+      photoRuntimeSharedPromise = null;
+      tracePhotoRuntimeEvent(safeMode === "preload" ? "runtime_preload_done" : "runtime_late_load_done", {
+        elapsedMs: Date.now() - startedAt,
+        ready: false,
+        error: photoRuntimeLastError
+      }, safeMeta, safeTraceOptions);
       throw err;
     });
-    return state.ui.photoRuntimePromise;
+    return photoRuntimeSharedPromise;
+  }
+
+  function schedulePhotoRuntimePreload(state) {
+    if (!state || !state.ui || state.ui.photoRuntimePreloadScheduled || isPhotoRuntimeReady() || photoRuntimeSharedPromise) return;
+    state.ui.photoRuntimePreloadScheduled = true;
+    var run = function runPreload() {
+      state.ui.photoRuntimePreloadTimer = null;
+      loadPhotoRuntimeOnce("preload", { phase: "runtime_preload" }, { attachToAnalysis: false }).catch(function ignorePreloadError() {
+        // El clic de analisis mostrara el error si el runtime sigue sin poder cargarse.
+      });
+    };
+    var scheduleIdle = function scheduleIdle() {
+      if (isPhotoRuntimeReady() || photoRuntimeSharedPromise) return;
+      if (globalScope.requestIdleCallback) {
+        state.ui.photoRuntimePreloadTimer = globalScope.requestIdleCallback(run, { timeout: 2500 });
+        return;
+      }
+      state.ui.photoRuntimePreloadTimer = globalScope.setTimeout(run, 900);
+    };
+    if (globalScope.document && globalScope.document.readyState !== "complete") {
+      globalScope.addEventListener("load", scheduleIdle, { once: true });
+      return;
+    }
+    scheduleIdle();
+  }
+
+  async function ensurePhotoRuntimeReady(state) {
+    if (state && state.ui) {
+      state.ui.photoRuntimePromise = photoRuntimeSharedPromise;
+    }
+    await loadPhotoRuntimeOnce("late", { phase: "runtime_late" }, { attachToAnalysis: true });
+    if (state && state.ui) {
+      state.ui.photoRuntimePromise = photoRuntimeSharedPromise;
+    }
   }
 
   function getPhotoAnalysisFinalData(response) {
@@ -4120,6 +4271,8 @@
         feedbackTimerId: null,
         overlayScrollY: 0,
         photoRuntimePromise: null,
+        photoRuntimePreloadScheduled: false,
+        photoRuntimePreloadTimer: null,
         add: null,
         edit: null
       },
@@ -4209,6 +4362,7 @@
     refreshVisibleList(state);
     initialProductsLoad(state, "init");
     scheduleEntryCloudRecovery(state);
+    schedulePhotoRuntimePreload(state);
   }
 
   var testApi = {
@@ -4223,6 +4377,9 @@
     buildLightProductVisuales: buildLightProductVisuales,
     buildPhotoAnalysisStatus: buildPhotoAnalysisStatus,
     applyPhotoAnalysisToAddModal: applyPhotoAnalysisToAddModal,
+    ensurePhotoRuntimeReady: ensurePhotoRuntimeReady,
+    getPhotoRuntimeStatus: getPhotoRuntimeStatus,
+    schedulePhotoRuntimePreload: schedulePhotoRuntimePreload,
     loadProducts: loadProducts,
     listPendingRevisionDraftsFromStore: listPendingRevisionDraftsFromStore,
     manualSync: manualSync,
