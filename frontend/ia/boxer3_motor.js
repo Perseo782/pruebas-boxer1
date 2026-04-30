@@ -711,7 +711,7 @@ function scoringNeutros(candidatos, totalLineas) {
 // â”€â”€â”€ NORMALIZACIÃ“N DE SALIDA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Formato uniforme: "920 g" Â· "1.5 kg" Â· "500 ml" Â· "4x2.5 kg"
 // NÃºmero: separador decimal = punto, sin separador de miles, sin ceros finales.
-// Unidad: forma corta normalizada (g, kg, ml, l, cl, dl, oz, lb).
+// Unidad: forma corta normalizada y subida cuando corresponde (1000 g -> 1 kg).
 
 function formatearNumero(n) {
   var r = Math.round(n * 10000) / 10000; // evita ruido flotante
@@ -722,15 +722,28 @@ function formatearNumero(n) {
   return s;
 }
 
+function subirUnidadSalida(valor, unidad) {
+  var u = normalizarUnidad(unidad);
+  var valorNorm = normalizarValor(valor, u);
+  if ((u === "g" || u === "kg") && valorNorm >= 1000) {
+    return { valor: valorNorm / 1000, unidad: "kg" };
+  }
+  if ((u === "ml" || u === "cl" || u === "dl" || u === "l") && valorNorm >= 1000) {
+    return { valor: valorNorm / 1000, unidad: "l" };
+  }
+  return { valor: valor, unidad: u };
+}
+
 function formatearSalida(candidato) {
   var u = candidato.unidadNorm;
   if (candidato.esMultipack) {
     // Multipack: "4x2.5 kg"
     var n1 = formatearNumero(candidato.valor1);
-    var n2 = formatearNumero(candidato.valor2);
-    return n1 + "x" + n2 + " " + u;
+    var unidadPack = subirUnidadSalida(candidato.valor2, u);
+    return n1 + "x" + formatearNumero(unidadPack.valor) + " " + unidadPack.unidad;
   }
-  return formatearNumero(candidato.valorTotal) + " " + u;
+  var unidadSalida = subirUnidadSalida(candidato.valorTotal, u);
+  return formatearNumero(unidadSalida.valor) + " " + unidadSalida.unidad;
 }
 
 // â”€â”€â”€ DECISIÃ“N FINAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
